@@ -21,7 +21,7 @@ import { BrandMark, PlatformIcon } from "@/components/shared"
 import type { Platform } from "@/gql/graphql"
 import { SampleInbox, SampleToday } from "@/modules/auth"
 import { useT } from "@/i18n"
-import { LandingHeader } from "./landing-header"
+import { SiteHeader } from "@/components/layout/site-header"
 import { Pricing } from "./pricing"
 
 const CHANNELS: Platform[] = ["FACEBOOK", "INSTAGRAM", "WHATSAPP", "TELEGRAM"]
@@ -210,7 +210,7 @@ function Footer() {
 export function LandingPage() {
   return (
     <div className="min-h-dvh bg-background">
-      <LandingHeader />
+      <SiteHeader />
       <main>
         <Hero />
         <Flow />

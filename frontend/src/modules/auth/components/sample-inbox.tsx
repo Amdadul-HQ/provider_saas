@@ -68,7 +68,7 @@ export function SampleInbox({ className, compact = false }: { className?: string
       <div
         className={cn(
           "overflow-hidden px-1 pt-1",
-          compact ? "h-40 sm:h-48 [mask-image:linear-gradient(to_top,transparent_0%,#000_55%)]" : "h-[17.5rem] [mask-image:linear-gradient(to_top,transparent_2%,#000_45%)] 2xl:h-[20rem] [@media(max-height:700px)]:h-[12rem]",
+          compact ? "h-40 sm:h-48 [mask-image:linear-gradient(to_top,transparent_0%,#000_55%)]" : "h-[17.5rem] [mask-image:linear-gradient(to_top,transparent_2%,#000_45%)] 2xl:h-[20rem] [@media(max-height:760px)]:h-[12rem]",
         )}
         aria-hidden
       >
