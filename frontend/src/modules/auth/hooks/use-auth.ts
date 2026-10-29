@@ -2,8 +2,19 @@
 
 import { useCallback } from "react"
 import { useMutation, useQuery } from "urql"
-import { AcceptInviteDocument, ChangePasswordDocument, InviteDocument, LoginDocument, LogoutDocument, RegisterDocument, SwitchTenantDocument, type LoginInput, type RegisterInput } from "@/gql/graphql"
-import { getRefreshToken, useSessionStore } from "@/lib/auth"
+import {
+  AcceptInviteDocument,
+  ChangePasswordDocument,
+  InviteDocument,
+  LoginDocument,
+  LogoutAllDocument,
+  LogoutDocument,
+  RegisterDocument,
+  SwitchTenantDocument,
+  type LoginInput,
+  type RegisterInput,
+} from "@/gql/graphql"
+import { useSessionStore } from "@/lib/auth"
 import { useAction } from "@/lib/graphql/use-action"
 import { useT } from "@/i18n"
 
@@ -35,16 +46,30 @@ export function useRegister() {
   return { register, fetching: state.fetching, error: state.error }
 }
 
+/** Revokes this device's refresh cookie (the API clears it), then drops in-memory state. */
 export function useLogout() {
   const [, execute] = useMutation(LogoutDocument)
   const signOut = useSessionStore((s) => s.signOut)
   return useCallback(async () => {
-    const refreshToken = getRefreshToken()
-    if (refreshToken) await execute({ refreshToken }).catch(() => undefined)
+    await execute({}).catch(() => undefined)
     signOut()
     // full reload drops the urql cache and every in-memory secret
     window.location.assign("/login")
   }, [execute, signOut])
+}
+
+/** Revokes every session of the current user on every device (token version bump). */
+export function useLogoutAll() {
+  const [state, execute] = useMutation(LogoutAllDocument)
+  const signOut = useSessionStore((s) => s.signOut)
+  const logoutAll = useCallback(async () => {
+    const res = await execute({})
+    if (res.error) return res
+    signOut()
+    window.location.assign("/login")
+    return res
+  }, [execute, signOut])
+  return { logoutAll, fetching: state.fetching, error: state.error }
 }
 
 export function useSwitchTenant() {

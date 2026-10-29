@@ -3,7 +3,8 @@ import { authExchange } from "@urql/exchange-auth"
 import { Kind } from "graphql"
 import { GRAPHQL_URL } from "@/lib/config"
 import { refreshSession, useSessionStore } from "@/lib/auth/session"
-import { accessTokenExpiring, getAccessToken, getRefreshToken } from "@/lib/auth/tokens"
+import { accessTokenExpiring, getAccessToken, hasSessionHint } from "@/lib/auth/tokens"
+import { API_CREDENTIALS, API_HEADERS } from "./transport"
 
 /** Operations that must work without a session (public storefront/portal + auth itself). */
 const PUBLIC_OPERATIONS = new Set([
@@ -35,6 +36,8 @@ function isPublic(op: Operation) {
 export function makeClient() {
   return new Client({
     url: GRAPHQL_URL,
+    // cookie auth mode (M6): refresh cookie travels with every request; custom header = CSRF guard
+    fetchOptions: { credentials: API_CREDENTIALS, headers: { ...API_HEADERS } },
     requestPolicy: "cache-and-network",
     // urql >=4 defaults to GET for queries; always POST so gqlgen needs no GET transport and
     // query variables (phones, TrxIDs) never land in proxy/access logs via the URL.
@@ -49,8 +52,8 @@ export function makeClient() {
         },
         willAuthError(operation) {
           if (isPublic(operation)) return false
-          // no/expiring access token but we can refresh → refresh before sending
-          return getRefreshToken() !== null && accessTokenExpiring()
+          // no/expiring access token but a refresh cookie may exist → refresh before sending
+          return hasSessionHint() && accessTokenExpiring()
         },
         didAuthError(error, operation) {
           // a failed login/acceptInvite is "wrong password", not an expired session: never refresh + retry it

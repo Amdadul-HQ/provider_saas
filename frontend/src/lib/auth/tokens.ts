@@ -1,39 +1,73 @@
 /**
- * Token storage.
+ * Token storage (SPRINT-01-SECURITY M6, cookie mode).
  * - Access token: memory only (never persisted) — limits XSS blast radius.
- * - Refresh token: localStorage. The API returns it in the GraphQL body, so the browser cannot
- *   set it as an httpOnly cookie itself; switch to a cookie once the backend issues one.
+ * - Refresh token: an httpOnly cookie the API sets when the request carries `X-Auth-Mode: cookie`.
+ *   JavaScript never sees it. Only a non-secret "a session may exist" hint is kept in localStorage,
+ *   so anonymous visitors (storefront, portal) don't fire a refresh request on every page load.
+ * - Legacy: Sprint 1 kept the refresh token in localStorage (`psaas.rt`). `refreshSession` spends it
+ *   once to obtain the cookie and then deletes it.
  */
-const REFRESH_KEY = "psaas.rt"
+const LEGACY_REFRESH_KEY = "psaas.rt"
+const SESSION_HINT_KEY = "psaas.session"
 
 let accessToken: string | null = null
 
-export function getAccessToken() {
-  return accessToken
-}
-
-export function getRefreshToken(): string | null {
+function storage(): Storage | null {
   if (typeof window === "undefined") return null
   try {
-    return window.localStorage.getItem(REFRESH_KEY)
+    return window.localStorage
   } catch {
     return null
   }
 }
 
-export function setTokens(access: string, refresh: string) {
+export function getAccessToken() {
+  return accessToken
+}
+
+/** Stores the access token in memory and remembers that a cookie session exists. */
+export function setAccessToken(access: string) {
   accessToken = access
   try {
-    window.localStorage.setItem(REFRESH_KEY, refresh)
+    storage()?.setItem(SESSION_HINT_KEY, "1")
   } catch {
-    /* private mode: session lasts until reload */
+    /* private mode: the hint is an optimisation only */
+  }
+}
+
+/** True when this browser has (probably) got a refresh cookie: a past login or a legacy token to migrate. */
+export function hasSessionHint(): boolean {
+  const s = storage()
+  if (!s) return false
+  try {
+    return s.getItem(SESSION_HINT_KEY) === "1" || s.getItem(LEGACY_REFRESH_KEY) !== null
+  } catch {
+    return false
+  }
+}
+
+/** Sprint 1 refresh token still sitting in localStorage (to be exchanged for the cookie once). */
+export function getLegacyRefreshToken(): string | null {
+  try {
+    return storage()?.getItem(LEGACY_REFRESH_KEY) ?? null
+  } catch {
+    return null
+  }
+}
+
+export function clearLegacyRefreshToken() {
+  try {
+    storage()?.removeItem(LEGACY_REFRESH_KEY)
+  } catch {
+    /* ignore */
   }
 }
 
 export function clearTokens() {
   accessToken = null
   try {
-    window.localStorage.removeItem(REFRESH_KEY)
+    storage()?.removeItem(SESSION_HINT_KEY)
+    storage()?.removeItem(LEGACY_REFRESH_KEY)
   } catch {
     /* ignore */
   }
