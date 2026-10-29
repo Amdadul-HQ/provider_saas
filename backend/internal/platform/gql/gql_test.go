@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -47,6 +48,17 @@ func TestErrorPresenter(t *testing.T) {
 	}
 	if e := p(ctx, errors.New("pq: secret detail")); e.Extensions["code"] != "INTERNAL_SERVER_ERROR" || e.Message != "internal server error" {
 		t.Fatalf("internal: %+v", e)
+	}
+	if e := p(ctx, apperr.RateLimitedFor("slow down", 2500*time.Millisecond)); e.Extensions["code"] != "RATE_LIMITED" || e.Extensions["retryAfter"] != 3 {
+		t.Fatalf("rate limited: %+v", e)
+	}
+	if e := p(ctx, apperr.RateLimited("slow down")); e.Extensions["retryAfter"] != 1 {
+		t.Fatalf("rate limited default retryAfter: %+v", e)
+	}
+	for _, k := range apperr.Kinds { // L5: every kind keeps its message and gets a code
+		if e := p(ctx, &apperr.Error{Kind: k, Msg: "m"}); e.Extensions["code"] == "" || e.Extensions["code"] == "INTERNAL_SERVER_ERROR" || e.Message != "m" {
+			t.Fatalf("kind %v: %+v", k, e)
+		}
 	}
 }
 

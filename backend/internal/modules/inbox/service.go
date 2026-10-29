@@ -29,6 +29,8 @@ type SendPayload struct {
 	TenantID  uuid.UUID `json:"tenant_id"`
 	MessageID uuid.UUID `json:"message_id"`
 	Tag       string    `json:"tag,omitempty"`
+	// WATemplate sends an approved WhatsApp template instead of free text (outside 24h).
+	WATemplate *WATemplateSpec `json:"wa_template,omitempty"`
 	// SealedBody is the real text of a message whose stored body is redacted (credential
 	// delivery). Sealed with vault.SealTransient (purpose = message id); the worker removes
 	// it from the job row once the job finishes (jobs.SealedPayloadKey).
@@ -62,6 +64,8 @@ type (
 	}
 	Members interface {
 		Membership(ctx context.Context, userID, tenantID uuid.UUID) (tenant.Membership, error)
+		// Get returns the tenant (settings: whatsapp_templates, business_hours; timezone).
+		Get(ctx context.Context, tenantID uuid.UUID) (tenant.Tenant, error)
 	}
 	Queue interface {
 		Enqueue(ctx context.Context, kind string, payload any, runAt time.Time, dedupeKey string) (int64, error)
@@ -107,6 +111,14 @@ type Service interface {
 	TemplatesByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Template, error)
 	UpsertTemplate(ctx context.Context, tenantID uuid.UUID, id *uuid.UUID, in TemplateInput) (Template, error)
 	DeleteTemplate(ctx context.Context, tenantID, id uuid.UUID) error
+
+	// Auto-reply rules (FAQ bot).
+	AutoReplyRules(ctx context.Context, tenantID uuid.UUID) ([]AutoReplyRule, error)
+	UpsertAutoReplyRule(ctx context.Context, tenantID uuid.UUID, id *uuid.UUID, in AutoReplyInput) (AutoReplyRule, error)
+	DeleteAutoReplyRule(ctx context.Context, tenantID, id uuid.UUID) error
+	TestAutoReply(ctx context.Context, tenantID uuid.UUID, text, platform string) (AutoReplyTest, error)
+	// AutoReply is the inbox.autoreply job.
+	AutoReply(ctx context.Context, p AutoReplyPayload) error
 }
 
 type service struct {
@@ -210,6 +222,9 @@ func (s *service) ingest(ctx context.Context, acct social.Account, msg social.In
 				return err
 			}
 		}
+		if err := s.queueAutoReply(ctx, tx, tid, conv, m); err != nil {
+			return err
+		}
 		name := cust.Name
 		link := "/inbox/" + conv.ID.String()
 		return s.notifier.Notify(ctx, tid, conv.AssignedTo, "inbox.message", "নতুন মেসেজ — "+name, strp(preview), &link)
@@ -310,6 +325,10 @@ func (s *service) Send(ctx context.Context, tenantID, userID uuid.UUID, in SendI
 			return apperr.ValidationField("body", "message is empty")
 		}
 		if !conv.CanReply(s.now()) {
+			if conv.Platform == social.PlatformWhatsApp {
+				return apperr.Validation("the 24-hour WhatsApp window has closed: free-form replies are blocked until the customer writes again; " +
+					"only approved templates (reminders, deliveries, campaigns) can be sent")
+			}
 			return apperr.Validation("the 24-hour reply window for this " + conv.Platform + " conversation has closed; wait for the customer to message again")
 		}
 		if kind == "text" && body == "" {
@@ -319,7 +338,7 @@ func (s *service) Send(ctx context.Context, tenantID, userID uuid.UUID, in SendI
 		if userID == uuid.Nil {
 			uid = nil
 		}
-		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, kind, body, "", in.Attachments, uid, "", true)
+		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, kind, body, "", in.Attachments, uid, "", nil, true)
 		return err
 	})
 	if err != nil || !ownTx {
@@ -355,7 +374,7 @@ func (s *service) runInline(ctx context.Context, tenantID uuid.UUID, m Message, 
 // queueMessage stores the outbound message (body) and queues inbox.send. A non-empty
 // secretBody is what is actually sent: it is sealed into the job payload, bound to the
 // new message id, and never written to messages/conversations.
-func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, conv Conversation, kind, body, secretBody string, att []social.Attachment, by *uuid.UUID, tag string, markRead bool) (Message, int64, error) {
+func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, conv Conversation, kind, body, secretBody string, att []social.Attachment, by *uuid.UUID, tag string, wa *WATemplateSpec, markRead bool) (Message, int64, error) {
 	now := s.now()
 	m, _, err := s.repo.InsertMessage(ctx, tx, tenantID, Message{ConversationID: conv.ID, Direction: Outbound, Kind: kind, Body: strp(body),
 		Attachments: att, SentBy: by, Status: MsgQueued, SentAt: now})
@@ -365,7 +384,7 @@ func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUI
 	if err := s.repo.BumpOutbound(ctx, tx, tenantID, conv.ID, now, Preview(kind, m.Body), markRead); err != nil {
 		return m, 0, err
 	}
-	p := SendPayload{TenantID: tenantID, MessageID: m.ID, Tag: tag}
+	p := SendPayload{TenantID: tenantID, MessageID: m.ID, Tag: tag, WATemplate: wa}
 	if secretBody != "" {
 		if s.sealer == nil {
 			return m, 0, errors.New("inbox: no sealer configured for sensitive messages")
@@ -430,14 +449,23 @@ func (s *service) sendSystem(ctx context.Context, tenantID, customerID uuid.UUID
 		if err != nil {
 			return err
 		}
-		tag := ""
+		tag, kind := "", "text"
+		var wa *WATemplateSpec
 		if !conv.CanReply(s.now()) {
-			if !social.MessageTagAllowed(conv.Platform) {
+			switch {
+			case social.MessageTagAllowed(conv.Platform):
+				tag = OutsideWindowTag
+			case conv.Platform == social.PlatformWhatsApp:
+				spec, err := s.whatsAppTemplate(ctx, tenantID, PurposeFrom(ctx))
+				if err != nil {
+					return err
+				}
+				spec.Customer, wa, kind = cust.Name, &spec, "template"
+			default:
 				return apperr.Validation("the 24-hour " + conv.Platform + " window is closed for " + cust.Name + "; an approved template is required")
 			}
-			tag = OutsideWindowTag
 		}
-		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, "text", body, secretBody, nil, nil, tag, false)
+		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, kind, body, secretBody, nil, nil, tag, wa, false)
 		return err
 	})
 	if err != nil || !ownTx {
@@ -536,6 +564,9 @@ func (s *service) Deliver(ctx context.Context, p SendPayload, final bool) error 
 			}
 		}
 		if err == nil {
+			if p.WATemplate != nil {
+				sctx = social.WithWhatsAppTemplate(sctx, p.WATemplate.Resolve(body))
+			}
 			extID, err = s.social.Send(sctx, acct, conv.ExternalThreadID, body, m.Attachments)
 		}
 	}

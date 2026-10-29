@@ -5,6 +5,7 @@ package config
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -28,8 +29,11 @@ type Config struct {
 	JWTSecret          string
 	JWTAccessTTL       time.Duration
 	JWTRefreshTTL      time.Duration
-	VaultKey           []byte
-	VaultKeyVersion    int
+	// VaultKey/VaultKeyVersion are the ACTIVE key (new secrets are sealed with it).
+	VaultKey        []byte
+	VaultKeyVersion int
+	// VaultKeys holds every key version that can decrypt (VAULT_KEYS + VAULT_KEY).
+	VaultKeys map[int][]byte
 	PublicAppURL       string
 	PublicAPIURL       string
 	UploadDir          string
@@ -131,20 +135,16 @@ func FromEnv(get func(string) string) (Config, error) {
 	if len(c.JWTSecret) < 32 {
 		errs = append(errs, errors.New("JWT_SECRET must be at least 32 bytes"))
 	}
-	key, err := hex.DecodeString(str("VAULT_KEY", ""))
-	if err != nil || len(key) != 32 {
-		errs = append(errs, errors.New("VAULT_KEY must be 64 hex chars (32 bytes)"))
-	}
-	c.VaultKey = key
-	if c.VaultKeyVersion < 1 {
-		errs = append(errs, errors.New("VAULT_KEY_VERSION must be >= 1"))
-	}
+	c.VaultKeys, c.VaultKeyVersion, errs = vaultKeys(str, c.VaultKeyVersion, errs)
+	c.VaultKey = c.VaultKeys[c.VaultKeyVersion]
 	if !c.IsDev() { // every environment except development/test (staging included)
 		if strings.Contains(c.JWTSecret, "change-me") {
 			errs = append(errs, fmt.Errorf("JWT_SECRET must be changed (APP_ENV=%s)", c.AppEnv))
 		}
-		if isZero(key) || hex.EncodeToString(key) == DevVaultKey {
-			errs = append(errs, fmt.Errorf("VAULT_KEY must be a real secret, not the dev key (APP_ENV=%s)", c.AppEnv))
+		for ver, key := range c.VaultKeys {
+			if isZero(key) || hex.EncodeToString(key) == DevVaultKey {
+				errs = append(errs, fmt.Errorf("vault key v%d must be a real secret, not the dev key (APP_ENV=%s)", ver, c.AppEnv))
+			}
 		}
 		if strings.Contains(c.MetaVerifyToken, "change-me") {
 			errs = append(errs, fmt.Errorf("META_VERIFY_TOKEN must be changed (APP_ENV=%s)", c.AppEnv))
@@ -154,6 +154,72 @@ func FromEnv(get func(string) string) (Config, error) {
 		}
 	}
 	return c, errors.Join(errs...)
+}
+
+// vaultKeys parses the vault key ring (SECURITY L3):
+//
+//	VAULT_KEYS="v1:<64 hex>,v2:<64 hex>"   every version that may still decrypt
+//	VAULT_ACTIVE_KEY_VERSION=2              the version new secrets are sealed with
+//	VAULT_KEY=<64 hex> + VAULT_KEY_VERSION   single-key form (still supported; merged in)
+//
+// The active version defaults to VAULT_KEY_VERSION when VAULT_KEY is set, else to the
+// highest version in VAULT_KEYS.
+func vaultKeys(str func(k, def string) string, singleVersion int, errs []error) (map[int][]byte, int, []error) {
+	keys := map[int][]byte{}
+	if v := str("VAULT_KEYS", ""); v != "" {
+		for _, part := range strings.Split(v, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			name, hexKey, ok := strings.Cut(part, ":")
+			ver, err := strconv.Atoi(strings.TrimPrefix(strings.TrimSpace(name), "v"))
+			if !ok || err != nil || ver < 1 {
+				errs = append(errs, errors.New(`VAULT_KEYS entries must look like "v1:<64 hex chars>"`))
+				continue
+			}
+			key, err := hex.DecodeString(strings.TrimSpace(hexKey))
+			if err != nil || len(key) != 32 {
+				errs = append(errs, fmt.Errorf("VAULT_KEYS v%d must be 64 hex chars (32 bytes)", ver))
+				continue
+			}
+			if _, dup := keys[ver]; dup {
+				errs = append(errs, fmt.Errorf("VAULT_KEYS lists v%d twice", ver))
+			}
+			keys[ver] = key
+		}
+	}
+	active := 0
+	if v := str("VAULT_KEY", ""); v != "" || len(keys) == 0 {
+		key, err := hex.DecodeString(v)
+		if err != nil || len(key) != 32 {
+			errs = append(errs, errors.New("VAULT_KEY must be 64 hex chars (32 bytes)"))
+		} else {
+			if singleVersion < 1 {
+				errs = append(errs, errors.New("VAULT_KEY_VERSION must be >= 1"))
+			}
+			if old, ok := keys[singleVersion]; ok && !bytes.Equal(old, key) {
+				errs = append(errs, fmt.Errorf("VAULT_KEY differs from VAULT_KEYS v%d", singleVersion))
+			}
+			keys[singleVersion] = key
+			active = singleVersion
+		}
+	}
+	if v := str("VAULT_ACTIVE_KEY_VERSION", ""); v != "" {
+		n, err := strconv.Atoi(strings.TrimPrefix(v, "v"))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("VAULT_ACTIVE_KEY_VERSION: %w", err))
+		}
+		active = n
+	} else if active == 0 {
+		for ver := range keys {
+			active = max(active, ver)
+		}
+	}
+	if _, ok := keys[active]; !ok && len(keys) > 0 {
+		errs = append(errs, fmt.Errorf("VAULT_ACTIVE_KEY_VERSION %d is not in VAULT_KEYS", active))
+	}
+	return keys, active, errs
 }
 
 // DevVaultKey is the committed development VAULT_KEY (.env.example, Makefile). It is

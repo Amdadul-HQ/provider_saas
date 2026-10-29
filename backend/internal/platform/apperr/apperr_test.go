@@ -28,3 +28,19 @@ func TestCode(t *testing.T) {
 		t.Fatal("FieldOf")
 	}
 }
+
+// SECURITY L5 follow-up: every kind maps to a stable, non-empty extensions.code, and the
+// codes are distinct (the frontend switches on them).
+func TestEveryKindHasACode(t *testing.T) {
+	seen := map[string]bool{}
+	for _, k := range Kinds {
+		code := Code(&Error{Kind: k, Msg: "x"})
+		if code == "" || seen[code] {
+			t.Fatalf("kind %v: code %q empty or duplicate", k, code)
+		}
+		seen[code] = true
+	}
+	if Code(RateLimitedFor("slow down", 3e9)) != "RATE_LIMITED" || RetryAfterOf(RateLimitedFor("x", 3e9)) != 3e9 {
+		t.Fatal("RateLimitedFor")
+	}
+}

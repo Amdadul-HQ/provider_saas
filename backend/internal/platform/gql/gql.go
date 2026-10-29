@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -71,6 +72,10 @@ func ErrorPresenter(dev bool) graphql.ErrorPresenterFunc {
 			gerr.Extensions["code"] = code
 			if f := apperr.FieldOf(err); f != "" {
 				gerr.Extensions["field"] = f
+			}
+			if code == "RATE_LIMITED" {
+				// Seconds until a retry can succeed (at least 1), like the HTTP Retry-After header.
+				gerr.Extensions["retryAfter"] = max(1, int(math.Ceil(apperr.RetryAfterOf(err).Seconds())))
 			}
 			return gerr
 		}

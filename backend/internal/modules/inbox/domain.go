@@ -51,6 +51,7 @@ type Conversation struct {
 	LastInboundAt      *time.Time
 	Labels             []string
 	CreatedAt          time.Time
+	LastAutoReplyAt    *time.Time
 }
 
 // ActivityAt is the inbox sort key (last message, else creation).

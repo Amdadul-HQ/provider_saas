@@ -19,12 +19,12 @@ import (
 type Repository struct{}
 
 const convCols = `c.id, c.tenant_id, c.social_account_id, c.customer_id, c.identity_id, c.platform, c.external_thread_id, c.status,
-	c.assigned_to, c.unread_count, c.last_message_at, c.last_message_preview, c.last_inbound_at, c.labels, c.created_at`
+	c.assigned_to, c.unread_count, c.last_message_at, c.last_message_preview, c.last_inbound_at, c.labels, c.created_at, c.last_auto_reply_at`
 
 func scanConv(r pgx.Row) (Conversation, error) {
 	var c Conversation
 	err := r.Scan(&c.ID, &c.TenantID, &c.SocialAccountID, &c.CustomerID, &c.IdentityID, &c.Platform, &c.ExternalThreadID, &c.Status,
-		&c.AssignedTo, &c.UnreadCount, &c.LastMessageAt, &c.LastMessagePreview, &c.LastInboundAt, &c.Labels, &c.CreatedAt)
+		&c.AssignedTo, &c.UnreadCount, &c.LastMessageAt, &c.LastMessagePreview, &c.LastInboundAt, &c.Labels, &c.CreatedAt, &c.LastAutoReplyAt)
 	return c, err
 }
 

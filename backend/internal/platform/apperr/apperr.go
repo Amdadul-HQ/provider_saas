@@ -2,7 +2,10 @@
 // The GraphQL error presenter maps them to `extensions.code`.
 package apperr
 
-import "errors"
+import (
+	"errors"
+	"time"
+)
 
 var (
 	ErrNotFound        = errors.New("not found")
@@ -18,6 +21,8 @@ type Error struct {
 	Kind  error
 	Msg   string
 	Field string
+	// RetryAfter (rate-limited errors) is exposed as extensions.retryAfter in seconds.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string { return e.Msg }
@@ -32,6 +37,24 @@ func Conflict(msg string) error        { return &Error{Kind: ErrConflict, Msg: m
 func Forbidden(msg string) error       { return &Error{Kind: ErrForbidden, Msg: msg} }
 func Unauthenticated(msg string) error { return &Error{Kind: ErrUnauthenticated, Msg: msg} }
 func RateLimited(msg string) error     { return &Error{Kind: ErrRateLimited, Msg: msg} }
+
+// RateLimitedFor is RateLimited with a retry hint (extensions.retryAfter, seconds).
+func RateLimitedFor(msg string, after time.Duration) error {
+	return &Error{Kind: ErrRateLimited, Msg: msg, RetryAfter: after}
+}
+
+// Kinds lists every domain error kind; each must map to a stable extensions.code
+// (TestEveryKindHasACode, SECURITY L5).
+var Kinds = []error{ErrNotFound, ErrValidation, ErrForbidden, ErrConflict, ErrUnauthenticated, ErrRateLimited}
+
+// RetryAfterOf returns the retry hint of a rate-limited error (0 = none).
+func RetryAfterOf(err error) time.Duration {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.RetryAfter
+	}
+	return 0
+}
 
 // Code returns the GraphQL extensions.code for err ("" when err is not a domain error).
 func Code(err error) string {
