@@ -91,10 +91,12 @@ func (v *Vault) SelfCheck(ctx context.Context) error {
 			return fmt.Errorf("vault: VAULT_KEY fingerprint %s does not match the key tenant %s was seeded with (%s)", fp, x.id, x.fp)
 		}
 		var ct, nonce []byte
-		var ver int
+		var ver, aadVer int
+		var sid uuid.UUID
+		var kind string
 		err := db.WithTenantTx(ctx, v.pool, x.id, func(ctx context.Context, tx pgx.Tx) error {
-			return tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version FROM vault_secrets WHERE tenant_id = $1
-				ORDER BY created_at DESC LIMIT 1`, x.id).Scan(&ct, &nonce, &ver)
+			return tx.QueryRow(ctx, `SELECT id, kind, ciphertext, nonce, key_version, aad_version FROM vault_secrets WHERE tenant_id = $1
+				ORDER BY created_at DESC LIMIT 1`, x.id).Scan(&sid, &kind, &ct, &nonce, &ver, &aadVer)
 		})
 		if errors.Is(err, pgx.ErrNoRows) {
 			continue
@@ -102,7 +104,7 @@ func (v *Vault) SelfCheck(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if _, err := v.cipher.Decrypt(ct, nonce, x.id[:], ver); err != nil {
+		if _, err := v.open(x.id, sid, kind, aadVer, ct, nonce, ver); err != nil {
 			return fmt.Errorf("vault: a stored secret of tenant %s cannot be decrypted with the current VAULT_KEY (fingerprint %s)", x.id, fp)
 		}
 	}

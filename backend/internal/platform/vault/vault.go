@@ -1,6 +1,8 @@
 // Package vault encrypts secrets (social tokens, master-account credentials) with
-// AES-256-GCM (ADR-004). Ciphertext is bound to its tenant via GCM additional data,
-// so a row copied to another tenant cannot be decrypted. Reveal is audit-logged.
+// AES-256-GCM (ADR-004). Ciphertext is bound to its tenant, its own row id and its kind
+// via GCM additional data (AAD v2, SECURITY L3), so a ciphertext copied to another row or
+// tenant cannot be decrypted. Keys are versioned (VAULT_KEYS); `api rotate-vault`
+// re-encrypts every secret with the active key. Reveal is audit-logged.
 package vault
 
 import (
@@ -11,12 +13,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"provider_saas/internal/platform/apperr"
 	"provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 )
@@ -87,23 +89,88 @@ func (c *Cipher) Decrypt(ciphertext, nonce, aad []byte, version int) ([]byte, er
 	return pt, nil
 }
 
+// Versions lists the key versions the cipher can decrypt, ascending.
+func (c *Cipher) Versions() []int {
+	out := make([]int, 0, len(c.keys))
+	for v := range c.keys {
+		out = append(out, v)
+	}
+	sort.Ints(out)
+	return out
+}
+
+// Active is the key version new ciphertexts are sealed with.
+func (c *Cipher) Active() int { return c.current }
+
+// AAD versions (vault_secrets.aad_version, migration 00016).
+const (
+	AADTenant = 1 // legacy: tenant id only
+	AADSecret = 2 // "vault:v2|tenant|secret id|kind"
+)
+
+// AAD returns the GCM additional data of a stored secret.
+func AAD(version int, tenantID, secretID uuid.UUID, kind string) ([]byte, error) {
+	switch version {
+	case AADTenant:
+		return tenantID[:], nil
+	case AADSecret:
+		return []byte("vault:v2|" + tenantID.String() + "|" + secretID.String() + "|" + kind), nil
+	}
+	return nil, fmt.Errorf("vault: unknown aad version %d", version)
+}
+
 // Vault stores encrypted secrets in vault_secrets.
 type Vault struct {
 	pool   *pgxpool.Pool
 	cipher *Cipher
 }
 
+// New builds a vault with a single key.
 func New(pool *pgxpool.Pool, key []byte, version int) (*Vault, error) {
-	c, err := NewCipher(key, version)
+	return NewWithKeys(pool, map[int][]byte{version: key}, version)
+}
+
+// NewWithKeys builds a vault that seals with keys[active] and opens any listed version
+// (VAULT_KEYS="v1:hex,v2:hex", VAULT_ACTIVE_KEY_VERSION=2).
+func NewWithKeys(pool *pgxpool.Pool, keys map[int][]byte, active int) (*Vault, error) {
+	k, ok := keys[active]
+	if !ok {
+		return nil, fmt.Errorf("vault: active key version %d is not configured", active)
+	}
+	c, err := NewCipher(k, active)
 	if err != nil {
 		return nil, err
+	}
+	for ver, key := range keys {
+		if len(key) != 32 {
+			return nil, fmt.Errorf("vault: key v%d must be 32 bytes", ver)
+		}
+		c.AddKey(ver, key)
 	}
 	return &Vault{pool: pool, cipher: c}, nil
 }
 
-// Store encrypts plaintext and returns the new secret id. Joins a tx carried by ctx.
+// ActiveVersion is the key version new secrets are sealed with.
+func (v *Vault) ActiveVersion() int { return v.cipher.current }
+
+func (v *Vault) seal(tenantID, secretID uuid.UUID, kind string, plaintext []byte) (ct, nonce []byte, ver int, err error) {
+	aad, _ := AAD(AADSecret, tenantID, secretID, kind)
+	return v.cipher.Encrypt(plaintext, aad)
+}
+
+func (v *Vault) open(tenantID, secretID uuid.UUID, kind string, aadVersion int, ct, nonce []byte, keyVersion int) ([]byte, error) {
+	aad, err := AAD(aadVersion, tenantID, secretID, kind)
+	if err != nil {
+		return nil, err
+	}
+	return v.cipher.Decrypt(ct, nonce, aad, keyVersion)
+}
+
+// Store encrypts plaintext and returns the new secret id. The id is chosen before sealing
+// so it can be part of the AAD. Joins a tx carried by ctx.
 func (v *Vault) Store(ctx context.Context, tenantID uuid.UUID, kind string, plaintext []byte) (uuid.UUID, error) {
-	ct, nonce, ver, err := v.cipher.Encrypt(plaintext, tenantID[:])
+	id := uuid.New()
+	ct, nonce, ver, err := v.seal(tenantID, id, kind, plaintext)
 	if err != nil {
 		return uuid.Nil, err
 	}
@@ -111,30 +178,32 @@ func (v *Vault) Store(ctx context.Context, tenantID uuid.UUID, kind string, plai
 	if p, ok := auth.FromContext(ctx); ok {
 		createdBy = &p.UserID
 	}
-	var id uuid.UUID
 	err = db.WithTenantTx(ctx, v.pool, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `INSERT INTO vault_secrets (tenant_id, kind, ciphertext, nonce, key_version, created_by)
-			VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, tenantID, kind, ct, nonce, ver, createdBy).Scan(&id)
+		_, err := tx.Exec(ctx, `INSERT INTO vault_secrets (id, tenant_id, kind, ciphertext, nonce, key_version, aad_version, created_by)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, id, tenantID, kind, ct, nonce, ver, AADSecret, createdBy)
+		return err
 	})
-	return id, db.MapErr(err, "secret")
+	if err != nil {
+		return uuid.Nil, db.MapErr(err, "secret")
+	}
+	return id, nil
 }
 
-// Update re-encrypts an existing secret (also used for key rotation).
+// Update re-encrypts an existing secret with new plaintext (active key, AAD v2).
 func (v *Vault) Update(ctx context.Context, tenantID, secretID uuid.UUID, plaintext []byte) error {
-	ct, nonce, ver, err := v.cipher.Encrypt(plaintext, tenantID[:])
-	if err != nil {
-		return err
-	}
 	return db.WithTenantTx(ctx, v.pool, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		tag, err := tx.Exec(ctx, `UPDATE vault_secrets SET ciphertext=$3, nonce=$4, key_version=$5
-			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID, ct, nonce, ver)
+		var kind string
+		err := tx.QueryRow(ctx, `SELECT kind FROM vault_secrets WHERE tenant_id=$1 AND id=$2 FOR UPDATE`, tenantID, secretID).Scan(&kind)
+		if err != nil {
+			return db.MapErr(err, "secret")
+		}
+		ct, nonce, ver, err := v.seal(tenantID, secretID, kind, plaintext)
 		if err != nil {
 			return err
 		}
-		if tag.RowsAffected() == 0 {
-			return apperr.NotFound("secret")
-		}
-		return nil
+		_, err = tx.Exec(ctx, `UPDATE vault_secrets SET ciphertext=$3, nonce=$4, key_version=$5, aad_version=$6
+			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID, ct, nonce, ver, AADSecret)
+		return err
 	})
 }
 
@@ -143,14 +212,14 @@ func (v *Vault) Reveal(ctx context.Context, tenantID, secretID uuid.UUID) ([]byt
 	var out []byte
 	err := db.WithTenantTx(ctx, v.pool, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		var ct, nonce []byte
-		var ver int
+		var ver, aadVer int
 		var kind string
-		err := tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version, kind FROM vault_secrets
-			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID).Scan(&ct, &nonce, &ver, &kind)
+		err := tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version, aad_version, kind FROM vault_secrets
+			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID).Scan(&ct, &nonce, &ver, &aadVer, &kind)
 		if err != nil {
 			return db.MapErr(err, "secret")
 		}
-		pt, err := v.cipher.Decrypt(ct, nonce, tenantID[:], ver)
+		pt, err := v.open(tenantID, secretID, kind, aadVer, ct, nonce, ver)
 		if err != nil {
 			return err
 		}
@@ -183,13 +252,14 @@ func (v *Vault) Delete(ctx context.Context, tenantID, secretID uuid.UUID) error 
 // and callers that render a secret into an outbound message must audit explicitly.
 func (v *Vault) Open(ctx context.Context, tenantID, secretID uuid.UUID) ([]byte, error) {
 	var ct, nonce []byte
-	var ver int
+	var ver, aadVer int
+	var kind string
 	err := db.WithTenantTx(ctx, v.pool, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		return tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version FROM vault_secrets
-			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID).Scan(&ct, &nonce, &ver)
+		return tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version, aad_version, kind FROM vault_secrets
+			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID).Scan(&ct, &nonce, &ver, &aadVer, &kind)
 	})
 	if err != nil {
 		return nil, db.MapErr(err, "secret")
 	}
-	return v.cipher.Decrypt(ct, nonce, tenantID[:], ver)
+	return v.open(tenantID, secretID, kind, aadVer, ct, nonce, ver)
 }
