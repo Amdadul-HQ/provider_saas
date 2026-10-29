@@ -12,13 +12,6 @@ import (
 	"github.com/google/uuid"
 )
 
-type AtRiskCustomer struct {
-	Customer   Customer   `json:"customer"`
-	Reason     string     `json:"reason"`
-	ExpiresAt  *time.Time `json:"expiresAt,omitempty"`
-	DueBalance int64      `json:"dueBalance"`
-}
-
 type AuditLog struct {
 	ID         string         `json:"id"`
 	User       *User          `json:"user,omitempty"`
@@ -261,26 +254,6 @@ type InviteMemberInput struct {
 	CommissionBps *int    `json:"commissionBps,omitempty"`
 }
 
-type Invoice struct {
-	ID         uuid.UUID     `json:"id"`
-	Number     string        `json:"number"`
-	Customer   Customer      `json:"customer"`
-	Status     InvoiceStatus `json:"status"`
-	Items      []InvoiceItem `json:"items"`
-	Payments   []Payment     `json:"payments"`
-	Subtotal   int64         `json:"subtotal"`
-	Discount   int64         `json:"discount"`
-	Total      int64         `json:"total"`
-	PaidAmount int64         `json:"paidAmount"`
-	DueAmount  int64         `json:"dueAmount"`
-	Currency   string        `json:"currency"`
-	IssuedAt   time.Time     `json:"issuedAt"`
-	DueAt      *time.Time    `json:"dueAt,omitempty"`
-	PaidAt     *time.Time    `json:"paidAt,omitempty"`
-	Notes      *string       `json:"notes,omitempty"`
-	CreatedAt  time.Time     `json:"createdAt"`
-}
-
 type InvoiceConnection struct {
 	Edges      []InvoiceEdge `json:"edges"`
 	PageInfo   PageInfo      `json:"pageInfo"`
@@ -315,39 +288,9 @@ type InvoiceItemInput struct {
 	UnitPrice      int64      `json:"unitPrice"`
 }
 
-type LedgerEntry struct {
-	ID        uuid.UUID       `json:"id"`
-	EntryType LedgerEntryType `json:"entryType"`
-	Amount    int64           `json:"amount"`
-	RefType   *string         `json:"refType,omitempty"`
-	RefID     *uuid.UUID      `json:"refId,omitempty"`
-	Note      *string         `json:"note,omitempty"`
-	CreatedBy *User           `json:"createdBy,omitempty"`
-	CreatedAt time.Time       `json:"createdAt"`
-}
-
 type LoginInput struct {
 	Identifier string `json:"identifier"`
 	Password   string `json:"password"`
-}
-
-type MasterAccount struct {
-	ID            uuid.UUID           `json:"id"`
-	Product       Product             `json:"product"`
-	Supplier      *Supplier           `json:"supplier,omitempty"`
-	Label         string              `json:"label"`
-	LoginHint     *string             `json:"loginHint,omitempty"`
-	HasCredential bool                `json:"hasCredential"`
-	TotalSlots    int                 `json:"totalSlots"`
-	FreeSlots     int                 `json:"freeSlots"`
-	PurchaseCost  int64               `json:"purchaseCost"`
-	Currency      string              `json:"currency"`
-	PurchasedAt   *time.Time          `json:"purchasedAt,omitempty"`
-	ExpiresAt     *time.Time          `json:"expiresAt,omitempty"`
-	Status        MasterAccountStatus `json:"status"`
-	Notes         *string             `json:"notes,omitempty"`
-	Slots         []Slot              `json:"slots"`
-	CreatedAt     time.Time           `json:"createdAt"`
 }
 
 type MasterAccountFilter struct {
@@ -447,24 +390,6 @@ type PageInfo struct {
 type PageInput struct {
 	First *int    `json:"first,omitempty"`
 	After *string `json:"after,omitempty"`
-}
-
-type Payment struct {
-	ID                 uuid.UUID     `json:"id"`
-	Customer           *Customer     `json:"customer,omitempty"`
-	Invoice            *Invoice      `json:"invoice,omitempty"`
-	Method             PaymentMethod `json:"method"`
-	TrxID              *string       `json:"trxId,omitempty"`
-	SenderNumber       *string       `json:"senderNumber,omitempty"`
-	Amount             int64         `json:"amount"`
-	Currency           string        `json:"currency"`
-	Status             PaymentStatus `json:"status"`
-	VerifiedBy         *User         `json:"verifiedBy,omitempty"`
-	VerifiedAt         *time.Time    `json:"verifiedAt,omitempty"`
-	VerificationSource *string       `json:"verificationSource,omitempty"`
-	Notes              *string       `json:"notes,omitempty"`
-	ReceivedAt         time.Time     `json:"receivedAt"`
-	CreatedAt          time.Time     `json:"createdAt"`
 }
 
 type PaymentConnection struct {
@@ -627,15 +552,6 @@ type ProductPlanInput struct {
 	SortOrder    *int   `json:"sortOrder,omitempty"`
 }
 
-type ProductStat struct {
-	Product             Product `json:"product"`
-	ActiveSubscriptions int     `json:"activeSubscriptions"`
-	Revenue             int64   `json:"revenue"`
-	Cost                int64   `json:"cost"`
-	Profit              int64   `json:"profit"`
-	RenewalRate         float64 `json:"renewalRate"`
-}
-
 type PublicOrder struct {
 	Number              int            `json:"number"`
 	Status              OrderStatus    `json:"status"`
@@ -752,16 +668,6 @@ type SendMessageInput struct {
 	Attachments    map[string]any `json:"attachments,omitempty"`
 }
 
-type Slot struct {
-	ID              uuid.UUID     `json:"id"`
-	MasterAccountID uuid.UUID     `json:"masterAccountId"`
-	SlotNo          int           `json:"slotNo"`
-	Label           *string       `json:"label,omitempty"`
-	Pin             *string       `json:"pin,omitempty"`
-	Status          SlotStatus    `json:"status"`
-	Subscription    *Subscription `json:"subscription,omitempty"`
-}
-
 type SocialAccount struct {
 	ID                    uuid.UUID           `json:"id"`
 	Platform              SocialPlatform      `json:"platform"`
@@ -809,9 +715,6 @@ type StorefrontInput struct {
 	PaymentInstructions *string        `json:"paymentInstructions,omitempty"`
 	PaymentNumbers      map[string]any `json:"paymentNumbers,omitempty"`
 	IsPublished         *bool          `json:"isPublished,omitempty"`
-}
-
-type Subscription struct {
 }
 
 type SubscriptionConnection struct {

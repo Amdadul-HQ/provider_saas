@@ -7,18 +7,17 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 )
 
 // Ping is the resolver for the ping field.
 func (r *mutationResolver) Ping(ctx context.Context) (bool, error) {
-	panic(fmt.Errorf("not implemented: Ping - ping"))
+	return true, nil
 }
 
 // Health is the resolver for the health field.
 func (r *queryResolver) Health(ctx context.Context) (string, error) {
-	panic(fmt.Errorf("not implemented: Health - health"))
+	return "ok", nil
 }
 
 // Mutation returns generated.MutationResolver implementation.

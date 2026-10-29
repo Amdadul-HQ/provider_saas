@@ -7,43 +7,102 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/auth"
 
 	"github.com/google/uuid"
 )
 
 // Register is the resolver for the register field.
 func (r *mutationResolver) Register(ctx context.Context, input model.RegisterInput) (*model.AuthPayload, error) {
-	panic(fmt.Errorf("not implemented: Register - register"))
+	s, err := r.AuthSvc.Register(ctx, auth.RegisterInput{Name: input.Name, Email: input.Email, Phone: input.Phone,
+		Password: input.Password, BusinessName: input.BusinessName}, clientMeta(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return r.payload(ctx, s)
 }
 
 // Login is the resolver for the login field.
 func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*model.AuthPayload, error) {
-	panic(fmt.Errorf("not implemented: Login - login"))
+	s, err := r.AuthSvc.Login(ctx, auth.LoginInput{Identifier: input.Identifier, Password: input.Password}, clientMeta(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return r.payload(ctx, s)
 }
 
 // RefreshToken is the resolver for the refreshToken field.
 func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error) {
-	panic(fmt.Errorf("not implemented: RefreshToken - refreshToken"))
+	s, err := r.AuthSvc.Refresh(ctx, refreshToken, clientMeta(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return r.payload(ctx, s)
 }
 
 // Logout is the resolver for the logout field.
 func (r *mutationResolver) Logout(ctx context.Context, refreshToken string) (bool, error) {
-	panic(fmt.Errorf("not implemented: Logout - logout"))
+	return true, r.AuthSvc.Logout(ctx, refreshToken)
 }
 
 // SwitchTenant is the resolver for the switchTenant field.
 func (r *mutationResolver) SwitchTenant(ctx context.Context, tenantID uuid.UUID) (*model.AuthPayload, error) {
-	panic(fmt.Errorf("not implemented: SwitchTenant - switchTenant"))
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.AuthSvc.SwitchTenant(ctx, p.UserID, tenantID, clientMeta(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return r.payload(ctx, s)
 }
 
 // ChangePassword is the resolver for the changePassword field.
 func (r *mutationResolver) ChangePassword(ctx context.Context, currentPassword string, newPassword string) (bool, error) {
-	panic(fmt.Errorf("not implemented: ChangePassword - changePassword"))
+	p, err := principal(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.AuthSvc.ChangePassword(ctx, p.UserID, currentPassword, newPassword)
 }
 
 // Me is the resolver for the me field.
 func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: Me - me"))
+	p, err := principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u, err := r.AuthSvc.User(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	return toUser(u), nil
 }
+
+// Memberships is the resolver for the memberships field.
+func (r *userResolver) Memberships(ctx context.Context, obj *model.User) ([]model.Membership, error) {
+	if obj.Memberships != nil { // prefilled by register/login/refresh/switchTenant
+		return obj.Memberships, nil
+	}
+	// Only the user themself (or a platform admin) may list memberships.
+	if p, ok := principalOK(ctx); !ok || (p.UserID != obj.ID && !p.IsPlatformAdmin) {
+		return []model.Membership{}, nil
+	}
+	ms, err := r.AuthSvc.Memberships(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Membership, len(ms))
+	for i, m := range ms {
+		out[i] = toMembership(m)
+	}
+	return out, nil
+}
+
+// User returns generated.UserResolver implementation.
+func (r *Resolver) User() generated.UserResolver { return &userResolver{r} }
+
+type userResolver struct{ *Resolver }

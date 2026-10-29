@@ -7,61 +7,173 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/tenant"
+	"provider_saas/internal/platform/apperr"
+	"strconv"
 
 	"github.com/google/uuid"
 )
 
 // UpdateTenant is the resolver for the updateTenant field.
 func (r *mutationResolver) UpdateTenant(ctx context.Context, input model.UpdateTenantInput) (*model.Tenant, error) {
-	panic(fmt.Errorf("not implemented: UpdateTenant - updateTenant"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TenantSvc.Update(ctx, tid, uid, tenant.UpdateInput{Name: input.Name, Currency: input.Currency,
+		Timezone: input.Timezone, Locale: input.Locale, Settings: input.Settings})
+	if err != nil {
+		return nil, err
+	}
+	return toTenant(t), nil
 }
 
 // InviteMember is the resolver for the inviteMember field.
 func (r *mutationResolver) InviteMember(ctx context.Context, input model.InviteMemberInput) (*model.TenantMember, error) {
-	panic(fmt.Errorf("not implemented: InviteMember - inviteMember"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.TenantSvc.InviteMember(ctx, tid, uid, tenant.InviteInput{Email: input.Email, Phone: input.Phone, Name: input.Name,
+		Role: lower(input.Role), CommissionBps: deref(input.CommissionBps, 0)})
+	if err != nil {
+		return nil, err
+	}
+	return toMember(m), nil
 }
 
 // UpdateMemberRole is the resolver for the updateMemberRole field.
 func (r *mutationResolver) UpdateMemberRole(ctx context.Context, memberID uuid.UUID, role model.Role, commissionBps *int) (*model.TenantMember, error) {
-	panic(fmt.Errorf("not implemented: UpdateMemberRole - updateMemberRole"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.TenantSvc.UpdateMemberRole(ctx, tid, uid, memberID, lower(role), commissionBps)
+	if err != nil {
+		return nil, err
+	}
+	return toMember(m), nil
 }
 
 // RemoveMember is the resolver for the removeMember field.
 func (r *mutationResolver) RemoveMember(ctx context.Context, memberID uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: RemoveMember - removeMember"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.TenantSvc.RemoveMember(ctx, tid, uid, memberID)
 }
 
 // MarkNotificationRead is the resolver for the markNotificationRead field.
 func (r *mutationResolver) MarkNotificationRead(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: MarkNotificationRead - markNotificationRead"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.TenantSvc.MarkNotificationRead(ctx, tid, uid, &id)
 }
 
 // MarkAllNotificationsRead is the resolver for the markAllNotificationsRead field.
 func (r *mutationResolver) MarkAllNotificationsRead(ctx context.Context) (bool, error) {
-	panic(fmt.Errorf("not implemented: MarkAllNotificationsRead - markAllNotificationsRead"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.TenantSvc.MarkNotificationRead(ctx, tid, uid, nil)
 }
 
 // Tenant is the resolver for the tenant field.
 func (r *queryResolver) Tenant(ctx context.Context) (*model.Tenant, error) {
-	panic(fmt.Errorf("not implemented: Tenant - tenant"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TenantSvc.Get(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return toTenant(t), nil
 }
 
 // Notifications is the resolver for the notifications field.
 func (r *queryResolver) Notifications(ctx context.Context, unreadOnly *bool, page *model.PageInput) ([]model.Notification, error) {
-	panic(fmt.Errorf("not implemented: Notifications - notifications"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(&model.PageInput{First: pageFirst(page)})
+	if err != nil {
+		return nil, err
+	}
+	ns, err := r.TenantSvc.Notifications(ctx, tid, uid, deref(unreadOnly, false), pg.First)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Notification, len(ns))
+	for i, n := range ns {
+		out[i] = model.Notification{ID: n.ID, Kind: n.Kind, Title: n.Title, Body: n.Body, Link: n.Link, ReadAt: n.ReadAt, CreatedAt: n.CreatedAt}
+	}
+	return out, nil
 }
 
-// AuditLogs is the resolver for the auditLogs field.
+// AuditLogs is the resolver for the auditLogs field. page.after is the id of the last row seen.
 func (r *queryResolver) AuditLogs(ctx context.Context, page *model.PageInput) ([]model.AuditLog, error) {
-	panic(fmt.Errorf("not implemented: AuditLogs - auditLogs"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var before int64
+	if page != nil && page.After != nil && *page.After != "" {
+		if before, err = strconv.ParseInt(*page.After, 10, 64); err != nil {
+			return nil, apperr.ValidationField("page.after", "must be an audit log id")
+		}
+	}
+	pg, _ := pageOf(&model.PageInput{First: pageFirst(page)})
+	logs, err := r.TenantSvc.AuditLogs(ctx, tid, before, pg.First)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.AuditLog, len(logs))
+	for i, l := range logs {
+		meta := l.Meta
+		if meta == nil {
+			meta = map[string]any{}
+		}
+		out[i] = model.AuditLog{ID: strconv.FormatInt(l.ID, 10), Action: l.Action, EntityType: l.EntityType, EntityID: l.EntityID,
+			Meta: meta, CreatedAt: l.CreatedAt}
+		if l.UserID != nil {
+			u, err := r.loaders(ctx).User.Load(ctx, *l.UserID)
+			if err != nil {
+				return nil, err
+			}
+			if u != nil {
+				out[i].User = toUser(*u)
+			}
+		}
+	}
+	return out, nil
 }
 
 // Members is the resolver for the members field.
 func (r *tenantResolver) Members(ctx context.Context, obj *model.Tenant) ([]model.TenantMember, error) {
-	panic(fmt.Errorf("not implemented: Members - members"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if obj.ID != tid {
+		return []model.TenantMember{}, nil
+	}
+	ms, err := r.TenantSvc.Members(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.TenantMember, len(ms))
+	for i, m := range ms {
+		out[i] = *toMember(m)
+	}
+	return out, nil
 }
 
 // Tenant returns generated.TenantResolver implementation.

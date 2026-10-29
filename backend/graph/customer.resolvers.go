@@ -7,71 +7,182 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/customer"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
 
 // Identities is the resolver for the identities field.
 func (r *customerResolver) Identities(ctx context.Context, obj *model.Customer) ([]model.CustomerIdentity, error) {
-	panic(fmt.Errorf("not implemented: Identities - identities"))
+	is, err := r.loaders(ctx).IdentitiesBy.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.CustomerIdentity, len(is))
+	for i, x := range is {
+		out[i] = toIdentity(x)
+	}
+	return out, nil
 }
 
 // Subscriptions is the resolver for the subscriptions field.
 func (r *customerResolver) Subscriptions(ctx context.Context, obj *model.Customer) ([]model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: Subscriptions - subscriptions"))
+	ss, err := r.loaders(ctx).SubsByCust.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	return toSubscriptions(ss), nil
 }
 
 // ActiveSubscriptionCount is the resolver for the activeSubscriptionCount field.
 func (r *customerResolver) ActiveSubscriptionCount(ctx context.Context, obj *model.Customer) (int, error) {
-	panic(fmt.Errorf("not implemented: ActiveSubscriptionCount - activeSubscriptionCount"))
+	return r.loaders(ctx).ActiveByCust.Load(ctx, obj.ID)
 }
 
 // CreateCustomer is the resolver for the createCustomer field.
 func (r *mutationResolver) CreateCustomer(ctx context.Context, input model.CreateCustomerInput) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: CreateCustomer - createCustomer"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CustomerSvc.Create(ctx, tid, uid, customer.CreateInput{Name: input.Name, Phone: input.Phone, Email: input.Email,
+		Whatsapp: input.Whatsapp, Telegram: input.Telegram, Address: input.Address, Tags: input.Tags, Notes: input.Notes,
+		Source: lower(deref(input.Source, model.CustomerSourceManual)), PreferredChannel: lowerPtr(input.PreferredChannel)})
+	if err != nil {
+		return nil, err
+	}
+	return toCustomer(c), nil
 }
 
 // UpdateCustomer is the resolver for the updateCustomer field.
 func (r *mutationResolver) UpdateCustomer(ctx context.Context, id uuid.UUID, input model.UpdateCustomerInput) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: UpdateCustomer - updateCustomer"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CustomerSvc.Update(ctx, tid, id, customer.UpdateInput{Name: input.Name, Phone: input.Phone, Email: input.Email,
+		Whatsapp: input.Whatsapp, Telegram: input.Telegram, Address: input.Address, Tags: input.Tags, Notes: input.Notes,
+		Status: lowerPtr(input.Status), PreferredChannel: lowerPtr(input.PreferredChannel)})
+	if err != nil {
+		return nil, err
+	}
+	return toCustomer(c), nil
 }
 
 // DeleteCustomer is the resolver for the deleteCustomer field.
 func (r *mutationResolver) DeleteCustomer(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteCustomer - deleteCustomer"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.CustomerSvc.Delete(ctx, tid, id)
 }
 
 // AddCustomerNote is the resolver for the addCustomerNote field.
 func (r *mutationResolver) AddCustomerNote(ctx context.Context, customerID uuid.UUID, body string) (*model.CustomerNote, error) {
-	panic(fmt.Errorf("not implemented: AddCustomerNote - addCustomerNote"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	n, err := r.CustomerSvc.AddNote(ctx, tid, customerID, uid, body)
+	if err != nil {
+		return nil, err
+	}
+	return r.toNote(ctx, n)
 }
 
 // MergeCustomers is the resolver for the mergeCustomers field.
 func (r *mutationResolver) MergeCustomers(ctx context.Context, keepID uuid.UUID, mergeID uuid.UUID) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: MergeCustomers - mergeCustomers"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CustomerSvc.Merge(ctx, tid, keepID, mergeID)
+	if err != nil {
+		return nil, err
+	}
+	return toCustomer(c), nil
 }
 
 // LinkIdentity is the resolver for the linkIdentity field.
 func (r *mutationResolver) LinkIdentity(ctx context.Context, customerID uuid.UUID, identityID uuid.UUID) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: LinkIdentity - linkIdentity"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CustomerSvc.LinkIdentity(ctx, tid, customerID, identityID)
+	if err != nil {
+		return nil, err
+	}
+	return toCustomer(c), nil
 }
 
 // Customers is the resolver for the customers field.
 func (r *queryResolver) Customers(ctx context.Context, filter *model.CustomerFilter, page *model.PageInput) (*model.CustomerConnection, error) {
-	panic(fmt.Errorf("not implemented: Customers - customers"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f customer.Filter
+	if filter != nil {
+		f = customer.Filter{Search: filter.Search, Status: lowerPtr(filter.Status), Source: lowerPtr(filter.Source), Tags: filter.Tags,
+			HasDue: filter.HasDue, ExpiringWithinDays: filter.ExpiringWithinDays}
+	}
+	items, more, total, err := r.CustomerSvc.List(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	conn := &model.CustomerConnection{Edges: make([]model.CustomerEdge, len(items)), TotalCount: total,
+		PageInfo: pageInfo(items, more, customerCursor)}
+	for i, c := range items {
+		conn.Edges[i] = model.CustomerEdge{Cursor: customerCursor(c), Node: *toCustomer(c)}
+	}
+	return conn, nil
 }
 
 // Customer is the resolver for the customer field.
 func (r *queryResolver) Customer(ctx context.Context, id uuid.UUID) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.CustomerSvc.Get(ctx, tid, id)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toCustomer(c), nil
 }
 
 // CustomerNotes is the resolver for the customerNotes field.
 func (r *queryResolver) CustomerNotes(ctx context.Context, customerID uuid.UUID) ([]model.CustomerNote, error) {
-	panic(fmt.Errorf("not implemented: CustomerNotes - customerNotes"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ns, err := r.CustomerSvc.Notes(ctx, tid, customerID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.CustomerNote, len(ns))
+	for i, n := range ns {
+		m, err := r.toNote(ctx, n)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = *m
+	}
+	return out, nil
 }
 
 // Customer returns generated.CustomerResolver implementation.

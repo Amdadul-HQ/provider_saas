@@ -1,4 +1,50 @@
 package graph
 
+import (
+	"context"
+
+	"github.com/99designs/gqlgen/graphql"
+
+	"provider_saas/graph/generated"
+	"provider_saas/graph/model"
+	"provider_saas/internal/modules/analytics"
+	"provider_saas/internal/modules/auth"
+	"provider_saas/internal/modules/billing"
+	"provider_saas/internal/modules/catalog"
+	"provider_saas/internal/modules/customer"
+	"provider_saas/internal/modules/inventory"
+	"provider_saas/internal/modules/subscription"
+	"provider_saas/internal/modules/tenant"
+	"provider_saas/internal/platform/gql"
+)
+
 // Resolver is the root resolver. Module services are injected by internal/app.Container.
-type Resolver struct{}
+// Resolvers stay thin: parse input -> call service -> map to GraphQL model.
+type Resolver struct {
+	AuthSvc         auth.Service
+	TenantSvc       tenant.Service
+	CustomerSvc     customer.Service
+	CatalogSvc      catalog.Service
+	InventorySvc    inventory.Service
+	SubscriptionSvc subscription.Service
+	BillingSvc      billing.Service
+	AnalyticsSvc    analytics.Service
+	// Social, Inbox, Content, Ticket, Reminder, Storefront services are added by the
+	// second engineer (see internal/modules/<m>/interfaces.go).
+}
+
+// NewExecutableSchema wires resolvers and directives.
+func NewExecutableSchema(r *Resolver) graphql.ExecutableSchema {
+	cfg := generated.Config{Resolvers: r}
+	cfg.Directives.Auth = func(ctx context.Context, _ any, next graphql.Resolver, roles []model.Role) (any, error) {
+		rs := make([]string, len(roles))
+		for i, role := range roles {
+			rs[i] = string(role)
+		}
+		if err := gql.RequireAuth(ctx, rs); err != nil {
+			return nil, err
+		}
+		return next(ctx)
+	}
+	return generated.NewExecutableSchema(cfg)
+}

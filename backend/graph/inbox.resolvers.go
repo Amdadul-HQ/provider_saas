@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,97 +15,97 @@ import (
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *conversationResolver) SocialAccount(ctx context.Context, obj *model.Conversation) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: SocialAccount - socialAccount"))
+	return nil, errNotImplemented
 }
 
 // Customer is the resolver for the customer field.
 func (r *conversationResolver) Customer(ctx context.Context, obj *model.Conversation) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return nil, errNotImplemented
 }
 
 // Identity is the resolver for the identity field.
 func (r *conversationResolver) Identity(ctx context.Context, obj *model.Conversation) (*model.CustomerIdentity, error) {
-	panic(fmt.Errorf("not implemented: Identity - identity"))
+	return nil, errNotImplemented
 }
 
 // AssignedTo is the resolver for the assignedTo field.
 func (r *conversationResolver) AssignedTo(ctx context.Context, obj *model.Conversation) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: AssignedTo - assignedTo"))
+	return nil, errNotImplemented
 }
 
 // Messages is the resolver for the messages field.
 func (r *conversationResolver) Messages(ctx context.Context, obj *model.Conversation, page *model.PageInput) ([]model.Message, error) {
-	panic(fmt.Errorf("not implemented: Messages - messages"))
+	return nil, errNotImplemented
 }
 
 // SentBy is the resolver for the sentBy field.
 func (r *messageResolver) SentBy(ctx context.Context, obj *model.Message) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: SentBy - sentBy"))
+	return nil, errNotImplemented
 }
 
 // SendMessage is the resolver for the sendMessage field.
 func (r *mutationResolver) SendMessage(ctx context.Context, input model.SendMessageInput) (*model.Message, error) {
-	panic(fmt.Errorf("not implemented: SendMessage - sendMessage"))
+	return nil, errNotImplemented
 }
 
 // AssignConversation is the resolver for the assignConversation field.
 func (r *mutationResolver) AssignConversation(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: AssignConversation - assignConversation"))
+	return nil, errNotImplemented
 }
 
 // SetConversationStatus is the resolver for the setConversationStatus field.
 func (r *mutationResolver) SetConversationStatus(ctx context.Context, id uuid.UUID, status model.ConversationStatus) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: SetConversationStatus - setConversationStatus"))
+	return nil, errNotImplemented
 }
 
 // MarkConversationRead is the resolver for the markConversationRead field.
 func (r *mutationResolver) MarkConversationRead(ctx context.Context, id uuid.UUID) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: MarkConversationRead - markConversationRead"))
+	return nil, errNotImplemented
 }
 
 // AddConversationLabel is the resolver for the addConversationLabel field.
 func (r *mutationResolver) AddConversationLabel(ctx context.Context, id uuid.UUID, label string) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: AddConversationLabel - addConversationLabel"))
+	return nil, errNotImplemented
 }
 
 // RemoveConversationLabel is the resolver for the removeConversationLabel field.
 func (r *mutationResolver) RemoveConversationLabel(ctx context.Context, id uuid.UUID, label string) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: RemoveConversationLabel - removeConversationLabel"))
+	return nil, errNotImplemented
 }
 
 // LinkConversationCustomer is the resolver for the linkConversationCustomer field.
 func (r *mutationResolver) LinkConversationCustomer(ctx context.Context, id uuid.UUID, customerID uuid.UUID) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: LinkConversationCustomer - linkConversationCustomer"))
+	return nil, errNotImplemented
 }
 
 // UpsertMessageTemplate is the resolver for the upsertMessageTemplate field.
 func (r *mutationResolver) UpsertMessageTemplate(ctx context.Context, id *uuid.UUID, input model.MessageTemplateInput) (*model.MessageTemplate, error) {
-	panic(fmt.Errorf("not implemented: UpsertMessageTemplate - upsertMessageTemplate"))
+	return nil, errNotImplemented
 }
 
 // DeleteMessageTemplate is the resolver for the deleteMessageTemplate field.
 func (r *mutationResolver) DeleteMessageTemplate(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteMessageTemplate - deleteMessageTemplate"))
+	return false, errNotImplemented
 }
 
 // Conversations is the resolver for the conversations field.
 func (r *queryResolver) Conversations(ctx context.Context, filter *model.ConversationFilter, page *model.PageInput) (*model.ConversationConnection, error) {
-	panic(fmt.Errorf("not implemented: Conversations - conversations"))
+	return nil, errNotImplemented
 }
 
 // Conversation is the resolver for the conversation field.
 func (r *queryResolver) Conversation(ctx context.Context, id uuid.UUID) (*model.Conversation, error) {
-	panic(fmt.Errorf("not implemented: Conversation - conversation"))
+	return nil, errNotImplemented
 }
 
 // InboxCounts is the resolver for the inboxCounts field.
 func (r *queryResolver) InboxCounts(ctx context.Context) (*model.InboxCounts, error) {
-	panic(fmt.Errorf("not implemented: InboxCounts - inboxCounts"))
+	return nil, errNotImplemented
 }
 
 // MessageTemplates is the resolver for the messageTemplates field.
 func (r *queryResolver) MessageTemplates(ctx context.Context, category *model.TemplateCategory) ([]model.MessageTemplate, error) {
-	panic(fmt.Errorf("not implemented: MessageTemplates - messageTemplates"))
+	return nil, errNotImplemented
 }
 
 // Conversation returns generated.ConversationResolver implementation.

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"provider_saas/graph/model"
+	"provider_saas/graph/scalars"
 	"strconv"
 	"sync/atomic"
 	"time"
@@ -54,6 +55,7 @@ type ResolverRoot interface {
 	Tenant() TenantResolver
 	Ticket() TicketResolver
 	TicketComment() TicketCommentResolver
+	User() UserResolver
 }
 
 type DirectiveRoot struct {
@@ -1063,25 +1065,12 @@ type SocialAccountResolver interface {
 	OpenConversationCount(ctx context.Context, obj *model.SocialAccount) (int, error)
 }
 type SubscriptionResolver interface {
-	ID(ctx context.Context) (<-chan uuid.UUID, error)
-	Customer(ctx context.Context) (<-chan *model.Customer, error)
-	Product(ctx context.Context) (<-chan *model.Product, error)
-	Plan(ctx context.Context) (<-chan *model.ProductPlan, error)
-	Slot(ctx context.Context) (<-chan *model.Slot, error)
-	StartsAt(ctx context.Context) (<-chan *time.Time, error)
-	ExpiresAt(ctx context.Context) (<-chan *time.Time, error)
-	DaysLeft(ctx context.Context) (<-chan int, error)
-	Price(ctx context.Context) (<-chan int64, error)
-	Cost(ctx context.Context) (<-chan int64, error)
-	Currency(ctx context.Context) (<-chan string, error)
-	Status(ctx context.Context) (<-chan model.SubscriptionStatus, error)
-	AutoRenew(ctx context.Context) (<-chan bool, error)
-	DeliveredAt(ctx context.Context) (<-chan *time.Time, error)
-	DeliveryNote(ctx context.Context) (<-chan *string, error)
-	RenewedFromID(ctx context.Context) (<-chan *uuid.UUID, error)
-	SoldBy(ctx context.Context) (<-chan *model.User, error)
-	Notes(ctx context.Context) (<-chan *string, error)
-	CreatedAt(ctx context.Context) (<-chan *time.Time, error)
+	Customer(ctx context.Context, obj *model.Subscription) (*model.Customer, error)
+	Product(ctx context.Context, obj *model.Subscription) (*model.Product, error)
+	Plan(ctx context.Context, obj *model.Subscription) (*model.ProductPlan, error)
+	Slot(ctx context.Context, obj *model.Subscription) (*model.Slot, error)
+
+	SoldBy(ctx context.Context, obj *model.Subscription) (*model.User, error)
 }
 type SupplierResolver interface {
 	AccountCount(ctx context.Context, obj *model.Supplier) (int, error)
@@ -1100,6 +1089,9 @@ type TicketResolver interface {
 }
 type TicketCommentResolver interface {
 	Author(ctx context.Context, obj *model.TicketComment) (*model.User, error)
+}
+type UserResolver interface {
+	Memberships(ctx context.Context, obj *model.User) ([]model.Membership, error)
 }
 
 // endregion ************************** generated!.gotpl **************************
@@ -5442,23 +5434,6 @@ func (e *executableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
 				Data: buf.Bytes(),
 			}
 		}
-	case ast.Subscription:
-		next := ec._Subscription(ctx, opCtx.Operation.SelectionSet)
-
-		var buf bytes.Buffer
-		return func(ctx context.Context) *graphql.Response {
-			buf.Reset()
-			data := next(ctx)
-
-			if data == nil {
-				return nil
-			}
-			data.MarshalGQL(&buf)
-
-			return &graphql.Response{
-				Data: buf.Bytes(),
-			}
-		}
 
 	default:
 		return graphql.OneShot(graphql.ErrorResponse(ctx, "unsupported GraphQL operation"))
@@ -5485,7 +5460,11 @@ func newExecutionContext(
 }
 
 var sources = []*ast.Source{
-	{Name: "../schema/base.graphql", Input: `scalar Time
+	{Name: "../schema/base.graphql", Input: `# Explicit root types: without this, ` + "`" + `type Subscription` + "`" + ` (a business entity in the
+# subscription module) would be treated as the GraphQL subscription root.
+schema { query: Query mutation: Mutation }
+
+scalar Time
 scalar UUID
 scalar Money      # int64 minor units (paisa)
 scalar JSON
@@ -11250,20 +11229,23 @@ func (ec *executionContext) fieldContext_Customer_identities(_ context.Context, 
 }
 
 func (ec *executionContext) _Customer_subscriptions(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Customer_subscriptions(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := []model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚕprovider_saasᚋgraphᚋmodelᚐSubscriptionᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Customer_subscriptions(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Customer().Subscriptions(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v []model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚕprovider_saasᚋgraphᚋmodelᚐSubscriptionᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Customer_subscriptions(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17758,20 +17740,37 @@ func (ec *executionContext) fieldContext_Mutation_portalRequestRenewal(ctx conte
 }
 
 func (ec *executionContext) _Mutation_createSubscription(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_createSubscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_createSubscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CreateSubscription(ctx, fc.Args["input"].(model.CreateSubscriptionInput))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_createSubscription(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17798,20 +17797,37 @@ func (ec *executionContext) fieldContext_Mutation_createSubscription(ctx context
 }
 
 func (ec *executionContext) _Mutation_renewSubscription(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_renewSubscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_renewSubscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().RenewSubscription(ctx, fc.Args["id"].(uuid.UUID), fc.Args["input"].(model.RenewSubscriptionInput))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_renewSubscription(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17838,20 +17854,37 @@ func (ec *executionContext) fieldContext_Mutation_renewSubscription(ctx context.
 }
 
 func (ec *executionContext) _Mutation_markDelivered(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_markDelivered(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_markDelivered(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().MarkDelivered(ctx, fc.Args["id"].(uuid.UUID), fc.Args["deliveryNote"].(*string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_markDelivered(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17878,20 +17911,42 @@ func (ec *executionContext) fieldContext_Mutation_markDelivered(ctx context.Cont
 }
 
 func (ec *executionContext) _Mutation_cancelSubscription(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_cancelSubscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_cancelSubscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().CancelSubscription(ctx, fc.Args["id"].(uuid.UUID), fc.Args["reason"].(*string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_cancelSubscription(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17918,20 +17973,37 @@ func (ec *executionContext) fieldContext_Mutation_cancelSubscription(ctx context
 }
 
 func (ec *executionContext) _Mutation_reassignSlot(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_reassignSlot(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_reassignSlot(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ReassignSlot(ctx, fc.Args["id"].(uuid.UUID), fc.Args["slotId"].(uuid.UUID))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_reassignSlot(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -17958,20 +18030,42 @@ func (ec *executionContext) fieldContext_Mutation_reassignSlot(ctx context.Conte
 }
 
 func (ec *executionContext) _Mutation_extendSubscription(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Mutation_extendSubscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_extendSubscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ExtendSubscription(ctx, fc.Args["id"].(uuid.UUID), fc.Args["days"].(int), fc.Args["reason"].(*string))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Mutation_extendSubscription(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -24307,20 +24401,37 @@ func (ec *executionContext) fieldContext_Query_subscriptions(ctx context.Context
 }
 
 func (ec *executionContext) _Query_subscription(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_subscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_subscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().Subscription(ctx, fc.Args["id"].(uuid.UUID))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		false,
+	)
 }
 func (ec *executionContext) fieldContext_Query_subscription(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -24347,20 +24458,37 @@ func (ec *executionContext) fieldContext_Query_subscription(ctx context.Context,
 }
 
 func (ec *executionContext) _Query_expiringSubscriptions(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Query_expiringSubscriptions(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := []model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2ᚕprovider_saasᚋgraphᚋmodelᚐSubscriptionᚄ(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_expiringSubscriptions(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().ExpiringSubscriptions(ctx, fc.Args["days"].(*int))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				if ec.Directives.Auth == nil {
+					var zeroVal []model.Subscription
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v []model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2ᚕprovider_saasᚋgraphᚋmodelᚐSubscriptionᚄ(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_Query_expiringSubscriptions(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -24873,20 +25001,23 @@ func (ec *executionContext) fieldContext_Reminder_customer(_ context.Context, fi
 }
 
 func (ec *executionContext) _Reminder_subscription(ctx context.Context, field graphql.CollectedField, obj *model.Reminder) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Reminder_subscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Reminder_subscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Reminder().Subscription(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		false,
+	)
 }
 func (ec *executionContext) fieldContext_Reminder_subscription(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -25532,20 +25663,23 @@ func (ec *executionContext) fieldContext_Slot_status(_ context.Context, field gr
 }
 
 func (ec *executionContext) _Slot_subscription(ctx context.Context, field graphql.CollectedField, obj *model.Slot) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Slot_subscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Slot_subscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Slot().Subscription(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		false,
+	)
 }
 func (ec *executionContext) fieldContext_Slot_subscription(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -26204,8 +26338,8 @@ func (ec *executionContext) fieldContext_Storefront_publicUrl(_ context.Context,
 	return graphql.NewScalarFieldContext("Storefront", field, false, false, "String")
 }
 
-func (ec *executionContext) _Subscription_id(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_id(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26213,7 +26347,7 @@ func (ec *executionContext) _Subscription_id(ctx context.Context, field graphql.
 			return ec.fieldContext_Subscription_id(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().ID(ctx)
+			return obj.ID, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v uuid.UUID) graphql.Marshaler {
@@ -26224,11 +26358,11 @@ func (ec *executionContext) _Subscription_id(ctx context.Context, field graphql.
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "UUID")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "UUID")
 }
 
-func (ec *executionContext) _Subscription_customer(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_customer(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26236,7 +26370,7 @@ func (ec *executionContext) _Subscription_customer(ctx context.Context, field gr
 			return ec.fieldContext_Subscription_customer(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Customer(ctx)
+			return ec.Resolvers.Subscription().Customer(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.Customer) graphql.Marshaler {
@@ -26259,8 +26393,8 @@ func (ec *executionContext) fieldContext_Subscription_customer(_ context.Context
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_product(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_product(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26268,7 +26402,7 @@ func (ec *executionContext) _Subscription_product(ctx context.Context, field gra
 			return ec.fieldContext_Subscription_product(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Product(ctx)
+			return ec.Resolvers.Subscription().Product(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.Product) graphql.Marshaler {
@@ -26291,8 +26425,8 @@ func (ec *executionContext) fieldContext_Subscription_product(_ context.Context,
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_plan(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_plan(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26300,7 +26434,7 @@ func (ec *executionContext) _Subscription_plan(ctx context.Context, field graphq
 			return ec.fieldContext_Subscription_plan(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Plan(ctx)
+			return ec.Resolvers.Subscription().Plan(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.ProductPlan) graphql.Marshaler {
@@ -26323,8 +26457,8 @@ func (ec *executionContext) fieldContext_Subscription_plan(_ context.Context, fi
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_slot(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_slot(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26332,7 +26466,7 @@ func (ec *executionContext) _Subscription_slot(ctx context.Context, field graphq
 			return ec.fieldContext_Subscription_slot(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Slot(ctx)
+			return ec.Resolvers.Subscription().Slot(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.Slot) graphql.Marshaler {
@@ -26355,8 +26489,8 @@ func (ec *executionContext) fieldContext_Subscription_slot(_ context.Context, fi
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_startsAt(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_startsAt(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26364,22 +26498,22 @@ func (ec *executionContext) _Subscription_startsAt(ctx context.Context, field gr
 			return ec.fieldContext_Subscription_startsAt(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().StartsAt(ctx)
+			return obj.StartsAt, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
-			return ec.marshalNTime2ᚖtimeᚐTime(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_startsAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Time")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Time")
 }
 
-func (ec *executionContext) _Subscription_expiresAt(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26387,22 +26521,22 @@ func (ec *executionContext) _Subscription_expiresAt(ctx context.Context, field g
 			return ec.fieldContext_Subscription_expiresAt(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().ExpiresAt(ctx)
+			return obj.ExpiresAt, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
-			return ec.marshalNTime2ᚖtimeᚐTime(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Time")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Time")
 }
 
-func (ec *executionContext) _Subscription_daysLeft(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_daysLeft(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26410,7 +26544,7 @@ func (ec *executionContext) _Subscription_daysLeft(ctx context.Context, field gr
 			return ec.fieldContext_Subscription_daysLeft(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().DaysLeft(ctx)
+			return obj.DaysLeft, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v int) graphql.Marshaler {
@@ -26421,11 +26555,11 @@ func (ec *executionContext) _Subscription_daysLeft(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_daysLeft(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Int")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Int")
 }
 
-func (ec *executionContext) _Subscription_price(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_price(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26433,7 +26567,7 @@ func (ec *executionContext) _Subscription_price(ctx context.Context, field graph
 			return ec.fieldContext_Subscription_price(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Price(ctx)
+			return obj.Price, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
@@ -26444,11 +26578,11 @@ func (ec *executionContext) _Subscription_price(ctx context.Context, field graph
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_price(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Money")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Money")
 }
 
-func (ec *executionContext) _Subscription_cost(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_cost(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26456,7 +26590,7 @@ func (ec *executionContext) _Subscription_cost(ctx context.Context, field graphq
 			return ec.fieldContext_Subscription_cost(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Cost(ctx)
+			return obj.Cost, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v int64) graphql.Marshaler {
@@ -26467,11 +26601,11 @@ func (ec *executionContext) _Subscription_cost(ctx context.Context, field graphq
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_cost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Money")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Money")
 }
 
-func (ec *executionContext) _Subscription_currency(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_currency(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26479,7 +26613,7 @@ func (ec *executionContext) _Subscription_currency(ctx context.Context, field gr
 			return ec.fieldContext_Subscription_currency(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Currency(ctx)
+			return obj.Currency, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
@@ -26490,11 +26624,11 @@ func (ec *executionContext) _Subscription_currency(ctx context.Context, field gr
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_currency(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "String")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "String")
 }
 
-func (ec *executionContext) _Subscription_status(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_status(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26502,7 +26636,7 @@ func (ec *executionContext) _Subscription_status(ctx context.Context, field grap
 			return ec.fieldContext_Subscription_status(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Status(ctx)
+			return obj.Status, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v model.SubscriptionStatus) graphql.Marshaler {
@@ -26513,11 +26647,11 @@ func (ec *executionContext) _Subscription_status(ctx context.Context, field grap
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "SubscriptionStatus")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "SubscriptionStatus")
 }
 
-func (ec *executionContext) _Subscription_autoRenew(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_autoRenew(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26525,7 +26659,7 @@ func (ec *executionContext) _Subscription_autoRenew(ctx context.Context, field g
 			return ec.fieldContext_Subscription_autoRenew(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().AutoRenew(ctx)
+			return obj.AutoRenew, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
@@ -26536,11 +26670,11 @@ func (ec *executionContext) _Subscription_autoRenew(ctx context.Context, field g
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_autoRenew(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Boolean")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Boolean")
 }
 
-func (ec *executionContext) _Subscription_deliveredAt(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_deliveredAt(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26548,7 +26682,7 @@ func (ec *executionContext) _Subscription_deliveredAt(ctx context.Context, field
 			return ec.fieldContext_Subscription_deliveredAt(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().DeliveredAt(ctx)
+			return obj.DeliveredAt, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
@@ -26559,11 +26693,11 @@ func (ec *executionContext) _Subscription_deliveredAt(ctx context.Context, field
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_deliveredAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Time")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Time")
 }
 
-func (ec *executionContext) _Subscription_deliveryNote(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_deliveryNote(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26571,7 +26705,7 @@ func (ec *executionContext) _Subscription_deliveryNote(ctx context.Context, fiel
 			return ec.fieldContext_Subscription_deliveryNote(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().DeliveryNote(ctx)
+			return obj.DeliveryNote, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
@@ -26582,11 +26716,11 @@ func (ec *executionContext) _Subscription_deliveryNote(ctx context.Context, fiel
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_deliveryNote(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "String")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "String")
 }
 
-func (ec *executionContext) _Subscription_renewedFromId(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_renewedFromId(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26594,7 +26728,7 @@ func (ec *executionContext) _Subscription_renewedFromId(ctx context.Context, fie
 			return ec.fieldContext_Subscription_renewedFromId(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().RenewedFromID(ctx)
+			return obj.RenewedFromID, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *uuid.UUID) graphql.Marshaler {
@@ -26605,11 +26739,11 @@ func (ec *executionContext) _Subscription_renewedFromId(ctx context.Context, fie
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_renewedFromId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "UUID")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "UUID")
 }
 
-func (ec *executionContext) _Subscription_soldBy(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_soldBy(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26617,7 +26751,7 @@ func (ec *executionContext) _Subscription_soldBy(ctx context.Context, field grap
 			return ec.fieldContext_Subscription_soldBy(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().SoldBy(ctx)
+			return ec.Resolvers.Subscription().SoldBy(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *model.User) graphql.Marshaler {
@@ -26640,8 +26774,8 @@ func (ec *executionContext) fieldContext_Subscription_soldBy(_ context.Context, 
 	return fc, nil
 }
 
-func (ec *executionContext) _Subscription_notes(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_notes(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26649,7 +26783,7 @@ func (ec *executionContext) _Subscription_notes(ctx context.Context, field graph
 			return ec.fieldContext_Subscription_notes(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().Notes(ctx)
+			return obj.Notes, nil
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
@@ -26660,11 +26794,11 @@ func (ec *executionContext) _Subscription_notes(ctx context.Context, field graph
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_notes(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "String")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "String")
 }
 
-func (ec *executionContext) _Subscription_createdAt(ctx context.Context, field graphql.CollectedField) (ret func(ctx context.Context) graphql.Marshaler) {
-	return graphql.ResolveFieldStream(
+func (ec *executionContext) _Subscription_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Subscription) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
@@ -26672,18 +26806,18 @@ func (ec *executionContext) _Subscription_createdAt(ctx context.Context, field g
 			return ec.fieldContext_Subscription_createdAt(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return ec.Resolvers.Subscription().CreatedAt(ctx)
+			return obj.CreatedAt, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
-			return ec.marshalNTime2ᚖtimeᚐTime(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
 		},
 		true,
 		true,
 	)
 }
 func (ec *executionContext) fieldContext_Subscription_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
-	return graphql.NewScalarFieldContext("Subscription", field, true, true, "Time")
+	return graphql.NewScalarFieldContext("Subscription", field, false, false, "Time")
 }
 
 func (ec *executionContext) _SubscriptionConnection_edges(ctx context.Context, field graphql.CollectedField, obj *model.SubscriptionConnection) (ret graphql.Marshaler) {
@@ -26797,20 +26931,23 @@ func (ec *executionContext) fieldContext_SubscriptionEdge_cursor(_ context.Conte
 }
 
 func (ec *executionContext) _SubscriptionEdge_node(ctx context.Context, field graphql.CollectedField, obj *model.SubscriptionEdge) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_SubscriptionEdge_node(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := model.Subscription{}
-	fc.Result = res
-	return ec.marshalNSubscription2provider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_SubscriptionEdge_node(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Node, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.Subscription) graphql.Marshaler {
+			return ec.marshalNSubscription2provider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		true,
+	)
 }
 func (ec *executionContext) fieldContext_SubscriptionEdge_node(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -27497,20 +27634,23 @@ func (ec *executionContext) fieldContext_Ticket_customer(_ context.Context, fiel
 }
 
 func (ec *executionContext) _Ticket_subscription(ctx context.Context, field graphql.CollectedField, obj *model.Ticket) (ret graphql.Marshaler) {
-	fc, err := ec.fieldContext_Ticket_subscription(ctx, field)
-	if err != nil {
-		return graphql.Null
-	}
-	ctx = graphql.WithFieldContext(ctx, fc)
-	defer func() {
-		if r := recover(); r != nil {
-			ec.Error(ctx, ec.Recover(ctx, r))
-			ret = graphql.Null
-		}
-	}()
-	res := &model.Subscription{}
-	fc.Result = res
-	return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, field.Selections, res)
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Ticket_subscription(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Ticket().Subscription(ctx, obj)
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.Subscription) graphql.Marshaler {
+			return ec.marshalOSubscription2ᚖprovider_saasᚋgraphᚋmodelᚐSubscription(ctx, selections, v)
+		},
+		true,
+		false,
+	)
 }
 func (ec *executionContext) fieldContext_Ticket_subscription(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
@@ -28315,7 +28455,7 @@ func (ec *executionContext) _User_memberships(ctx context.Context, field graphql
 			return ec.fieldContext_User_memberships(ctx, field)
 		},
 		func(ctx context.Context) (any, error) {
-			return obj.Memberships, nil
+			return ec.Resolvers.User().Memberships(ctx, obj)
 		},
 		nil,
 		func(ctx context.Context, selections ast.SelectionSet, v []model.Membership) graphql.Marshaler {
@@ -28329,8 +28469,8 @@ func (ec *executionContext) fieldContext_User_memberships(_ context.Context, fie
 	fc = &graphql.FieldContext{
 		Object:     "User",
 		Field:      field,
-		IsMethod:   false,
-		IsResolver: false,
+		IsMethod:   true,
+		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_Membership(ctx, field)
 		},
@@ -36679,58 +36819,130 @@ func (ec *executionContext) _Storefront(ctx context.Context, sel ast.SelectionSe
 
 var subscriptionImplementors = []string{"Subscription"}
 
-func (ec *executionContext) _Subscription(ctx context.Context, sel ast.SelectionSet) func(ctx context.Context) graphql.Marshaler {
+func (ec *executionContext) _Subscription(ctx context.Context, sel ast.SelectionSet, obj *model.Subscription) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, subscriptionImplementors)
-	ctx = graphql.WithFieldContext(ctx, &graphql.FieldContext{
-		Object: "Subscription",
-	})
-	if len(fields) != 1 {
-		graphql.AddErrorf(ctx, "must subscribe to exactly one stream")
-		return nil
+
+	out := graphql.NewFieldSet(fields)
+	deferred := graphql.NewDeferredGroup(ctx)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Subscription")
+		case "id":
+			out.Values[i] = ec._Subscription_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "customer":
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, true,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Subscription_customer(ctx, field, obj)
+				})
+		case "product":
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, true,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Subscription_product(ctx, field, obj)
+				})
+		case "plan":
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, false,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Subscription_plan(ctx, field, obj)
+				})
+		case "slot":
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, false,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Subscription_slot(ctx, field, obj)
+				})
+		case "startsAt":
+			out.Values[i] = ec._Subscription_startsAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "expiresAt":
+			out.Values[i] = ec._Subscription_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "daysLeft":
+			out.Values[i] = ec._Subscription_daysLeft(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "price":
+			out.Values[i] = ec._Subscription_price(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "cost":
+			out.Values[i] = ec._Subscription_cost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "currency":
+			out.Values[i] = ec._Subscription_currency(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "status":
+			out.Values[i] = ec._Subscription_status(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "autoRenew":
+			out.Values[i] = ec._Subscription_autoRenew(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "deliveredAt":
+			out.Values[i] = ec._Subscription_deliveredAt(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "deliveryNote":
+			out.Values[i] = ec._Subscription_deliveryNote(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "renewedFromId":
+			out.Values[i] = ec._Subscription_renewedFromId(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "soldBy":
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, false,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Subscription_soldBy(ctx, field, obj)
+				})
+		case "notes":
+			out.Values[i] = ec._Subscription_notes(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		case "createdAt":
+			out.Values[i] = ec._Subscription_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				atomic.AddUint32(&out.Invalids, 1)
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
 	}
 
-	switch fields[0].Name {
-	case "id":
-		return ec._Subscription_id(ctx, fields[0])
-	case "customer":
-		return ec._Subscription_customer(ctx, fields[0])
-	case "product":
-		return ec._Subscription_product(ctx, fields[0])
-	case "plan":
-		return ec._Subscription_plan(ctx, fields[0])
-	case "slot":
-		return ec._Subscription_slot(ctx, fields[0])
-	case "startsAt":
-		return ec._Subscription_startsAt(ctx, fields[0])
-	case "expiresAt":
-		return ec._Subscription_expiresAt(ctx, fields[0])
-	case "daysLeft":
-		return ec._Subscription_daysLeft(ctx, fields[0])
-	case "price":
-		return ec._Subscription_price(ctx, fields[0])
-	case "cost":
-		return ec._Subscription_cost(ctx, fields[0])
-	case "currency":
-		return ec._Subscription_currency(ctx, fields[0])
-	case "status":
-		return ec._Subscription_status(ctx, fields[0])
-	case "autoRenew":
-		return ec._Subscription_autoRenew(ctx, fields[0])
-	case "deliveredAt":
-		return ec._Subscription_deliveredAt(ctx, fields[0])
-	case "deliveryNote":
-		return ec._Subscription_deliveryNote(ctx, fields[0])
-	case "renewedFromId":
-		return ec._Subscription_renewedFromId(ctx, fields[0])
-	case "soldBy":
-		return ec._Subscription_soldBy(ctx, fields[0])
-	case "notes":
-		return ec._Subscription_notes(ctx, fields[0])
-	case "createdAt":
-		return ec._Subscription_createdAt(ctx, fields[0])
-	default:
-		panic("unknown field " + strconv.Quote(fields[0].Name))
+	if n := len(deferred.Defers); n > 0 {
+		atomic.AddInt32(&ec.Deferred, int32(min(n, math.MaxInt32)))
+		ec.ProcessDeferredGroup(deferred)
 	}
+
+	return out
 }
 
 var subscriptionConnectionImplementors = []string{"SubscriptionConnection"}
@@ -37308,42 +37520,43 @@ func (ec *executionContext) _User(ctx context.Context, sel ast.SelectionSet, obj
 		case "id":
 			out.Values[i] = ec._User_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "name":
 			out.Values[i] = ec._User_name(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "email":
 			out.Values[i] = ec._User_email(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "phone":
 			out.Values[i] = ec._User_phone(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "avatarUrl":
 			out.Values[i] = ec._User_avatarUrl(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "isPlatformAdmin":
 			out.Values[i] = ec._User_isPlatformAdmin(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		case "memberships":
-			out.Values[i] = ec._User_memberships(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
-				out.Invalids++
-			}
+			out.ResolveConcurrently(ec.OperationContext, &deferred, i,
+				true, true,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._User_memberships(ctx, field, obj)
+				})
 		case "createdAt":
 			out.Values[i] = ec._User_createdAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
-				out.Invalids++
+				atomic.AddUint32(&out.Invalids, 1)
 			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
@@ -38367,13 +38580,13 @@ func (ec *executionContext) unmarshalNMessageTemplateInput2provider_saasᚋgraph
 }
 
 func (ec *executionContext) unmarshalNMoney2int64(ctx context.Context, v any) (int64, error) {
-	res, err := graphql.UnmarshalInt64(v)
+	res, err := scalars.UnmarshalMoney(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNMoney2int64(ctx context.Context, sel ast.SelectionSet, v int64) graphql.Marshaler {
 	_ = sel
-	res := graphql.MarshalInt64(v)
+	res := scalars.MarshalMoney(v)
 	if res == graphql.Null {
 		graphql.AddInvalidNullFromMarshaler(ctx, "Money!")
 	}
@@ -39083,8 +39296,7 @@ func (ec *executionContext) marshalNString2ᚕstringᚄ(ctx context.Context, sel
 }
 
 func (ec *executionContext) marshalNSubscription2provider_saasᚋgraphᚋmodelᚐSubscription(ctx context.Context, sel ast.SelectionSet, v model.Subscription) graphql.Marshaler {
-	res := ec._Subscription(ctx, sel)
-	return res(ctx)
+	return ec._Subscription(ctx, sel, &v)
 }
 
 func (ec *executionContext) marshalNSubscription2ᚕprovider_saasᚋgraphᚋmodelᚐSubscriptionᚄ(ctx context.Context, sel ast.SelectionSet, v []model.Subscription) graphql.Marshaler {
@@ -39108,8 +39320,7 @@ func (ec *executionContext) marshalNSubscription2ᚖprovider_saasᚋgraphᚋmode
 		graphql.AddInvalidNullError(ctx, "Subscription!")
 		return graphql.Null
 	}
-	res := ec._Subscription(ctx, sel)
-	return res(ctx)
+	return ec._Subscription(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalNSubscriptionConnection2ᚖprovider_saasᚋgraphᚋmodelᚐSubscriptionConnection(ctx context.Context, sel ast.SelectionSet, v *model.SubscriptionConnection) graphql.Marshaler {
@@ -39328,31 +39539,13 @@ func (ec *executionContext) marshalNTicketStatus2provider_saasᚋgraphᚋmodel�
 }
 
 func (ec *executionContext) unmarshalNTime2timeᚐTime(ctx context.Context, v any) (time.Time, error) {
-	res, err := graphql.UnmarshalTime(v)
+	res, err := scalars.UnmarshalTime(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNTime2timeᚐTime(ctx context.Context, sel ast.SelectionSet, v time.Time) graphql.Marshaler {
 	_ = sel
-	res := graphql.MarshalTime(v)
-	if res == graphql.Null {
-		graphql.AddInvalidNullFromMarshaler(ctx, "Time!")
-	}
-	return res
-}
-
-func (ec *executionContext) unmarshalNTime2ᚖtimeᚐTime(ctx context.Context, v any) (*time.Time, error) {
-	res, err := graphql.UnmarshalTime(v)
-	return &res, graphql.ErrorOnPath(ctx, err)
-}
-
-func (ec *executionContext) marshalNTime2ᚖtimeᚐTime(ctx context.Context, sel ast.SelectionSet, v *time.Time) graphql.Marshaler {
-	if v == nil {
-		graphql.AddInvalidNullError(ctx, "Time!")
-		return graphql.Null
-	}
-	_ = sel
-	res := graphql.MarshalTime(*v)
+	res := scalars.MarshalTime(v)
 	if res == graphql.Null {
 		graphql.AddInvalidNullFromMarshaler(ctx, "Time!")
 	}
@@ -39380,13 +39573,13 @@ func (ec *executionContext) marshalNTimeSeriesPoint2ᚕprovider_saasᚋgraphᚋm
 }
 
 func (ec *executionContext) unmarshalNUUID2githubᚗcomᚋgoogleᚋuuidᚐUUID(ctx context.Context, v any) (uuid.UUID, error) {
-	res, err := graphql.UnmarshalUUID(v)
+	res, err := scalars.UnmarshalUUID(v)
 	return res, graphql.ErrorOnPath(ctx, err)
 }
 
 func (ec *executionContext) marshalNUUID2githubᚗcomᚋgoogleᚋuuidᚐUUID(ctx context.Context, sel ast.SelectionSet, v uuid.UUID) graphql.Marshaler {
 	_ = sel
-	res := graphql.MarshalUUID(v)
+	res := scalars.MarshalUUID(v)
 	if res == graphql.Null {
 		graphql.AddInvalidNullFromMarshaler(ctx, "UUID!")
 	}
@@ -39841,7 +40034,7 @@ func (ec *executionContext) unmarshalOMoney2ᚖint64(ctx context.Context, v any)
 	if v == nil {
 		return nil, nil
 	}
-	res, err := graphql.UnmarshalInt64(v)
+	res, err := scalars.UnmarshalMoney(v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -39851,7 +40044,7 @@ func (ec *executionContext) marshalOMoney2ᚖint64(ctx context.Context, sel ast.
 	}
 	_ = sel
 	_ = ctx
-	res := graphql.MarshalInt64(*v)
+	res := scalars.MarshalMoney(*v)
 	return res
 }
 
@@ -40249,8 +40442,7 @@ func (ec *executionContext) marshalOSubscription2ᚖprovider_saasᚋgraphᚋmode
 	if v == nil {
 		return graphql.Null
 	}
-	res := ec._Subscription(ctx, sel)
-	return res(ctx)
+	return ec._Subscription(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOSubscriptionFilter2ᚖprovider_saasᚋgraphᚋmodelᚐSubscriptionFilter(ctx context.Context, v any) (*model.SubscriptionFilter, error) {
@@ -40367,7 +40559,7 @@ func (ec *executionContext) unmarshalOTime2ᚖtimeᚐTime(ctx context.Context, v
 	if v == nil {
 		return nil, nil
 	}
-	res, err := graphql.UnmarshalTime(v)
+	res, err := scalars.UnmarshalTime(v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -40377,7 +40569,7 @@ func (ec *executionContext) marshalOTime2ᚖtimeᚐTime(ctx context.Context, sel
 	}
 	_ = sel
 	_ = ctx
-	res := graphql.MarshalTime(*v)
+	res := scalars.MarshalTime(*v)
 	return res
 }
 
@@ -40385,7 +40577,7 @@ func (ec *executionContext) unmarshalOUUID2ᚖgithubᚗcomᚋgoogleᚋuuidᚐUUI
 	if v == nil {
 		return nil, nil
 	}
-	res, err := graphql.UnmarshalUUID(v)
+	res, err := scalars.UnmarshalUUID(v)
 	return &res, graphql.ErrorOnPath(ctx, err)
 }
 
@@ -40395,7 +40587,7 @@ func (ec *executionContext) marshalOUUID2ᚖgithubᚗcomᚋgoogleᚋuuidᚐUUID(
 	}
 	_ = sel
 	_ = ctx
-	res := graphql.MarshalUUID(*v)
+	res := scalars.MarshalUUID(*v)
 	return res
 }
 

@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,72 +15,72 @@ import (
 
 // CreateTicket is the resolver for the createTicket field.
 func (r *mutationResolver) CreateTicket(ctx context.Context, input model.CreateTicketInput) (*model.Ticket, error) {
-	panic(fmt.Errorf("not implemented: CreateTicket - createTicket"))
+	return nil, errNotImplemented
 }
 
 // UpdateTicket is the resolver for the updateTicket field.
 func (r *mutationResolver) UpdateTicket(ctx context.Context, id uuid.UUID, input model.UpdateTicketInput) (*model.Ticket, error) {
-	panic(fmt.Errorf("not implemented: UpdateTicket - updateTicket"))
+	return nil, errNotImplemented
 }
 
 // AddTicketComment is the resolver for the addTicketComment field.
 func (r *mutationResolver) AddTicketComment(ctx context.Context, ticketID uuid.UUID, body string, isInternal *bool) (*model.TicketComment, error) {
-	panic(fmt.Errorf("not implemented: AddTicketComment - addTicketComment"))
+	return nil, errNotImplemented
 }
 
 // ResolveReplacement is the resolver for the resolveReplacement field.
 func (r *mutationResolver) ResolveReplacement(ctx context.Context, ticketID uuid.UUID, newSlotID *uuid.UUID, markOldSlot *model.SlotStatus, extendDays *int) (*model.Ticket, error) {
-	panic(fmt.Errorf("not implemented: ResolveReplacement - resolveReplacement"))
+	return nil, errNotImplemented
 }
 
 // Tickets is the resolver for the tickets field.
 func (r *queryResolver) Tickets(ctx context.Context, filter *model.TicketFilter, page *model.PageInput) ([]model.Ticket, error) {
-	panic(fmt.Errorf("not implemented: Tickets - tickets"))
+	return nil, errNotImplemented
 }
 
 // Ticket is the resolver for the ticket field.
 func (r *queryResolver) Ticket(ctx context.Context, id uuid.UUID) (*model.Ticket, error) {
-	panic(fmt.Errorf("not implemented: Ticket - ticket"))
+	return nil, errNotImplemented
 }
 
 // TicketStats is the resolver for the ticketStats field.
 func (r *queryResolver) TicketStats(ctx context.Context) (*model.TicketStats, error) {
-	panic(fmt.Errorf("not implemented: TicketStats - ticketStats"))
+	return nil, errNotImplemented
 }
 
 // Customer is the resolver for the customer field.
 func (r *ticketResolver) Customer(ctx context.Context, obj *model.Ticket) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return nil, errNotImplemented
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *ticketResolver) Subscription(ctx context.Context, obj *model.Ticket) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: Subscription - subscription"))
+	return nil, errNotImplemented
 }
 
 // OldSlot is the resolver for the oldSlot field.
 func (r *ticketResolver) OldSlot(ctx context.Context, obj *model.Ticket) (*model.Slot, error) {
-	panic(fmt.Errorf("not implemented: OldSlot - oldSlot"))
+	return nil, errNotImplemented
 }
 
 // NewSlot is the resolver for the newSlot field.
 func (r *ticketResolver) NewSlot(ctx context.Context, obj *model.Ticket) (*model.Slot, error) {
-	panic(fmt.Errorf("not implemented: NewSlot - newSlot"))
+	return nil, errNotImplemented
 }
 
 // AssignedTo is the resolver for the assignedTo field.
 func (r *ticketResolver) AssignedTo(ctx context.Context, obj *model.Ticket) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: AssignedTo - assignedTo"))
+	return nil, errNotImplemented
 }
 
 // Comments is the resolver for the comments field.
 func (r *ticketResolver) Comments(ctx context.Context, obj *model.Ticket) ([]model.TicketComment, error) {
-	panic(fmt.Errorf("not implemented: Comments - comments"))
+	return nil, errNotImplemented
 }
 
 // Author is the resolver for the author field.
 func (r *ticketCommentResolver) Author(ctx context.Context, obj *model.TicketComment) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: Author - author"))
+	return nil, errNotImplemented
 }
 
 // Ticket returns generated.TicketResolver implementation.

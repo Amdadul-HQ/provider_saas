@@ -1,0 +1,60 @@
+// Package apperr defines the domain error kinds shared by every module.
+// The GraphQL error presenter maps them to `extensions.code`.
+package apperr
+
+import "errors"
+
+var (
+	ErrNotFound        = errors.New("not found")
+	ErrValidation      = errors.New("validation failed")
+	ErrForbidden       = errors.New("forbidden")
+	ErrConflict        = errors.New("conflict")
+	ErrUnauthenticated = errors.New("unauthenticated")
+)
+
+// Error is a domain error with a user-facing message. errors.Is(err, ErrX) works.
+type Error struct {
+	Kind  error
+	Msg   string
+	Field string
+}
+
+func (e *Error) Error() string { return e.Msg }
+func (e *Error) Unwrap() error { return e.Kind }
+
+func NotFound(what string) error  { return &Error{Kind: ErrNotFound, Msg: what + " not found"} }
+func Validation(msg string) error { return &Error{Kind: ErrValidation, Msg: msg} }
+func ValidationField(field, msg string) error {
+	return &Error{Kind: ErrValidation, Msg: field + ": " + msg, Field: field}
+}
+func Conflict(msg string) error        { return &Error{Kind: ErrConflict, Msg: msg} }
+func Forbidden(msg string) error       { return &Error{Kind: ErrForbidden, Msg: msg} }
+func Unauthenticated(msg string) error { return &Error{Kind: ErrUnauthenticated, Msg: msg} }
+
+// Code returns the GraphQL extensions.code for err ("" when err is not a domain error).
+func Code(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case errors.Is(err, ErrNotFound):
+		return "NOT_FOUND"
+	case errors.Is(err, ErrValidation):
+		return "BAD_USER_INPUT"
+	case errors.Is(err, ErrForbidden):
+		return "FORBIDDEN"
+	case errors.Is(err, ErrConflict):
+		return "CONFLICT"
+	case errors.Is(err, ErrUnauthenticated):
+		return "UNAUTHENTICATED"
+	}
+	return ""
+}
+
+// FieldOf returns the offending input field of a validation error, if any.
+func FieldOf(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Field
+	}
+	return ""
+}

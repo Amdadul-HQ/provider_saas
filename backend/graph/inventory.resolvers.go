@@ -7,101 +7,241 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/inventory"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
 
 // Product is the resolver for the product field.
 func (r *masterAccountResolver) Product(ctx context.Context, obj *model.MasterAccount) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+	return r.productByID(ctx, obj.ProductID)
 }
 
 // Supplier is the resolver for the supplier field.
 func (r *masterAccountResolver) Supplier(ctx context.Context, obj *model.MasterAccount) (*model.Supplier, error) {
-	panic(fmt.Errorf("not implemented: Supplier - supplier"))
+	if obj.SupplierID == nil {
+		return nil, nil
+	}
+	s, err := r.loaders(ctx).Supplier.Load(ctx, *obj.SupplierID)
+	if err != nil || s == nil {
+		return nil, err
+	}
+	return toSupplier(*s), nil
 }
 
 // FreeSlots is the resolver for the freeSlots field.
 func (r *masterAccountResolver) FreeSlots(ctx context.Context, obj *model.MasterAccount) (int, error) {
-	panic(fmt.Errorf("not implemented: FreeSlots - freeSlots"))
+	return r.loaders(ctx).FreeByMaster.Load(ctx, obj.ID)
 }
 
 // Slots is the resolver for the slots field.
 func (r *masterAccountResolver) Slots(ctx context.Context, obj *model.MasterAccount) ([]model.Slot, error) {
-	panic(fmt.Errorf("not implemented: Slots - slots"))
+	ss, err := r.loaders(ctx).SlotsByMaster.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Slot, len(ss))
+	for i, s := range ss {
+		out[i] = *toSlot(s)
+	}
+	return out, nil
 }
 
 // CreateSupplier is the resolver for the createSupplier field.
 func (r *mutationResolver) CreateSupplier(ctx context.Context, input model.SupplierInput) (*model.Supplier, error) {
-	panic(fmt.Errorf("not implemented: CreateSupplier - createSupplier"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.InventorySvc.CreateSupplier(ctx, tid, inventory.SupplierInput{Name: input.Name, Contact: input.Contact, Notes: input.Notes, Rating: input.Rating})
+	if err != nil {
+		return nil, err
+	}
+	return toSupplier(s), nil
 }
 
 // UpdateSupplier is the resolver for the updateSupplier field.
 func (r *mutationResolver) UpdateSupplier(ctx context.Context, id uuid.UUID, input model.SupplierInput) (*model.Supplier, error) {
-	panic(fmt.Errorf("not implemented: UpdateSupplier - updateSupplier"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.InventorySvc.UpdateSupplier(ctx, tid, id, inventory.SupplierInput{Name: input.Name, Contact: input.Contact, Notes: input.Notes, Rating: input.Rating})
+	if err != nil {
+		return nil, err
+	}
+	return toSupplier(s), nil
 }
 
 // DeleteSupplier is the resolver for the deleteSupplier field.
 func (r *mutationResolver) DeleteSupplier(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteSupplier - deleteSupplier"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.InventorySvc.DeleteSupplier(ctx, tid, id)
 }
 
 // CreateMasterAccount is the resolver for the createMasterAccount field.
 func (r *mutationResolver) CreateMasterAccount(ctx context.Context, input model.CreateMasterAccountInput) (*model.MasterAccount, error) {
-	panic(fmt.Errorf("not implemented: CreateMasterAccount - createMasterAccount"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.InventorySvc.CreateMasterAccount(ctx, tid, inventory.CreateMasterInput{ProductID: input.ProductID, SupplierID: input.SupplierID,
+		Label: input.Label, LoginHint: input.LoginHint, Username: input.Username, Password: input.Password, Extra: input.Extra,
+		TotalSlots: input.TotalSlots, PurchaseCost: input.PurchaseCost, PurchasedAt: input.PurchasedAt, ExpiresAt: input.ExpiresAt, Notes: input.Notes})
+	if err != nil {
+		return nil, err
+	}
+	return toMaster(m), nil
 }
 
 // UpdateMasterAccount is the resolver for the updateMasterAccount field.
 func (r *mutationResolver) UpdateMasterAccount(ctx context.Context, id uuid.UUID, input model.UpdateMasterAccountInput) (*model.MasterAccount, error) {
-	panic(fmt.Errorf("not implemented: UpdateMasterAccount - updateMasterAccount"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.InventorySvc.UpdateMasterAccount(ctx, tid, id, inventory.UpdateMasterInput{SupplierID: input.SupplierID, Label: input.Label,
+		LoginHint: input.LoginHint, TotalSlots: input.TotalSlots, PurchaseCost: input.PurchaseCost, PurchasedAt: input.PurchasedAt,
+		ExpiresAt: input.ExpiresAt, Status: lowerPtr(input.Status), Notes: input.Notes})
+	if err != nil {
+		return nil, err
+	}
+	return toMaster(m), nil
 }
 
 // SetMasterAccountCredential is the resolver for the setMasterAccountCredential field.
 func (r *mutationResolver) SetMasterAccountCredential(ctx context.Context, id uuid.UUID, username string, password string, extra map[string]any) (bool, error) {
-	panic(fmt.Errorf("not implemented: SetMasterAccountCredential - setMasterAccountCredential"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.InventorySvc.SetCredential(ctx, tid, id, inventory.Credential{Username: username, Password: password, Extra: extra})
 }
 
-// RevealMasterAccountCredential is the resolver for the revealMasterAccountCredential field.
+// RevealMasterAccountCredential is the resolver for the revealMasterAccountCredential field (audit-logged).
 func (r *mutationResolver) RevealMasterAccountCredential(ctx context.Context, id uuid.UUID) (*model.RevealedCredential, error) {
-	panic(fmt.Errorf("not implemented: RevealMasterAccountCredential - revealMasterAccountCredential"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.InventorySvc.RevealCredential(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	return &model.RevealedCredential{Username: c.Username, Password: c.Password, Extra: c.Extra}, nil
 }
 
 // UpdateSlot is the resolver for the updateSlot field.
 func (r *mutationResolver) UpdateSlot(ctx context.Context, id uuid.UUID, label *string, pin *string, status *model.SlotStatus) (*model.Slot, error) {
-	panic(fmt.Errorf("not implemented: UpdateSlot - updateSlot"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.InventorySvc.UpdateSlot(ctx, tid, id, inventory.UpdateSlotInput{Label: label, Pin: pin, Status: lowerPtr(status)})
+	if err != nil {
+		return nil, err
+	}
+	return toSlot(s), nil
 }
 
 // Suppliers is the resolver for the suppliers field.
 func (r *queryResolver) Suppliers(ctx context.Context) ([]model.Supplier, error) {
-	panic(fmt.Errorf("not implemented: Suppliers - suppliers"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := r.InventorySvc.Suppliers(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Supplier, len(ss))
+	for i, s := range ss {
+		out[i] = *toSupplier(s)
+	}
+	return out, nil
 }
 
 // MasterAccounts is the resolver for the masterAccounts field.
 func (r *queryResolver) MasterAccounts(ctx context.Context, filter *model.MasterAccountFilter, page *model.PageInput) ([]model.MasterAccount, error) {
-	panic(fmt.Errorf("not implemented: MasterAccounts - masterAccounts"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f inventory.MasterFilter
+	if filter != nil {
+		f = inventory.MasterFilter{ProductID: filter.ProductID, SupplierID: filter.SupplierID, Status: lowerPtr(filter.Status),
+			ExpiringWithinDays: filter.ExpiringWithinDays}
+	}
+	ms, err := r.InventorySvc.MasterAccounts(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.MasterAccount, len(ms))
+	for i, m := range ms {
+		out[i] = *toMaster(m)
+	}
+	return out, nil
 }
 
 // MasterAccount is the resolver for the masterAccount field.
 func (r *queryResolver) MasterAccount(ctx context.Context, id uuid.UUID) (*model.MasterAccount, error) {
-	panic(fmt.Errorf("not implemented: MasterAccount - masterAccount"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.InventorySvc.MasterAccount(ctx, tid, id)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toMaster(m), nil
 }
 
 // FreeSlots is the resolver for the freeSlots field.
 func (r *queryResolver) FreeSlots(ctx context.Context, productID uuid.UUID) ([]model.Slot, error) {
-	panic(fmt.Errorf("not implemented: FreeSlots - freeSlots"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := r.InventorySvc.FreeSlots(ctx, tid, productID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Slot, len(ss))
+	for i, s := range ss {
+		out[i] = *toSlot(s)
+	}
+	return out, nil
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *slotResolver) Subscription(ctx context.Context, obj *model.Slot) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: Subscription - subscription"))
+	if obj.SubscriptionID == nil {
+		return nil, nil
+	}
+	s, err := r.loaders(ctx).Subscription.Load(ctx, *obj.SubscriptionID)
+	if err != nil || s == nil {
+		return nil, err
+	}
+	return toSubscription(*s), nil
 }
 
 // AccountCount is the resolver for the accountCount field.
 func (r *supplierResolver) AccountCount(ctx context.Context, obj *model.Supplier) (int, error) {
-	panic(fmt.Errorf("not implemented: AccountCount - accountCount"))
+	return r.loaders(ctx).AcctsBySupp.Load(ctx, obj.ID)
 }
 
 // MasterAccount returns generated.MasterAccountResolver implementation.

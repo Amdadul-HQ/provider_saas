@@ -7,152 +7,195 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
-	"time"
+	"provider_saas/internal/modules/subscription"
+	"provider_saas/internal/platform/apperr"
+	"provider_saas/internal/platform/pagination"
 
 	"github.com/google/uuid"
 )
 
 // CreateSubscription is the resolver for the createSubscription field.
 func (r *mutationResolver) CreateSubscription(ctx context.Context, input model.CreateSubscriptionInput) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: CreateSubscription - createSubscription"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.Create(ctx, tid, uid, subscription.CreateInput{CustomerID: input.CustomerID, ProductID: input.ProductID,
+		PlanID: input.PlanID, SlotID: input.SlotID, StartsAt: input.StartsAt, DurationDays: input.DurationDays, Price: input.Price,
+		Cost: input.Cost, AutoRenew: deref(input.AutoRenew, false), Notes: input.Notes, CreateInvoice: deref(input.CreateInvoice, true),
+		MarkPaid: paymentPtr(input.MarkPaid)})
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // RenewSubscription is the resolver for the renewSubscription field.
 func (r *mutationResolver) RenewSubscription(ctx context.Context, id uuid.UUID, input model.RenewSubscriptionInput) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: RenewSubscription - renewSubscription"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.Renew(ctx, tid, uid, id, subscription.RenewInput{PlanID: input.PlanID, DurationDays: input.DurationDays,
+		Price: input.Price, CreateInvoice: deref(input.CreateInvoice, true), MarkPaid: paymentPtr(input.MarkPaid)})
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // MarkDelivered is the resolver for the markDelivered field.
 func (r *mutationResolver) MarkDelivered(ctx context.Context, id uuid.UUID, deliveryNote *string) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: MarkDelivered - markDelivered"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.MarkDelivered(ctx, tid, id, deliveryNote)
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // CancelSubscription is the resolver for the cancelSubscription field.
 func (r *mutationResolver) CancelSubscription(ctx context.Context, id uuid.UUID, reason *string) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: CancelSubscription - cancelSubscription"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.Cancel(ctx, tid, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // ReassignSlot is the resolver for the reassignSlot field.
 func (r *mutationResolver) ReassignSlot(ctx context.Context, id uuid.UUID, slotID uuid.UUID) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: ReassignSlot - reassignSlot"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.ReassignSlot(ctx, tid, id, slotID)
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // ExtendSubscription is the resolver for the extendSubscription field.
 func (r *mutationResolver) ExtendSubscription(ctx context.Context, id uuid.UUID, days int, reason *string) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: ExtendSubscription - extendSubscription"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.Extend(ctx, tid, id, days, reason)
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // Subscriptions is the resolver for the subscriptions field.
 func (r *queryResolver) Subscriptions(ctx context.Context, filter *model.SubscriptionFilter, page *model.PageInput) (*model.SubscriptionConnection, error) {
-	panic(fmt.Errorf("not implemented: Subscriptions - subscriptions"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f subscription.Filter
+	if filter != nil {
+		f = subscription.Filter{Search: filter.Search, Status: lowerPtr(filter.Status), ProductID: filter.ProductID, CustomerID: filter.CustomerID,
+			ExpiringWithinDays: filter.ExpiringWithinDays, ExpiredWithinDays: filter.ExpiredWithinDays}
+	}
+	items, more, total, err := r.SubscriptionSvc.List(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	cursor := func(s subscription.Subscription) string { return pagination.Encode(s.CreatedAt, s.ID) }
+	conn := &model.SubscriptionConnection{Edges: make([]model.SubscriptionEdge, len(items)), TotalCount: total, PageInfo: pageInfo(items, more, cursor)}
+	for i, s := range items {
+		conn.Edges[i] = model.SubscriptionEdge{Cursor: cursor(s), Node: *toSubscription(s)}
+	}
+	return conn, nil
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *queryResolver) Subscription(ctx context.Context, id uuid.UUID) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: Subscription - subscription"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.SubscriptionSvc.Get(ctx, tid, id)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toSubscription(s), nil
 }
 
 // ExpiringSubscriptions is the resolver for the expiringSubscriptions field.
 func (r *queryResolver) ExpiringSubscriptions(ctx context.Context, days *int) ([]model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: ExpiringSubscriptions - expiringSubscriptions"))
-}
-
-// ID is the resolver for the id field.
-func (r *subscriptionResolver) ID(ctx context.Context) (<-chan uuid.UUID, error) {
-	panic(fmt.Errorf("not implemented: ID - id"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ss, err := r.SubscriptionSvc.Expiring(ctx, tid, deref(days, 7))
+	if err != nil {
+		return nil, err
+	}
+	return toSubscriptions(ss), nil
 }
 
 // Customer is the resolver for the customer field.
-func (r *subscriptionResolver) Customer(ctx context.Context) (<-chan *model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+func (r *subscriptionResolver) Customer(ctx context.Context, obj *model.Subscription) (*model.Customer, error) {
+	c, err := r.customerByID(ctx, &obj.CustomerID)
+	if err == nil && c == nil {
+		err = apperr.NotFound("customer")
+	}
+	return c, err
 }
 
 // Product is the resolver for the product field.
-func (r *subscriptionResolver) Product(ctx context.Context) (<-chan *model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+func (r *subscriptionResolver) Product(ctx context.Context, obj *model.Subscription) (*model.Product, error) {
+	return r.productByID(ctx, obj.ProductID)
 }
 
 // Plan is the resolver for the plan field.
-func (r *subscriptionResolver) Plan(ctx context.Context) (<-chan *model.ProductPlan, error) {
-	panic(fmt.Errorf("not implemented: Plan - plan"))
+func (r *subscriptionResolver) Plan(ctx context.Context, obj *model.Subscription) (*model.ProductPlan, error) {
+	if obj.PlanID == nil {
+		return nil, nil
+	}
+	p, err := r.loaders(ctx).Plan.Load(ctx, *obj.PlanID)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	return toPlan(*p), nil
 }
 
 // Slot is the resolver for the slot field.
-func (r *subscriptionResolver) Slot(ctx context.Context) (<-chan *model.Slot, error) {
-	panic(fmt.Errorf("not implemented: Slot - slot"))
-}
-
-// StartsAt is the resolver for the startsAt field.
-func (r *subscriptionResolver) StartsAt(ctx context.Context) (<-chan *time.Time, error) {
-	panic(fmt.Errorf("not implemented: StartsAt - startsAt"))
-}
-
-// ExpiresAt is the resolver for the expiresAt field.
-func (r *subscriptionResolver) ExpiresAt(ctx context.Context) (<-chan *time.Time, error) {
-	panic(fmt.Errorf("not implemented: ExpiresAt - expiresAt"))
-}
-
-// DaysLeft is the resolver for the daysLeft field.
-func (r *subscriptionResolver) DaysLeft(ctx context.Context) (<-chan int, error) {
-	panic(fmt.Errorf("not implemented: DaysLeft - daysLeft"))
-}
-
-// Price is the resolver for the price field.
-func (r *subscriptionResolver) Price(ctx context.Context) (<-chan int64, error) {
-	panic(fmt.Errorf("not implemented: Price - price"))
-}
-
-// Cost is the resolver for the cost field.
-func (r *subscriptionResolver) Cost(ctx context.Context) (<-chan int64, error) {
-	panic(fmt.Errorf("not implemented: Cost - cost"))
-}
-
-// Currency is the resolver for the currency field.
-func (r *subscriptionResolver) Currency(ctx context.Context) (<-chan string, error) {
-	panic(fmt.Errorf("not implemented: Currency - currency"))
-}
-
-// Status is the resolver for the status field.
-func (r *subscriptionResolver) Status(ctx context.Context) (<-chan model.SubscriptionStatus, error) {
-	panic(fmt.Errorf("not implemented: Status - status"))
-}
-
-// AutoRenew is the resolver for the autoRenew field.
-func (r *subscriptionResolver) AutoRenew(ctx context.Context) (<-chan bool, error) {
-	panic(fmt.Errorf("not implemented: AutoRenew - autoRenew"))
-}
-
-// DeliveredAt is the resolver for the deliveredAt field.
-func (r *subscriptionResolver) DeliveredAt(ctx context.Context) (<-chan *time.Time, error) {
-	panic(fmt.Errorf("not implemented: DeliveredAt - deliveredAt"))
-}
-
-// DeliveryNote is the resolver for the deliveryNote field.
-func (r *subscriptionResolver) DeliveryNote(ctx context.Context) (<-chan *string, error) {
-	panic(fmt.Errorf("not implemented: DeliveryNote - deliveryNote"))
-}
-
-// RenewedFromID is the resolver for the renewedFromId field.
-func (r *subscriptionResolver) RenewedFromID(ctx context.Context) (<-chan *uuid.UUID, error) {
-	panic(fmt.Errorf("not implemented: RenewedFromID - renewedFromId"))
+func (r *subscriptionResolver) Slot(ctx context.Context, obj *model.Subscription) (*model.Slot, error) {
+	if obj.SlotID == nil {
+		return nil, nil
+	}
+	s, err := r.loaders(ctx).Slot.Load(ctx, *obj.SlotID)
+	if err != nil || s == nil {
+		return nil, err
+	}
+	return toSlot(*s), nil
 }
 
 // SoldBy is the resolver for the soldBy field.
-func (r *subscriptionResolver) SoldBy(ctx context.Context) (<-chan *model.User, error) {
-	panic(fmt.Errorf("not implemented: SoldBy - soldBy"))
-}
-
-// Notes is the resolver for the notes field.
-func (r *subscriptionResolver) Notes(ctx context.Context) (<-chan *string, error) {
-	panic(fmt.Errorf("not implemented: Notes - notes"))
-}
-
-// CreatedAt is the resolver for the createdAt field.
-func (r *subscriptionResolver) CreatedAt(ctx context.Context) (<-chan *time.Time, error) {
-	panic(fmt.Errorf("not implemented: CreatedAt - createdAt"))
+func (r *subscriptionResolver) SoldBy(ctx context.Context, obj *model.Subscription) (*model.User, error) {
+	return r.userByID(ctx, obj.SoldByID)
 }
 
 // Subscription returns generated.SubscriptionResolver implementation.

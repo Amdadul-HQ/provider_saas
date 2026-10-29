@@ -7,116 +7,302 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/billing"
+	"provider_saas/internal/platform/apperr"
+	"provider_saas/internal/platform/pagination"
 
 	"github.com/google/uuid"
 )
 
 // Customer is the resolver for the customer field.
 func (r *invoiceResolver) Customer(ctx context.Context, obj *model.Invoice) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	c, err := r.customerByID(ctx, &obj.CustomerID)
+	if err == nil && c == nil {
+		err = apperr.NotFound("customer")
+	}
+	return c, err
 }
 
 // Items is the resolver for the items field.
 func (r *invoiceResolver) Items(ctx context.Context, obj *model.Invoice) ([]model.InvoiceItem, error) {
-	panic(fmt.Errorf("not implemented: Items - items"))
+	is, err := r.loaders(ctx).ItemsByInv.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.InvoiceItem, len(is))
+	for i, it := range is {
+		out[i] = toItem(it)
+	}
+	return out, nil
 }
 
 // Payments is the resolver for the payments field.
 func (r *invoiceResolver) Payments(ctx context.Context, obj *model.Invoice) ([]model.Payment, error) {
-	panic(fmt.Errorf("not implemented: Payments - payments"))
+	ps, err := r.loaders(ctx).PaysByInv.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Payment, len(ps))
+	for i, p := range ps {
+		out[i] = *toPayment(p)
+	}
+	return out, nil
 }
 
 // CreatedBy is the resolver for the createdBy field.
 func (r *ledgerEntryResolver) CreatedBy(ctx context.Context, obj *model.LedgerEntry) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: CreatedBy - createdBy"))
+	return r.userByID(ctx, obj.CreatedByID)
 }
 
 // CreateInvoice is the resolver for the createInvoice field.
 func (r *mutationResolver) CreateInvoice(ctx context.Context, input model.CreateInvoiceInput) (*model.Invoice, error) {
-	panic(fmt.Errorf("not implemented: CreateInvoice - createInvoice"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in := billing.CreateInvoiceInput{CustomerID: input.CustomerID, Discount: deref(input.Discount, 0), DueAt: input.DueAt,
+		Notes: input.Notes, Send: deref(input.Send, false)}
+	for _, it := range input.Items {
+		in.Items = append(in.Items, billing.ItemInput{SubscriptionID: it.SubscriptionID, Description: it.Description,
+			Quantity: deref(it.Quantity, 1), UnitPrice: it.UnitPrice})
+	}
+	inv, err := r.BillingSvc.CreateInvoice(ctx, tid, uid, in)
+	if err != nil {
+		return nil, err
+	}
+	return toInvoice(inv), nil
 }
 
 // SendInvoice is the resolver for the sendInvoice field.
 func (r *mutationResolver) SendInvoice(ctx context.Context, id uuid.UUID, channel *model.Platform) (*model.Invoice, error) {
-	panic(fmt.Errorf("not implemented: SendInvoice - sendInvoice"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := r.BillingSvc.SendInvoice(ctx, tid, id, deref(lowerPtr(channel), ""))
+	if err != nil {
+		return nil, err
+	}
+	return toInvoice(inv), nil
 }
 
 // VoidInvoice is the resolver for the voidInvoice field.
 func (r *mutationResolver) VoidInvoice(ctx context.Context, id uuid.UUID, reason *string) (*model.Invoice, error) {
-	panic(fmt.Errorf("not implemented: VoidInvoice - voidInvoice"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := r.BillingSvc.VoidInvoice(ctx, tid, uid, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	return toInvoice(inv), nil
 }
 
 // RecordPayment is the resolver for the recordPayment field.
 func (r *mutationResolver) RecordPayment(ctx context.Context, invoiceID *uuid.UUID, customerID *uuid.UUID, input model.PaymentInput) (*model.Payment, error) {
-	panic(fmt.Errorf("not implemented: RecordPayment - recordPayment"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.BillingSvc.RecordPayment(ctx, tid, uid, invoiceID, customerID, toPaymentInput(input), billing.RecordOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return toPayment(p), nil
 }
 
 // VerifyPayment is the resolver for the verifyPayment field.
 func (r *mutationResolver) VerifyPayment(ctx context.Context, id uuid.UUID) (*model.Payment, error) {
-	panic(fmt.Errorf("not implemented: VerifyPayment - verifyPayment"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.BillingSvc.VerifyPayment(ctx, tid, uid, id)
+	if err != nil {
+		return nil, err
+	}
+	return toPayment(p), nil
 }
 
 // RejectPayment is the resolver for the rejectPayment field.
 func (r *mutationResolver) RejectPayment(ctx context.Context, id uuid.UUID, reason *string) (*model.Payment, error) {
-	panic(fmt.Errorf("not implemented: RejectPayment - rejectPayment"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.BillingSvc.RejectPayment(ctx, tid, uid, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	return toPayment(p), nil
 }
 
 // MatchPaymentInbox is the resolver for the matchPaymentInbox field.
 func (r *mutationResolver) MatchPaymentInbox(ctx context.Context, inboxID uuid.UUID, paymentID uuid.UUID) (*model.Payment, error) {
-	panic(fmt.Errorf("not implemented: MatchPaymentInbox - matchPaymentInbox"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.BillingSvc.MatchInbox(ctx, tid, uid, inboxID, paymentID)
+	if err != nil {
+		return nil, err
+	}
+	return toPayment(p), nil
 }
 
 // IgnorePaymentInbox is the resolver for the ignorePaymentInbox field.
 func (r *mutationResolver) IgnorePaymentInbox(ctx context.Context, inboxID uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: IgnorePaymentInbox - ignorePaymentInbox"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.BillingSvc.IgnoreInbox(ctx, tid, inboxID)
 }
 
 // AddLedgerAdjustment is the resolver for the addLedgerAdjustment field.
 func (r *mutationResolver) AddLedgerAdjustment(ctx context.Context, customerID uuid.UUID, entryType model.LedgerEntryType, amount int64, note *string) (*model.LedgerEntry, error) {
-	panic(fmt.Errorf("not implemented: AddLedgerAdjustment - addLedgerAdjustment"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	e, err := r.BillingSvc.AddLedgerAdjustment(ctx, tid, uid, customerID, lower(entryType), amount, note)
+	if err != nil {
+		return nil, err
+	}
+	return toLedger(e), nil
 }
 
 // Customer is the resolver for the customer field.
 func (r *paymentResolver) Customer(ctx context.Context, obj *model.Payment) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return r.customerByID(ctx, obj.CustomerID)
 }
 
 // Invoice is the resolver for the invoice field.
 func (r *paymentResolver) Invoice(ctx context.Context, obj *model.Payment) (*model.Invoice, error) {
-	panic(fmt.Errorf("not implemented: Invoice - invoice"))
+	if obj.InvoiceID == nil {
+		return nil, nil
+	}
+	inv, err := r.loaders(ctx).Invoice.Load(ctx, *obj.InvoiceID)
+	if err != nil || inv == nil {
+		return nil, err
+	}
+	return toInvoice(*inv), nil
 }
 
 // VerifiedBy is the resolver for the verifiedBy field.
 func (r *paymentResolver) VerifiedBy(ctx context.Context, obj *model.Payment) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: VerifiedBy - verifiedBy"))
+	return r.userByID(ctx, obj.VerifiedByID)
 }
 
 // Invoices is the resolver for the invoices field.
 func (r *queryResolver) Invoices(ctx context.Context, filter *model.InvoiceFilter, page *model.PageInput) (*model.InvoiceConnection, error) {
-	panic(fmt.Errorf("not implemented: Invoices - invoices"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f billing.InvoiceFilter
+	if filter != nil {
+		f = billing.InvoiceFilter{Search: filter.Search, Status: lowerPtr(filter.Status), CustomerID: filter.CustomerID,
+			OverdueOnly: deref(filter.OverdueOnly, false)}
+	}
+	items, more, total, err := r.BillingSvc.Invoices(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	cursor := func(i billing.Invoice) string { return pagination.Encode(i.CreatedAt, i.ID) }
+	conn := &model.InvoiceConnection{Edges: make([]model.InvoiceEdge, len(items)), TotalCount: total, PageInfo: pageInfo(items, more, cursor)}
+	for i, inv := range items {
+		conn.Edges[i] = model.InvoiceEdge{Cursor: cursor(inv), Node: *toInvoice(inv)}
+	}
+	return conn, nil
 }
 
 // Invoice is the resolver for the invoice field.
 func (r *queryResolver) Invoice(ctx context.Context, id uuid.UUID) (*model.Invoice, error) {
-	panic(fmt.Errorf("not implemented: Invoice - invoice"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inv, err := r.BillingSvc.Invoice(ctx, tid, id)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toInvoice(inv), nil
 }
 
 // Payments is the resolver for the payments field.
 func (r *queryResolver) Payments(ctx context.Context, filter *model.PaymentFilter, page *model.PageInput) (*model.PaymentConnection, error) {
-	panic(fmt.Errorf("not implemented: Payments - payments"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f billing.PaymentFilter
+	if filter != nil {
+		f = billing.PaymentFilter{Status: lowerPtr(filter.Status), Method: lowerPtr(filter.Method), CustomerID: filter.CustomerID, Search: filter.Search}
+	}
+	items, more, total, err := r.BillingSvc.Payments(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	cursor := func(p billing.Payment) string { return pagination.Encode(p.CreatedAt, p.ID) }
+	conn := &model.PaymentConnection{Edges: make([]model.PaymentEdge, len(items)), TotalCount: total, PageInfo: pageInfo(items, more, cursor)}
+	for i, p := range items {
+		conn.Edges[i] = model.PaymentEdge{Cursor: cursor(p), Node: *toPayment(p)}
+	}
+	return conn, nil
 }
 
 // PaymentInbox is the resolver for the paymentInbox field.
 func (r *queryResolver) PaymentInbox(ctx context.Context, status *string, page *model.PageInput) ([]model.PaymentInboxItem, error) {
-	panic(fmt.Errorf("not implemented: PaymentInbox - paymentInbox"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	items, err := r.BillingSvc.PaymentInbox(ctx, tid, status, pg)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.PaymentInboxItem, len(items))
+	for i, it := range items {
+		out[i] = toInbox(it)
+	}
+	return out, nil
 }
 
 // Ledger is the resolver for the ledger field.
 func (r *queryResolver) Ledger(ctx context.Context, customerID uuid.UUID) ([]model.LedgerEntry, error) {
-	panic(fmt.Errorf("not implemented: Ledger - ledger"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	es, err := r.BillingSvc.Ledger(ctx, tid, customerID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.LedgerEntry, len(es))
+	for i, e := range es {
+		out[i] = *toLedger(e)
+	}
+	return out, nil
 }
 
 // Invoice returns generated.InvoiceResolver implementation.

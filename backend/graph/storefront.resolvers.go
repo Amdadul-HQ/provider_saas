@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,82 +15,82 @@ import (
 
 // UpsertStorefront is the resolver for the upsertStorefront field.
 func (r *mutationResolver) UpsertStorefront(ctx context.Context, input model.StorefrontInput) (*model.Storefront, error) {
-	panic(fmt.Errorf("not implemented: UpsertStorefront - upsertStorefront"))
+	return nil, errNotImplemented
 }
 
 // PlaceOrder is the resolver for the placeOrder field.
 func (r *mutationResolver) PlaceOrder(ctx context.Context, input model.PlaceOrderInput) (*model.PublicOrder, error) {
-	panic(fmt.Errorf("not implemented: PlaceOrder - placeOrder"))
+	return nil, errNotImplemented
 }
 
 // ConfirmOrder is the resolver for the confirmOrder field.
 func (r *mutationResolver) ConfirmOrder(ctx context.Context, id uuid.UUID, slotID *uuid.UUID, deliveryNote *string) (*model.Order, error) {
-	panic(fmt.Errorf("not implemented: ConfirmOrder - confirmOrder"))
+	return nil, errNotImplemented
 }
 
 // CancelOrder is the resolver for the cancelOrder field.
 func (r *mutationResolver) CancelOrder(ctx context.Context, id uuid.UUID, reason *string) (*model.Order, error) {
-	panic(fmt.Errorf("not implemented: CancelOrder - cancelOrder"))
+	return nil, errNotImplemented
 }
 
 // CreatePortalLink is the resolver for the createPortalLink field.
 func (r *mutationResolver) CreatePortalLink(ctx context.Context, customerID uuid.UUID, sendVia *model.Platform) (string, error) {
-	panic(fmt.Errorf("not implemented: CreatePortalLink - createPortalLink"))
+	return "", errNotImplemented
 }
 
 // PortalRequestRenewal is the resolver for the portalRequestRenewal field.
 func (r *mutationResolver) PortalRequestRenewal(ctx context.Context, token string, subscriptionID uuid.UUID, paymentMethod *model.PaymentMethod, trxID *string) (*model.PublicOrder, error) {
-	panic(fmt.Errorf("not implemented: PortalRequestRenewal - portalRequestRenewal"))
+	return nil, errNotImplemented
 }
 
 // Customer is the resolver for the customer field.
 func (r *orderResolver) Customer(ctx context.Context, obj *model.Order) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return nil, errNotImplemented
 }
 
 // Product is the resolver for the product field.
 func (r *orderResolver) Product(ctx context.Context, obj *model.Order) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+	return nil, errNotImplemented
 }
 
 // Plan is the resolver for the plan field.
 func (r *orderResolver) Plan(ctx context.Context, obj *model.Order) (*model.ProductPlan, error) {
-	panic(fmt.Errorf("not implemented: Plan - plan"))
+	return nil, errNotImplemented
 }
 
 // Payment is the resolver for the payment field.
 func (r *orderResolver) Payment(ctx context.Context, obj *model.Order) (*model.Payment, error) {
-	panic(fmt.Errorf("not implemented: Payment - payment"))
+	return nil, errNotImplemented
 }
 
 // Storefront is the resolver for the storefront field.
 func (r *queryResolver) Storefront(ctx context.Context) (*model.Storefront, error) {
-	panic(fmt.Errorf("not implemented: Storefront - storefront"))
+	return nil, errNotImplemented
 }
 
 // Orders is the resolver for the orders field.
 func (r *queryResolver) Orders(ctx context.Context, filter *model.OrderFilter, page *model.PageInput) ([]model.Order, error) {
-	panic(fmt.Errorf("not implemented: Orders - orders"))
+	return nil, errNotImplemented
 }
 
 // Order is the resolver for the order field.
 func (r *queryResolver) Order(ctx context.Context, id uuid.UUID) (*model.Order, error) {
-	panic(fmt.Errorf("not implemented: Order - order"))
+	return nil, errNotImplemented
 }
 
 // PublicStorefront is the resolver for the publicStorefront field.
 func (r *queryResolver) PublicStorefront(ctx context.Context, slug string) (*model.PublicStorefront, error) {
-	panic(fmt.Errorf("not implemented: PublicStorefront - publicStorefront"))
+	return nil, errNotImplemented
 }
 
 // PublicOrder is the resolver for the publicOrder field.
 func (r *queryResolver) PublicOrder(ctx context.Context, slug string, number int, phone string) (*model.PublicOrder, error) {
-	panic(fmt.Errorf("not implemented: PublicOrder - publicOrder"))
+	return nil, errNotImplemented
 }
 
 // Portal is the resolver for the portal field.
 func (r *queryResolver) Portal(ctx context.Context, token string) (*model.PortalView, error) {
-	panic(fmt.Errorf("not implemented: Portal - portal"))
+	return nil, errNotImplemented
 }
 
 // Order returns generated.OrderResolver implementation.

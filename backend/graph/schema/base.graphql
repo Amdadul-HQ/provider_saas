@@ -1,3 +1,7 @@
+# Explicit root types: without this, `type Subscription` (a business entity in the
+# subscription module) would be treated as the GraphQL subscription root.
+schema { query: Query mutation: Mutation }
+
 scalar Time
 scalar UUID
 scalar Money      # int64 minor units (paisa)

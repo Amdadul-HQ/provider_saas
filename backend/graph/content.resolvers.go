@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,52 +15,52 @@ import (
 
 // CreatePost is the resolver for the createPost field.
 func (r *mutationResolver) CreatePost(ctx context.Context, input model.PostInput) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: CreatePost - createPost"))
+	return nil, errNotImplemented
 }
 
 // UpdatePost is the resolver for the updatePost field.
 func (r *mutationResolver) UpdatePost(ctx context.Context, id uuid.UUID, input model.PostInput) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: UpdatePost - updatePost"))
+	return nil, errNotImplemented
 }
 
 // PublishPostNow is the resolver for the publishPostNow field.
 func (r *mutationResolver) PublishPostNow(ctx context.Context, id uuid.UUID) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: PublishPostNow - publishPostNow"))
+	return nil, errNotImplemented
 }
 
 // DeletePost is the resolver for the deletePost field.
 func (r *mutationResolver) DeletePost(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeletePost - deletePost"))
+	return false, errNotImplemented
 }
 
 // GeneratePriceList is the resolver for the generatePriceList field.
 func (r *mutationResolver) GeneratePriceList(ctx context.Context, format *string) (string, error) {
-	panic(fmt.Errorf("not implemented: GeneratePriceList - generatePriceList"))
+	return "", errNotImplemented
 }
 
 // Targets is the resolver for the targets field.
 func (r *postResolver) Targets(ctx context.Context, obj *model.Post) ([]model.PostTarget, error) {
-	panic(fmt.Errorf("not implemented: Targets - targets"))
+	return nil, errNotImplemented
 }
 
 // CreatedBy is the resolver for the createdBy field.
 func (r *postResolver) CreatedBy(ctx context.Context, obj *model.Post) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: CreatedBy - createdBy"))
+	return nil, errNotImplemented
 }
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *postTargetResolver) SocialAccount(ctx context.Context, obj *model.PostTarget) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: SocialAccount - socialAccount"))
+	return nil, errNotImplemented
 }
 
 // Posts is the resolver for the posts field.
 func (r *queryResolver) Posts(ctx context.Context, status *model.PostStatus, page *model.PageInput) ([]model.Post, error) {
-	panic(fmt.Errorf("not implemented: Posts - posts"))
+	return nil, errNotImplemented
 }
 
 // Post is the resolver for the post field.
 func (r *queryResolver) Post(ctx context.Context, id uuid.UUID) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: Post - post"))
+	return nil, errNotImplemented
 }
 
 // Post returns generated.PostResolver implementation.

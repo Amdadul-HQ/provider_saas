@@ -7,61 +7,140 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/catalog"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
 
 // CreateProduct is the resolver for the createProduct field.
 func (r *mutationResolver) CreateProduct(ctx context.Context, input model.CreateProductInput) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: CreateProduct - createProduct"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in := catalog.CreateInput{Name: input.Name, Category: input.Category, Description: input.Description, ImageURL: input.ImageURL,
+		DeliveryType: lower(deref(input.DeliveryType, model.DeliveryTypeSharedSlot)), WarrantyDays: deref(input.WarrantyDays, 0),
+		DeliveryTemplate: input.DeliveryTemplate}
+	for _, p := range input.Plans {
+		in.Plans = append(in.Plans, toPlanInput(p))
+	}
+	p, err := r.CatalogSvc.Create(ctx, tid, in)
+	if err != nil {
+		return nil, err
+	}
+	return toProduct(p), nil
 }
 
 // UpdateProduct is the resolver for the updateProduct field.
 func (r *mutationResolver) UpdateProduct(ctx context.Context, id uuid.UUID, input model.UpdateProductInput) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: UpdateProduct - updateProduct"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.CatalogSvc.Update(ctx, tid, id, catalog.UpdateInput{Name: input.Name, Category: input.Category, Description: input.Description,
+		ImageURL: input.ImageURL, DeliveryType: lowerPtr(input.DeliveryType), WarrantyDays: input.WarrantyDays,
+		DeliveryTemplate: input.DeliveryTemplate, IsActive: input.IsActive, SortOrder: input.SortOrder})
+	if err != nil {
+		return nil, err
+	}
+	return toProduct(p), nil
 }
 
 // DeleteProduct is the resolver for the deleteProduct field.
 func (r *mutationResolver) DeleteProduct(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteProduct - deleteProduct"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.CatalogSvc.Delete(ctx, tid, id)
 }
 
 // UpsertProductPlan is the resolver for the upsertProductPlan field.
 func (r *mutationResolver) UpsertProductPlan(ctx context.Context, productID uuid.UUID, id *uuid.UUID, input model.ProductPlanInput) (*model.ProductPlan, error) {
-	panic(fmt.Errorf("not implemented: UpsertProductPlan - upsertProductPlan"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.CatalogSvc.UpsertPlan(ctx, tid, productID, id, toPlanInput(input))
+	if err != nil {
+		return nil, err
+	}
+	return toPlan(p), nil
 }
 
 // DeleteProductPlan is the resolver for the deleteProductPlan field.
 func (r *mutationResolver) DeleteProductPlan(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteProductPlan - deleteProductPlan"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	return true, r.CatalogSvc.DeletePlan(ctx, tid, id)
 }
 
 // Plans is the resolver for the plans field.
 func (r *productResolver) Plans(ctx context.Context, obj *model.Product) ([]model.ProductPlan, error) {
-	panic(fmt.Errorf("not implemented: Plans - plans"))
+	ps, err := r.loaders(ctx).PlansByProd.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ProductPlan, len(ps))
+	for i, p := range ps {
+		out[i] = *toPlan(p)
+	}
+	return out, nil
 }
 
 // FreeSlotCount is the resolver for the freeSlotCount field.
 func (r *productResolver) FreeSlotCount(ctx context.Context, obj *model.Product) (int, error) {
-	panic(fmt.Errorf("not implemented: FreeSlotCount - freeSlotCount"))
+	return r.loaders(ctx).FreeByProd.Load(ctx, obj.ID)
 }
 
 // ActiveSubscriptionCount is the resolver for the activeSubscriptionCount field.
 func (r *productResolver) ActiveSubscriptionCount(ctx context.Context, obj *model.Product) (int, error) {
-	panic(fmt.Errorf("not implemented: ActiveSubscriptionCount - activeSubscriptionCount"))
+	return r.loaders(ctx).ActiveByProd.Load(ctx, obj.ID)
 }
 
-// Products is the resolver for the products field.
+// Products is the resolver for the products field. Catalogs are small: ordered by
+// sortOrder, up to page.first (max 100); page.after is ignored.
 func (r *queryResolver) Products(ctx context.Context, filter *model.ProductFilter, page *model.PageInput) ([]model.Product, error) {
-	panic(fmt.Errorf("not implemented: Products - products"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, _ := pageOf(&model.PageInput{First: pageFirst(page)})
+	var f catalog.Filter
+	if filter != nil {
+		f = catalog.Filter{Search: filter.Search, Category: filter.Category, IsActive: filter.IsActive}
+	}
+	ps, err := r.CatalogSvc.List(ctx, tid, f, pg.First)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Product, len(ps))
+	for i, p := range ps {
+		out[i] = *toProduct(p)
+	}
+	return out, nil
 }
 
 // Product is the resolver for the product field.
 func (r *queryResolver) Product(ctx context.Context, id uuid.UUID) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.CatalogSvc.Get(ctx, tid, id)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return toProduct(p), nil
 }
 
 // Product returns generated.ProductResolver implementation.

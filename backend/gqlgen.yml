@@ -17,15 +17,37 @@ omit_getters: true
 struct_fields_always_pointers: false
 resolvers_always_return_pointers: true
 models:
+  # graph/scalars wraps gqlgen's scalars so bad input -> BAD_USER_INPUT.
   UUID:
-    model: github.com/99designs/gqlgen/graphql.UUID
+    model: provider_saas/graph/scalars.UUID
   Time:
-    model: github.com/99designs/gqlgen/graphql.Time
+    model: provider_saas/graph/scalars.Time
   Money:
-    model: github.com/99designs/gqlgen/graphql.Int64
+    model: provider_saas/graph/scalars.Money
   JSON:
     model: github.com/99designs/gqlgen/graphql.Map
   ID:
     model: github.com/99designs/gqlgen/graphql.ID
   Int:
     model: github.com/99designs/gqlgen/graphql.Int
+  # Hand-written models (graph/model/bound.go) carry FK ids for forceResolver fields.
+  Subscription:
+    model: provider_saas/graph/model.Subscription
+  MasterAccount:
+    model: provider_saas/graph/model.MasterAccount
+  Slot:
+    model: provider_saas/graph/model.Slot
+  Invoice:
+    model: provider_saas/graph/model.Invoice
+  Payment:
+    model: provider_saas/graph/model.Payment
+  LedgerEntry:
+    model: provider_saas/graph/model.LedgerEntry
+  ProductStat:
+    model: provider_saas/graph/model.ProductStat
+  AtRiskCustomer:
+    model: provider_saas/graph/model.AtRiskCustomer
+  User:
+    fields:
+      memberships:
+        resolver: true

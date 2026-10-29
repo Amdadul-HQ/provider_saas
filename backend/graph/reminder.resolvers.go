@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,52 +15,52 @@ import (
 
 // UpsertReminderRule is the resolver for the upsertReminderRule field.
 func (r *mutationResolver) UpsertReminderRule(ctx context.Context, id *uuid.UUID, input model.ReminderRuleInput) (*model.ReminderRule, error) {
-	panic(fmt.Errorf("not implemented: UpsertReminderRule - upsertReminderRule"))
+	return nil, errNotImplemented
 }
 
 // DeleteReminderRule is the resolver for the deleteReminderRule field.
 func (r *mutationResolver) DeleteReminderRule(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DeleteReminderRule - deleteReminderRule"))
+	return false, errNotImplemented
 }
 
 // SendReminderNow is the resolver for the sendReminderNow field.
 func (r *mutationResolver) SendReminderNow(ctx context.Context, subscriptionID uuid.UUID, templateID *uuid.UUID, channel *model.ReminderChannel) (*model.Reminder, error) {
-	panic(fmt.Errorf("not implemented: SendReminderNow - sendReminderNow"))
+	return nil, errNotImplemented
 }
 
 // CancelReminder is the resolver for the cancelReminder field.
 func (r *mutationResolver) CancelReminder(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: CancelReminder - cancelReminder"))
+	return false, errNotImplemented
 }
 
 // ReminderRules is the resolver for the reminderRules field.
 func (r *queryResolver) ReminderRules(ctx context.Context) ([]model.ReminderRule, error) {
-	panic(fmt.Errorf("not implemented: ReminderRules - reminderRules"))
+	return nil, errNotImplemented
 }
 
 // Reminders is the resolver for the reminders field.
 func (r *queryResolver) Reminders(ctx context.Context, status *model.ReminderStatus, customerID *uuid.UUID, page *model.PageInput) ([]model.Reminder, error) {
-	panic(fmt.Errorf("not implemented: Reminders - reminders"))
+	return nil, errNotImplemented
 }
 
 // Rule is the resolver for the rule field.
 func (r *reminderResolver) Rule(ctx context.Context, obj *model.Reminder) (*model.ReminderRule, error) {
-	panic(fmt.Errorf("not implemented: Rule - rule"))
+	return nil, errNotImplemented
 }
 
 // Customer is the resolver for the customer field.
 func (r *reminderResolver) Customer(ctx context.Context, obj *model.Reminder) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return nil, errNotImplemented
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *reminderResolver) Subscription(ctx context.Context, obj *model.Reminder) (*model.Subscription, error) {
-	panic(fmt.Errorf("not implemented: Subscription - subscription"))
+	return nil, errNotImplemented
 }
 
 // Template is the resolver for the template field.
 func (r *reminderRuleResolver) Template(ctx context.Context, obj *model.ReminderRule) (*model.MessageTemplate, error) {
-	panic(fmt.Errorf("not implemented: Template - template"))
+	return nil, errNotImplemented
 }
 
 // Reminder returns generated.ReminderResolver implementation.

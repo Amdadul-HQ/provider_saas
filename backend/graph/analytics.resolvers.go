@@ -7,44 +7,106 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/platform/apperr"
 )
 
 // Customer is the resolver for the customer field.
 func (r *atRiskCustomerResolver) Customer(ctx context.Context, obj *model.AtRiskCustomer) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	c, err := r.customerByID(ctx, &obj.CustomerID)
+	if err == nil && c == nil {
+		err = apperr.NotFound("customer")
+	}
+	return c, err
 }
 
 // Product is the resolver for the product field.
 func (r *productStatResolver) Product(ctx context.Context, obj *model.ProductStat) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+	return r.productByID(ctx, obj.ProductID)
 }
 
 // DashboardStats is the resolver for the dashboardStats field.
 func (r *queryResolver) DashboardStats(ctx context.Context) (*model.DashboardStats, error) {
-	panic(fmt.Errorf("not implemented: DashboardStats - dashboardStats"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d, err := r.AnalyticsSvc.Dashboard(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return toDashboard(d), nil
 }
 
 // RevenueSeries is the resolver for the revenueSeries field.
 func (r *queryResolver) RevenueSeries(ctx context.Context, days *int) ([]model.TimeSeriesPoint, error) {
-	panic(fmt.Errorf("not implemented: RevenueSeries - revenueSeries"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ps, err := r.AnalyticsSvc.RevenueSeries(ctx, tid, deref(days, 30))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.TimeSeriesPoint, len(ps))
+	for i, p := range ps {
+		out[i] = model.TimeSeriesPoint{Date: p.Date, Value: p.Value, Count: p.Count}
+	}
+	return out, nil
 }
 
 // ProductStats is the resolver for the productStats field.
 func (r *queryResolver) ProductStats(ctx context.Context, days *int) ([]model.ProductStat, error) {
-	panic(fmt.Errorf("not implemented: ProductStats - productStats"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ps, err := r.AnalyticsSvc.ProductStats(ctx, tid, deref(days, 30))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ProductStat, len(ps))
+	for i, p := range ps {
+		out[i] = model.ProductStat{ProductID: p.ProductID, ActiveSubscriptions: p.ActiveSubscriptions, Revenue: p.Revenue,
+			Cost: p.Cost, Profit: p.Profit, RenewalRate: p.RenewalRate}
+	}
+	return out, nil
 }
 
 // ChannelStats is the resolver for the channelStats field.
 func (r *queryResolver) ChannelStats(ctx context.Context, days *int) ([]model.ChannelStat, error) {
-	panic(fmt.Errorf("not implemented: ChannelStats - channelStats"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	cs, err := r.AnalyticsSvc.ChannelStats(ctx, tid, deref(days, 30))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ChannelStat, len(cs))
+	for i, c := range cs {
+		out[i] = model.ChannelStat{Platform: upper[model.SocialPlatform](c.Platform), Conversations: c.Conversations,
+			Customers: c.Customers, Orders: c.Orders}
+	}
+	return out, nil
 }
 
 // AtRiskCustomers is the resolver for the atRiskCustomers field.
 func (r *queryResolver) AtRiskCustomers(ctx context.Context, limit *int) ([]model.AtRiskCustomer, error) {
-	panic(fmt.Errorf("not implemented: AtRiskCustomers - atRiskCustomers"))
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	as, err := r.AnalyticsSvc.AtRiskCustomers(ctx, tid, deref(limit, 20))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.AtRiskCustomer, len(as))
+	for i, a := range as {
+		out[i] = model.AtRiskCustomer{CustomerID: a.CustomerID, Reason: a.Reason, ExpiresAt: a.ExpiresAt, DueBalance: a.DueBalance}
+	}
+	return out, nil
 }
 
 // AtRiskCustomer returns generated.AtRiskCustomerResolver implementation.

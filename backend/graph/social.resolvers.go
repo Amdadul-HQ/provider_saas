@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 
@@ -16,47 +15,47 @@ import (
 
 // StartMetaConnect is the resolver for the startMetaConnect field.
 func (r *mutationResolver) StartMetaConnect(ctx context.Context, platform model.SocialPlatform) (*model.OAuthURL, error) {
-	panic(fmt.Errorf("not implemented: StartMetaConnect - startMetaConnect"))
+	return nil, errNotImplemented
 }
 
 // CompleteMetaConnect is the resolver for the completeMetaConnect field.
 func (r *mutationResolver) CompleteMetaConnect(ctx context.Context, code string, state string) ([]model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: CompleteMetaConnect - completeMetaConnect"))
+	return nil, errNotImplemented
 }
 
 // ConnectTelegram is the resolver for the connectTelegram field.
 func (r *mutationResolver) ConnectTelegram(ctx context.Context, input model.ConnectTelegramInput) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: ConnectTelegram - connectTelegram"))
+	return nil, errNotImplemented
 }
 
 // ConnectWhatsApp is the resolver for the connectWhatsApp field.
 func (r *mutationResolver) ConnectWhatsApp(ctx context.Context, input model.ConnectWhatsAppInput) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: ConnectWhatsApp - connectWhatsApp"))
+	return nil, errNotImplemented
 }
 
 // DisconnectSocialAccount is the resolver for the disconnectSocialAccount field.
 func (r *mutationResolver) DisconnectSocialAccount(ctx context.Context, id uuid.UUID) (bool, error) {
-	panic(fmt.Errorf("not implemented: DisconnectSocialAccount - disconnectSocialAccount"))
+	return false, errNotImplemented
 }
 
 // SyncSocialAccount is the resolver for the syncSocialAccount field.
 func (r *mutationResolver) SyncSocialAccount(ctx context.Context, id uuid.UUID) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: SyncSocialAccount - syncSocialAccount"))
+	return nil, errNotImplemented
 }
 
 // SocialAccounts is the resolver for the socialAccounts field.
 func (r *queryResolver) SocialAccounts(ctx context.Context) ([]model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: SocialAccounts - socialAccounts"))
+	return nil, errNotImplemented
 }
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *queryResolver) SocialAccount(ctx context.Context, id uuid.UUID) (*model.SocialAccount, error) {
-	panic(fmt.Errorf("not implemented: SocialAccount - socialAccount"))
+	return nil, errNotImplemented
 }
 
 // OpenConversationCount is the resolver for the openConversationCount field.
 func (r *socialAccountResolver) OpenConversationCount(ctx context.Context, obj *model.SocialAccount) (int, error) {
-	panic(fmt.Errorf("not implemented: OpenConversationCount - openConversationCount"))
+	return 0, errNotImplemented
 }
 
 // SocialAccount returns generated.SocialAccountResolver implementation.
