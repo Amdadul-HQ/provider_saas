@@ -37,6 +37,7 @@ type SeedResult struct {
 	Customers     int
 	Subscriptions int
 	Skipped       bool
+	Engagement    EngagementResult
 }
 
 type seedPlan struct {
@@ -118,16 +119,21 @@ func (c *Container) Seed(ctx context.Context) (SeedResult, error) {
 	sess, err := c.Auth.Login(ctx, auth.LoginInput{Identifier: DemoEmail, Password: DemoPassword}, auth.ClientMeta{})
 	if err == nil && sess.Membership != nil {
 		res.Skipped, res.TenantID, res.UserID = true, sess.Membership.Tenant.ID, sess.User.ID
-		return res, nil
-	}
-	if err != nil && !errors.Is(err, apperr.ErrUnauthenticated) {
+	} else if err != nil && !errors.Is(err, apperr.ErrUnauthenticated) {
 		return res, err
+	} else {
+		err = db.WithTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
+			var err error
+			res, err = c.seed(ctx)
+			return err
+		})
+		if err != nil {
+			return res, err
+		}
 	}
-	err = db.WithTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
-		var err error
-		res, err = c.seed(ctx)
-		return err
-	})
+	// Inbox / storefront / tickets / reminders / content demo data: its own all-or-nothing
+	// transaction, applied once (also to a demo tenant seeded before these modules existed).
+	res.Engagement, err = c.seedEngagement(ctx, res.TenantID, res.UserID)
 	return res, err
 }
 
@@ -245,11 +251,13 @@ func (c *Container) seed(ctx context.Context) (SeedResult, error) {
 		}
 		res.Subscriptions++
 		if ss.pay == payPending {
-			invs, _, _, err := c.Billing.Invoices(ctx, tid, billing.InvoiceFilter{CustomerID: &sub.CustomerID}, pagination.Page{First: 1})
-			if err != nil || len(invs) == 0 {
-				return res, fmt.Errorf("pending payment %d: invoice lookup: %v", i, err)
+			// All rows of the seed tx share created_at (now() = tx start), so "newest invoice"
+			// is ambiguous: find the invoice whose item bills this subscription.
+			invID, err := c.invoiceOfSubscription(ctx, tid, sub)
+			if err != nil {
+				return res, fmt.Errorf("pending payment %d: invoice lookup: %w", i, err)
 			}
-			if _, err := c.Billing.RecordPayment(ctx, tid, uid, &invs[0].ID, &sub.CustomerID, billing.PaymentInput{Method: "bkash", Amount: plan.Price,
+			if _, err := c.Billing.RecordPayment(ctx, tid, uid, &invID, &sub.CustomerID, billing.PaymentInput{Method: "bkash", Amount: plan.Price,
 				TrxID: &trx, SenderNumber: strp(seedCustomers[ss.cust].phone)}, billing.RecordOptions{}); err != nil {
 				return res, fmt.Errorf("pending payment %d: %w", i, err)
 			}
@@ -311,3 +319,27 @@ func (c *Container) seed(ctx context.Context) (SeedResult, error) {
 
 func strp(s string) *string { return &s }
 func intp(i int) *int       { return &i }
+
+// invoiceOfSubscription returns the invoice that bills sub.
+func (c *Container) invoiceOfSubscription(ctx context.Context, tid uuid.UUID, sub subscription.Subscription) (uuid.UUID, error) {
+	invs, _, _, err := c.Billing.Invoices(ctx, tid, billing.InvoiceFilter{CustomerID: &sub.CustomerID}, pagination.Page{First: pagination.MaxFirst})
+	if err != nil {
+		return uuid.Nil, err
+	}
+	ids := make([]uuid.UUID, len(invs))
+	for i, inv := range invs {
+		ids[i] = inv.ID
+	}
+	items, err := c.Billing.ItemsByInvoices(ctx, tid, ids)
+	if err != nil {
+		return uuid.Nil, err
+	}
+	for invID, its := range items {
+		for _, it := range its {
+			if it.SubscriptionID != nil && *it.SubscriptionID == sub.ID {
+				return invID, nil
+			}
+		}
+	}
+	return uuid.Nil, fmt.Errorf("no invoice bills subscription %s", sub.ID)
+}

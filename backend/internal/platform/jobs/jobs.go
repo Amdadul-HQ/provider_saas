@@ -74,6 +74,14 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, runAt tim
 	return id, err
 }
 
+// Cancel finishes a pending (not running) job by dedupe key so the key can be reused,
+// e.g. when a scheduled post is rescheduled. Reports whether a job was cancelled.
+func (q *Queue) Cancel(ctx context.Context, dedupeKey string) (bool, error) {
+	tag, err := db.Conn(ctx, q.pool).Exec(ctx, `UPDATE jobs SET done_at = now(), last_error = 'cancelled'
+		WHERE dedupe_key = $1 AND done_at IS NULL AND locked_at IS NULL`, dedupeKey)
+	return tag.RowsAffected() > 0, err
+}
+
 // Worker polls and runs jobs.
 type Worker struct {
 	pool         *pgxpool.Pool
@@ -137,18 +145,33 @@ func (w *Worker) Run(ctx context.Context) error {
 
 // RunOnce claims and executes at most one due job. It reports whether a job ran.
 func (w *Worker) RunOnce(ctx context.Context) (bool, error) {
-	var j Job
-	err := w.pool.QueryRow(ctx, `
-		UPDATE jobs SET locked_at = now(), locked_by = $1, attempts = attempts + 1
-		WHERE id = (
+	return w.claimAndRun(ctx, `
 			SELECT id FROM jobs
 			WHERE done_at IS NULL AND run_at <= now()
 			  AND (locked_at IS NULL OR locked_at < now() - $2::interval)
 			ORDER BY run_at
 			FOR UPDATE SKIP LOCKED
-			LIMIT 1)
-		RETURNING id, tenant_id, kind, payload, attempts, max_attempts, run_at`,
-		w.ID, fmt.Sprintf("%d seconds", int(w.LockTimeout.Seconds()))).
+			LIMIT 1`)
+}
+
+// RunByID claims one specific due job and executes it now (used to run a just-committed
+// job inline, e.g. an outbound message, instead of waiting for the poller). It is safe
+// against a concurrent worker: whoever claims the row first runs it, the other skips.
+func (w *Worker) RunByID(ctx context.Context, id int64) (bool, error) {
+	return w.claimAndRun(ctx, `
+			SELECT id FROM jobs
+			WHERE id = $3 AND done_at IS NULL AND run_at <= now()
+			  AND (locked_at IS NULL OR locked_at < now() - $2::interval)
+			FOR UPDATE SKIP LOCKED`, id)
+}
+
+func (w *Worker) claimAndRun(ctx context.Context, pick string, extra ...any) (bool, error) {
+	var j Job
+	args := append([]any{w.ID, fmt.Sprintf("%d seconds", int(w.LockTimeout.Seconds()))}, extra...)
+	err := w.pool.QueryRow(ctx, `
+		UPDATE jobs SET locked_at = now(), locked_by = $1, attempts = attempts + 1
+		WHERE id = (`+pick+`)
+		RETURNING id, tenant_id, kind, payload, attempts, max_attempts, run_at`, args...).
 		Scan(&j.ID, &j.TenantID, &j.Kind, &j.Payload, &j.Attempts, &j.MaxAttempts, &j.RunAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil

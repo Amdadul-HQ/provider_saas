@@ -7,105 +7,226 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/inbox"
 
 	"github.com/google/uuid"
 )
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *conversationResolver) SocialAccount(ctx context.Context, obj *model.Conversation) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	return r.socialAccountByID(ctx, obj.SocialAccountID)
 }
 
 // Customer is the resolver for the customer field.
 func (r *conversationResolver) Customer(ctx context.Context, obj *model.Conversation) (*model.Customer, error) {
-	return nil, errNotImplemented
+	return r.customerByID(ctx, obj.CustomerID)
 }
 
 // Identity is the resolver for the identity field.
 func (r *conversationResolver) Identity(ctx context.Context, obj *model.Conversation) (*model.CustomerIdentity, error) {
-	return nil, errNotImplemented
+	if obj.IdentityID == nil || obj.CustomerID == nil {
+		return nil, nil
+	}
+	ids, err := r.loaders(ctx).IdentitiesBy.Load(ctx, *obj.CustomerID)
+	if err != nil {
+		return nil, err
+	}
+	for _, i := range ids {
+		if i.ID == *obj.IdentityID {
+			v := toIdentity(i)
+			return &v, nil
+		}
+	}
+	return nil, nil
 }
 
 // AssignedTo is the resolver for the assignedTo field.
 func (r *conversationResolver) AssignedTo(ctx context.Context, obj *model.Conversation) (*model.User, error) {
-	return nil, errNotImplemented
+	return r.userByID(ctx, obj.AssignedToID)
 }
 
 // Messages is the resolver for the messages field.
 func (r *conversationResolver) Messages(ctx context.Context, obj *model.Conversation, page *model.PageInput) ([]model.Message, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	before, first, err := afterID(page)
+	if err != nil {
+		return nil, err
+	}
+	if page == nil || page.First == nil {
+		first = 50
+	}
+	ms, err := r.InboxSvc.Messages(ctx, tid, obj.ID, before, first)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Message, len(ms))
+	for i, m := range ms {
+		out[i] = *toMessage(m)
+	}
+	return out, nil
 }
 
 // SentBy is the resolver for the sentBy field.
 func (r *messageResolver) SentBy(ctx context.Context, obj *model.Message) (*model.User, error) {
-	return nil, errNotImplemented
+	return r.userByID(ctx, obj.SentByID)
 }
 
 // SendMessage is the resolver for the sendMessage field.
 func (r *mutationResolver) SendMessage(ctx context.Context, input model.SendMessageInput) (*model.Message, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	att, err := attachmentsOf(input.Attachments, "attachments")
+	if err != nil {
+		return nil, err
+	}
+	vars := map[string]string{}
+	for k, v := range input.Variables {
+		vars[k] = fmt.Sprint(v)
+	}
+	m, err := r.InboxSvc.Send(ctx, tid, uid, inbox.SendInput{ConversationID: input.ConversationID, Body: input.Body,
+		TemplateID: input.TemplateID, Variables: vars, Attachments: att})
+	if err != nil {
+		return nil, err
+	}
+	return toMessage(m), nil
 }
 
 // AssignConversation is the resolver for the assignConversation field.
 func (r *mutationResolver) AssignConversation(ctx context.Context, id uuid.UUID, userID *uuid.UUID) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) { return r.InboxSvc.Assign(ctx, tid, id, userID) })
 }
 
 // SetConversationStatus is the resolver for the setConversationStatus field.
 func (r *mutationResolver) SetConversationStatus(ctx context.Context, id uuid.UUID, status model.ConversationStatus) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) {
+		return r.InboxSvc.SetStatus(ctx, tid, id, lower(status))
+	})
 }
 
 // MarkConversationRead is the resolver for the markConversationRead field.
 func (r *mutationResolver) MarkConversationRead(ctx context.Context, id uuid.UUID) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) { return r.InboxSvc.MarkRead(ctx, tid, id) })
 }
 
 // AddConversationLabel is the resolver for the addConversationLabel field.
 func (r *mutationResolver) AddConversationLabel(ctx context.Context, id uuid.UUID, label string) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) { return r.InboxSvc.AddLabel(ctx, tid, id, label) })
 }
 
 // RemoveConversationLabel is the resolver for the removeConversationLabel field.
 func (r *mutationResolver) RemoveConversationLabel(ctx context.Context, id uuid.UUID, label string) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) { return r.InboxSvc.RemoveLabel(ctx, tid, id, label) })
 }
 
 // LinkConversationCustomer is the resolver for the linkConversationCustomer field.
 func (r *mutationResolver) LinkConversationCustomer(ctx context.Context, id uuid.UUID, customerID uuid.UUID) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	return r.Resolver.convUpdate(ctx, func(tid uuid.UUID) (inbox.Conversation, error) {
+		return r.InboxSvc.LinkCustomer(ctx, tid, id, customerID)
+	})
 }
 
 // UpsertMessageTemplate is the resolver for the upsertMessageTemplate field.
 func (r *mutationResolver) UpsertMessageTemplate(ctx context.Context, id *uuid.UUID, input model.MessageTemplateInput) (*model.MessageTemplate, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.InboxSvc.UpsertTemplate(ctx, tid, id, inbox.TemplateInput{Key: input.Key, Name: input.Name, Body: input.Body,
+		Category: lower(input.Category), IsActive: deref(input.IsActive, true)})
+	if err != nil {
+		return nil, err
+	}
+	return toTemplate(t), nil
 }
 
 // DeleteMessageTemplate is the resolver for the deleteMessageTemplate field.
 func (r *mutationResolver) DeleteMessageTemplate(ctx context.Context, id uuid.UUID) (bool, error) {
-	return false, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.InboxSvc.DeleteTemplate(ctx, tid, id); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Conversations is the resolver for the conversations field.
 func (r *queryResolver) Conversations(ctx context.Context, filter *model.ConversationFilter, page *model.PageInput) (*model.ConversationConnection, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pg, err := pageOf(page)
+	if err != nil {
+		return nil, err
+	}
+	var f inbox.Filter
+	if filter != nil {
+		f = inbox.Filter{Status: lowerPtr(filter.Status), Platform: lowerPtr(filter.Platform), SocialAccountID: filter.SocialAccountID,
+			CustomerID: filter.CustomerID, AssignedTo: filter.AssignedTo, Unassigned: filter.Unassigned, Search: filter.Search, Label: filter.Label}
+	}
+	items, more, total, err := r.InboxSvc.Conversations(ctx, tid, f, pg)
+	if err != nil {
+		return nil, err
+	}
+	conn := &model.ConversationConnection{Edges: make([]model.ConversationEdge, len(items)), TotalCount: total,
+		PageInfo: pageInfo(items, more, conversationCursor)}
+	for i, c := range items {
+		conn.Edges[i] = model.ConversationEdge{Cursor: conversationCursor(c), Node: *toConversation(c)}
+	}
+	return conn, nil
 }
 
 // Conversation is the resolver for the conversation field.
 func (r *queryResolver) Conversation(ctx context.Context, id uuid.UUID) (*model.Conversation, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.InboxSvc.Conversation(ctx, tid, id)
+	if err != nil {
+		return nilIfNotFound[model.Conversation](nil, err)
+	}
+	return toConversation(c), nil
 }
 
 // InboxCounts is the resolver for the inboxCounts field.
 func (r *queryResolver) InboxCounts(ctx context.Context) (*model.InboxCounts, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.InboxSvc.Counts(ctx, tid, uid)
+	if err != nil {
+		return nil, err
+	}
+	return &model.InboxCounts{Open: c.Open, Unassigned: c.Unassigned, Mine: c.Mine, Unread: c.Unread}, nil
 }
 
 // MessageTemplates is the resolver for the messageTemplates field.
 func (r *queryResolver) MessageTemplates(ctx context.Context, category *model.TemplateCategory) ([]model.MessageTemplate, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ts, err := r.InboxSvc.Templates(ctx, tid, lowerPtr(category))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.MessageTemplate, len(ts))
+	for i, t := range ts {
+		out[i] = *toTemplate(t)
+	}
+	return out, nil
 }
 
 // Conversation returns generated.ConversationResolver implementation.

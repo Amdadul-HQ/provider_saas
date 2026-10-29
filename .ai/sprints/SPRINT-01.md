@@ -6,7 +6,7 @@ Goal: runnable skeleton end to end — DB, GraphQL, auth, tenant, customers, pro
 | 1 | AI memory + team + workflow | orchestrator | done |
 | 2 | Database design + migrations | backend-expert | done |
 | 3 | GraphQL contract (all modules) | team-lead | done |
-| 4 | Go backend: platform + modules compile & serve | backend-expert | core done; social/inbox/content/ticket/reminder/storefront in progress |
+| 4 | Go backend: platform + modules compile & serve | backend-expert | done |
 | 5 | Next.js: shell, auth, module pages with shadcn | frontend-expert | done |
 | 6 | Docker compose, Makefile, README | orchestrator | done |
 | 7 | QA pass: build, smoke, tenant isolation | qa-tester | todo |

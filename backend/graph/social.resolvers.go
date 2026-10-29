@@ -9,53 +9,118 @@ import (
 	"context"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/social"
 
 	"github.com/google/uuid"
 )
 
 // StartMetaConnect is the resolver for the startMetaConnect field.
 func (r *mutationResolver) StartMetaConnect(ctx context.Context, platform model.SocialPlatform) (*model.OAuthURL, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	u, err := r.SocialSvc.StartMetaConnect(ctx, tid, uid, lower(platform))
+	if err != nil {
+		return nil, err
+	}
+	return &model.OAuthURL{URL: u.URL, State: u.State}, nil
 }
 
 // CompleteMetaConnect is the resolver for the completeMetaConnect field.
 func (r *mutationResolver) CompleteMetaConnect(ctx context.Context, code string, state string) ([]model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	as, err := r.SocialSvc.CompleteMetaConnect(ctx, tid, uid, code, state)
+	if err != nil {
+		return nil, err
+	}
+	return toSocialAccounts(as), nil
 }
 
 // ConnectTelegram is the resolver for the connectTelegram field.
 func (r *mutationResolver) ConnectTelegram(ctx context.Context, input model.ConnectTelegramInput) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := r.SocialSvc.ConnectTelegram(ctx, tid, uid, input.BotToken)
+	if err != nil {
+		return nil, err
+	}
+	return toSocialAccount(a), nil
 }
 
 // ConnectWhatsApp is the resolver for the connectWhatsApp field.
 func (r *mutationResolver) ConnectWhatsApp(ctx context.Context, input model.ConnectWhatsAppInput) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := r.SocialSvc.ConnectWhatsApp(ctx, tid, uid, social.ConnectWhatsAppInput{PhoneNumberID: input.PhoneNumberID,
+		BusinessAccountID: input.BusinessAccountID, AccessToken: input.AccessToken, DisplayName: input.DisplayName})
+	if err != nil {
+		return nil, err
+	}
+	return toSocialAccount(a), nil
 }
 
 // DisconnectSocialAccount is the resolver for the disconnectSocialAccount field.
 func (r *mutationResolver) DisconnectSocialAccount(ctx context.Context, id uuid.UUID) (bool, error) {
-	return false, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.SocialSvc.Disconnect(ctx, tid, id); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SyncSocialAccount is the resolver for the syncSocialAccount field.
 func (r *mutationResolver) SyncSocialAccount(ctx context.Context, id uuid.UUID) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := r.SocialSvc.Sync(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	return toSocialAccount(a), nil
 }
 
 // SocialAccounts is the resolver for the socialAccounts field.
 func (r *queryResolver) SocialAccounts(ctx context.Context) ([]model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	as, err := r.SocialSvc.List(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return toSocialAccounts(as), nil
 }
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *queryResolver) SocialAccount(ctx context.Context, id uuid.UUID) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	a, err := r.SocialSvc.Get(ctx, tid, id)
+	if err != nil {
+		return nilIfNotFound[model.SocialAccount](nil, err)
+	}
+	return toSocialAccount(a), nil
 }
 
 // OpenConversationCount is the resolver for the openConversationCount field.
 func (r *socialAccountResolver) OpenConversationCount(ctx context.Context, obj *model.SocialAccount) (int, error) {
-	return 0, errNotImplemented
+	return r.loaders(ctx).OpenConvByAcct.Load(ctx, obj.ID)
 }
 
 // SocialAccount returns generated.SocialAccountResolver implementation.

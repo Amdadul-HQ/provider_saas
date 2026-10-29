@@ -46,25 +46,6 @@ type ConnectWhatsAppInput struct {
 	DisplayName       string `json:"displayName"`
 }
 
-type Conversation struct {
-	ID                 uuid.UUID          `json:"id"`
-	SocialAccount      SocialAccount      `json:"socialAccount"`
-	Customer           *Customer          `json:"customer,omitempty"`
-	Identity           *CustomerIdentity  `json:"identity,omitempty"`
-	Platform           SocialPlatform     `json:"platform"`
-	ExternalThreadID   string             `json:"externalThreadId"`
-	Status             ConversationStatus `json:"status"`
-	AssignedTo         *User              `json:"assignedTo,omitempty"`
-	UnreadCount        int                `json:"unreadCount"`
-	LastMessageAt      *time.Time         `json:"lastMessageAt,omitempty"`
-	LastMessagePreview *string            `json:"lastMessagePreview,omitempty"`
-	LastInboundAt      *time.Time         `json:"lastInboundAt,omitempty"`
-	CanReply           bool               `json:"canReply"`
-	Labels             []string           `json:"labels"`
-	Messages           []Message          `json:"messages"`
-	CreatedAt          time.Time          `json:"createdAt"`
-}
-
 type ConversationConnection struct {
 	Edges      []ConversationEdge `json:"edges"`
 	PageInfo   PageInfo           `json:"pageInfo"`
@@ -80,6 +61,7 @@ type ConversationFilter struct {
 	Status          *ConversationStatus `json:"status,omitempty"`
 	Platform        *SocialPlatform     `json:"platform,omitempty"`
 	SocialAccountID *uuid.UUID          `json:"socialAccountId,omitempty"`
+	CustomerID      *uuid.UUID          `json:"customerId,omitempty"`
 	AssignedTo      *uuid.UUID          `json:"assignedTo,omitempty"`
 	Unassigned      *bool               `json:"unassigned,omitempty"`
 	Search          *string             `json:"search,omitempty"`
@@ -308,20 +290,6 @@ type Membership struct {
 	Status        string    `json:"status"`
 }
 
-type Message struct {
-	ID             uuid.UUID        `json:"id"`
-	ConversationID uuid.UUID        `json:"conversationId"`
-	Direction      MessageDirection `json:"direction"`
-	ExternalID     *string          `json:"externalId,omitempty"`
-	Kind           MessageKind      `json:"kind"`
-	Body           *string          `json:"body,omitempty"`
-	Attachments    map[string]any   `json:"attachments"`
-	SentBy         *User            `json:"sentBy,omitempty"`
-	Status         string           `json:"status"`
-	Error          *string          `json:"error,omitempty"`
-	SentAt         time.Time        `json:"sentAt"`
-}
-
 type MessageTemplate struct {
 	ID       uuid.UUID        `json:"id"`
 	Key      string           `json:"key"`
@@ -355,25 +323,6 @@ type Notification struct {
 type OAuthURL struct {
 	URL   string `json:"url"`
 	State string `json:"state"`
-}
-
-type Order struct {
-	ID             uuid.UUID    `json:"id"`
-	Number         int          `json:"number"`
-	Customer       *Customer    `json:"customer,omitempty"`
-	Product        Product      `json:"product"`
-	Plan           *ProductPlan `json:"plan,omitempty"`
-	Quantity       int          `json:"quantity"`
-	Amount         int64        `json:"amount"`
-	Currency       string       `json:"currency"`
-	Source         OrderSource  `json:"source"`
-	Status         OrderStatus  `json:"status"`
-	Payment        *Payment     `json:"payment,omitempty"`
-	SubscriptionID *uuid.UUID   `json:"subscriptionId,omitempty"`
-	CustomerName   *string      `json:"customerName,omitempty"`
-	CustomerPhone  *string      `json:"customerPhone,omitempty"`
-	CustomerNote   *string      `json:"customerNote,omitempty"`
-	CreatedAt      time.Time    `json:"createdAt"`
 }
 
 type OrderFilter struct {
@@ -480,34 +429,6 @@ type PortalView struct {
 	Storefront    PublicStorefront     `json:"storefront"`
 }
 
-type Post struct {
-	ID          uuid.UUID      `json:"id"`
-	Body        string         `json:"body"`
-	Media       map[string]any `json:"media"`
-	ScheduledAt *time.Time     `json:"scheduledAt,omitempty"`
-	Status      PostStatus     `json:"status"`
-	Targets     []PostTarget   `json:"targets"`
-	CreatedBy   *User          `json:"createdBy,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
-}
-
-type PostInput struct {
-	Body             string         `json:"body"`
-	Media            map[string]any `json:"media,omitempty"`
-	ScheduledAt      *time.Time     `json:"scheduledAt,omitempty"`
-	SocialAccountIds []uuid.UUID    `json:"socialAccountIds"`
-}
-
-type PostTarget struct {
-	ID             uuid.UUID     `json:"id"`
-	SocialAccount  SocialAccount `json:"socialAccount"`
-	ExternalPostID *string       `json:"externalPostId,omitempty"`
-	Status         string        `json:"status"`
-	Error          *string       `json:"error,omitempty"`
-	PublishedAt    *time.Time    `json:"publishedAt,omitempty"`
-}
-
 type Product struct {
 	ID                      uuid.UUID     `json:"id"`
 	Name                    string        `json:"name"`
@@ -552,16 +473,6 @@ type ProductPlanInput struct {
 	SortOrder    *int   `json:"sortOrder,omitempty"`
 }
 
-type PublicOrder struct {
-	Number              int            `json:"number"`
-	Status              OrderStatus    `json:"status"`
-	Amount              int64          `json:"amount"`
-	Currency            string         `json:"currency"`
-	ProductName         string         `json:"productName"`
-	PaymentInstructions *string        `json:"paymentInstructions,omitempty"`
-	PaymentNumbers      map[string]any `json:"paymentNumbers"`
-}
-
 type PublicPlan struct {
 	ID           uuid.UUID `json:"id"`
 	Name         string    `json:"name"`
@@ -580,22 +491,6 @@ type PublicProduct struct {
 	InStock     bool         `json:"inStock"`
 }
 
-// Public, unauthenticated view of a storefront.
-type PublicStorefront struct {
-	Slug                string          `json:"slug"`
-	DisplayName         string          `json:"displayName"`
-	Tagline             *string         `json:"tagline,omitempty"`
-	LogoURL             *string         `json:"logoUrl,omitempty"`
-	CoverURL            *string         `json:"coverUrl,omitempty"`
-	Theme               map[string]any  `json:"theme"`
-	Whatsapp            *string         `json:"whatsapp,omitempty"`
-	MessengerURL        *string         `json:"messengerUrl,omitempty"`
-	Telegram            *string         `json:"telegram,omitempty"`
-	PaymentInstructions *string         `json:"paymentInstructions,omitempty"`
-	PaymentNumbers      map[string]any  `json:"paymentNumbers"`
-	Products            []PublicProduct `json:"products"`
-}
-
 type Query struct {
 }
 
@@ -605,34 +500,6 @@ type RegisterInput struct {
 	Phone        *string `json:"phone,omitempty"`
 	Password     string  `json:"password"`
 	BusinessName string  `json:"businessName"`
-}
-
-type Reminder struct {
-	ID              uuid.UUID      `json:"id"`
-	Rule            *ReminderRule  `json:"rule,omitempty"`
-	Customer        *Customer      `json:"customer,omitempty"`
-	Subscription    *Subscription  `json:"subscription,omitempty"`
-	InvoiceID       *uuid.UUID     `json:"invoiceId,omitempty"`
-	MasterAccountID *uuid.UUID     `json:"masterAccountId,omitempty"`
-	Channel         string         `json:"channel"`
-	ScheduledAt     time.Time      `json:"scheduledAt"`
-	SentAt          *time.Time     `json:"sentAt,omitempty"`
-	Status          ReminderStatus `json:"status"`
-	RenderedBody    *string        `json:"renderedBody,omitempty"`
-	Error           *string        `json:"error,omitempty"`
-}
-
-type ReminderRule struct {
-	ID         uuid.UUID        `json:"id"`
-	Name       string           `json:"name"`
-	Trigger    ReminderTrigger  `json:"trigger"`
-	OffsetDays int              `json:"offsetDays"`
-	SendHour   int              `json:"sendHour"`
-	Channel    ReminderChannel  `json:"channel"`
-	Template   *MessageTemplate `json:"template,omitempty"`
-	ProductID  *uuid.UUID       `json:"productId,omitempty"`
-	IsActive   bool             `json:"isActive"`
-	CreatedAt  time.Time        `json:"createdAt"`
 }
 
 type ReminderRuleInput struct {
@@ -660,14 +527,6 @@ type RevealedCredential struct {
 	Extra    map[string]any `json:"extra,omitempty"`
 }
 
-type SendMessageInput struct {
-	ConversationID uuid.UUID      `json:"conversationId"`
-	Body           *string        `json:"body,omitempty"`
-	TemplateID     *uuid.UUID     `json:"templateId,omitempty"`
-	Variables      map[string]any `json:"variables,omitempty"`
-	Attachments    map[string]any `json:"attachments,omitempty"`
-}
-
 type SocialAccount struct {
 	ID                    uuid.UUID           `json:"id"`
 	Platform              SocialPlatform      `json:"platform"`
@@ -683,38 +542,6 @@ type SocialAccount struct {
 	LastSyncedAt          *time.Time          `json:"lastSyncedAt,omitempty"`
 	OpenConversationCount int                 `json:"openConversationCount"`
 	CreatedAt             time.Time           `json:"createdAt"`
-}
-
-type Storefront struct {
-	ID                  uuid.UUID      `json:"id"`
-	Slug                string         `json:"slug"`
-	DisplayName         string         `json:"displayName"`
-	Tagline             *string        `json:"tagline,omitempty"`
-	LogoURL             *string        `json:"logoUrl,omitempty"`
-	CoverURL            *string        `json:"coverUrl,omitempty"`
-	Theme               map[string]any `json:"theme"`
-	Whatsapp            *string        `json:"whatsapp,omitempty"`
-	MessengerURL        *string        `json:"messengerUrl,omitempty"`
-	Telegram            *string        `json:"telegram,omitempty"`
-	PaymentInstructions *string        `json:"paymentInstructions,omitempty"`
-	PaymentNumbers      map[string]any `json:"paymentNumbers"`
-	IsPublished         bool           `json:"isPublished"`
-	PublicURL           string         `json:"publicUrl"`
-}
-
-type StorefrontInput struct {
-	Slug                *string        `json:"slug,omitempty"`
-	DisplayName         *string        `json:"displayName,omitempty"`
-	Tagline             *string        `json:"tagline,omitempty"`
-	LogoURL             *string        `json:"logoUrl,omitempty"`
-	CoverURL            *string        `json:"coverUrl,omitempty"`
-	Theme               map[string]any `json:"theme,omitempty"`
-	Whatsapp            *string        `json:"whatsapp,omitempty"`
-	MessengerURL        *string        `json:"messengerUrl,omitempty"`
-	Telegram            *string        `json:"telegram,omitempty"`
-	PaymentInstructions *string        `json:"paymentInstructions,omitempty"`
-	PaymentNumbers      map[string]any `json:"paymentNumbers,omitempty"`
-	IsPublished         *bool          `json:"isPublished,omitempty"`
 }
 
 type SubscriptionConnection struct {
@@ -776,35 +603,6 @@ type TenantMember struct {
 	CommissionBps int       `json:"commissionBps"`
 	Status        string    `json:"status"`
 	CreatedAt     time.Time `json:"createdAt"`
-}
-
-type Ticket struct {
-	ID             uuid.UUID       `json:"id"`
-	Number         int             `json:"number"`
-	Customer       Customer        `json:"customer"`
-	Subscription   *Subscription   `json:"subscription,omitempty"`
-	ConversationID *uuid.UUID      `json:"conversationId,omitempty"`
-	Kind           TicketKind      `json:"kind"`
-	Priority       TicketPriority  `json:"priority"`
-	Status         TicketStatus    `json:"status"`
-	Title          string          `json:"title"`
-	Description    *string         `json:"description,omitempty"`
-	Reason         *string         `json:"reason,omitempty"`
-	OldSlot        *Slot           `json:"oldSlot,omitempty"`
-	NewSlot        *Slot           `json:"newSlot,omitempty"`
-	AssignedTo     *User           `json:"assignedTo,omitempty"`
-	Comments       []TicketComment `json:"comments"`
-	ResolvedAt     *time.Time      `json:"resolvedAt,omitempty"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-}
-
-type TicketComment struct {
-	ID         uuid.UUID `json:"id"`
-	Author     *User     `json:"author,omitempty"`
-	Body       string    `json:"body"`
-	IsInternal bool      `json:"isInternal"`
-	CreatedAt  time.Time `json:"createdAt"`
 }
 
 type TicketFilter struct {

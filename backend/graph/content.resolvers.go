@@ -9,58 +9,135 @@ import (
 	"context"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/content"
 
 	"github.com/google/uuid"
 )
 
 // CreatePost is the resolver for the createPost field.
 func (r *mutationResolver) CreatePost(ctx context.Context, input model.PostInput) (*model.Post, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in, err := toPostInput(input)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.ContentSvc.Create(ctx, tid, uid, in)
+	if err != nil {
+		return nil, err
+	}
+	return toPost(p), nil
 }
 
 // UpdatePost is the resolver for the updatePost field.
 func (r *mutationResolver) UpdatePost(ctx context.Context, id uuid.UUID, input model.PostInput) (*model.Post, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	in, err := toPostInput(input)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.ContentSvc.Update(ctx, tid, id, in)
+	if err != nil {
+		return nil, err
+	}
+	return toPost(p), nil
 }
 
 // PublishPostNow is the resolver for the publishPostNow field.
 func (r *mutationResolver) PublishPostNow(ctx context.Context, id uuid.UUID) (*model.Post, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.ContentSvc.PublishNow(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	return toPost(p), nil
 }
 
 // DeletePost is the resolver for the deletePost field.
 func (r *mutationResolver) DeletePost(ctx context.Context, id uuid.UUID) (bool, error) {
-	return false, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.ContentSvc.Delete(ctx, tid, id); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // GeneratePriceList is the resolver for the generatePriceList field.
 func (r *mutationResolver) GeneratePriceList(ctx context.Context, format *string) (string, error) {
-	return "", errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return "", err
+	}
+	return r.ContentSvc.GeneratePriceList(ctx, tid, deref(format, "png"))
 }
 
 // Targets is the resolver for the targets field.
 func (r *postResolver) Targets(ctx context.Context, obj *model.Post) ([]model.PostTarget, error) {
-	return nil, errNotImplemented
+	ts, err := r.loaders(ctx).TargetsByPost.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.PostTarget, len(ts))
+	for i, t := range ts {
+		out[i] = model.PostTarget{ID: t.ID, SocialAccountID: t.SocialAccountID, ExternalPostID: t.ExternalPostID, Status: t.Status,
+			Error: t.Error, PublishedAt: t.PublishedAt}
+	}
+	return out, nil
 }
 
 // CreatedBy is the resolver for the createdBy field.
 func (r *postResolver) CreatedBy(ctx context.Context, obj *model.Post) (*model.User, error) {
-	return nil, errNotImplemented
+	return r.userByID(ctx, obj.CreatedByID)
 }
 
 // SocialAccount is the resolver for the socialAccount field.
 func (r *postTargetResolver) SocialAccount(ctx context.Context, obj *model.PostTarget) (*model.SocialAccount, error) {
-	return nil, errNotImplemented
+	return r.socialAccountByID(ctx, obj.SocialAccountID)
 }
 
 // Posts is the resolver for the posts field.
 func (r *queryResolver) Posts(ctx context.Context, status *model.PostStatus, page *model.PageInput) ([]model.Post, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	after, first, err := afterID(page)
+	if err != nil {
+		return nil, err
+	}
+	ps, err := r.ContentSvc.List(ctx, tid, content.Filter{Status: lowerPtr(status)}, after, first)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Post, len(ps))
+	for i, p := range ps {
+		out[i] = *toPost(p)
+	}
+	return out, nil
 }
 
 // Post is the resolver for the post field.
 func (r *queryResolver) Post(ctx context.Context, id uuid.UUID) (*model.Post, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	p, err := r.ContentSvc.Get(ctx, tid, id)
+	if err != nil {
+		return nilIfNotFound[model.Post](nil, err)
+	}
+	return toPost(p), nil
 }
 
 // Post returns generated.PostResolver implementation.

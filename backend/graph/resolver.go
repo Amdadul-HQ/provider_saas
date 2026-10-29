@@ -11,10 +11,16 @@ import (
 	"provider_saas/internal/modules/auth"
 	"provider_saas/internal/modules/billing"
 	"provider_saas/internal/modules/catalog"
+	"provider_saas/internal/modules/content"
 	"provider_saas/internal/modules/customer"
+	"provider_saas/internal/modules/inbox"
 	"provider_saas/internal/modules/inventory"
+	"provider_saas/internal/modules/reminder"
+	"provider_saas/internal/modules/social"
+	"provider_saas/internal/modules/storefront"
 	"provider_saas/internal/modules/subscription"
 	"provider_saas/internal/modules/tenant"
+	"provider_saas/internal/modules/ticket"
 	"provider_saas/internal/platform/gql"
 )
 
@@ -29,8 +35,12 @@ type Resolver struct {
 	SubscriptionSvc subscription.Service
 	BillingSvc      billing.Service
 	AnalyticsSvc    analytics.Service
-	// Social, Inbox, Content, Ticket, Reminder, Storefront services are added by the
-	// second engineer (see internal/modules/<m>/interfaces.go).
+	SocialSvc       social.Service
+	InboxSvc        inbox.Service
+	ContentSvc      content.Service
+	TicketSvc       ticket.Service
+	ReminderSvc     reminder.Service
+	StorefrontSvc   storefront.Service
 }
 
 // NewExecutableSchema wires resolvers and directives.

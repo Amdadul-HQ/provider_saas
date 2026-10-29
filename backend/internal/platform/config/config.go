@@ -27,10 +27,13 @@ type Config struct {
 	VaultKey         []byte
 	VaultKeyVersion  int
 	PublicAppURL     string
+	PublicAPIURL     string
+	UploadDir        string
 	CORSOrigins      []string
 	MetaAppID        string
 	MetaAppSecret    string
 	MetaVerifyToken  string
+	MetaGraphVersion string
 	SMSWebhookSecret string
 	RateLimitRPS     float64
 	RateLimitBurst   int
@@ -83,9 +86,12 @@ func FromEnv(get func(string) string) (Config, error) {
 		JWTRefreshTTL:    dur("JWT_REFRESH_TTL", "720h"),
 		VaultKeyVersion:  num("VAULT_KEY_VERSION", 1),
 		PublicAppURL:     str("PUBLIC_APP_URL", "http://localhost:3000"),
+		PublicAPIURL:     strings.TrimRight(str("PUBLIC_API_URL", "http://localhost:8080"), "/"),
+		UploadDir:        str("UPLOAD_DIR", "./uploads"),
 		MetaAppID:        str("META_APP_ID", ""),
 		MetaAppSecret:    str("META_APP_SECRET", ""),
 		MetaVerifyToken:  str("META_VERIFY_TOKEN", ""),
+		MetaGraphVersion: str("META_GRAPH_VERSION", "v21.0"),
 		SMSWebhookSecret: str("SMS_WEBHOOK_SECRET", ""),
 		RateLimitBurst:   num("RATE_LIMIT_BURST", 60),
 		ComplexityLimit:  num("GRAPHQL_COMPLEXITY_LIMIT", 1000),

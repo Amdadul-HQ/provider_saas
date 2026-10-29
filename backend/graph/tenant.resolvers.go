@@ -90,6 +90,13 @@ func (r *queryResolver) Tenant(ctx context.Context) (*model.Tenant, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Owners/admins get the SMS-forwarder token created on first use; settings then
+	// carry only sms_webhook_token_hint (the token itself stays in the vault).
+	if p, ok := principalOK(ctx); ok && p.HasRole("owner", "admin") {
+		if _, _, _, err := r.TenantSvc.EnsureSMSWebhookToken(ctx, tid); err != nil {
+			return nil, err
+		}
+	}
 	t, err := r.TenantSvc.Get(ctx, tid)
 	if err != nil {
 		return nil, err

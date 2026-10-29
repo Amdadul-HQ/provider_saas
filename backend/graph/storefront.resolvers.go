@@ -9,88 +9,191 @@ import (
 	"context"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/storefront"
 
 	"github.com/google/uuid"
 )
 
 // UpsertStorefront is the resolver for the upsertStorefront field.
 func (r *mutationResolver) UpsertStorefront(ctx context.Context, input model.StorefrontInput) (*model.Storefront, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sf, err := r.StorefrontSvc.Upsert(ctx, tid, storefront.Input{Slug: input.Slug, DisplayName: input.DisplayName, Tagline: input.Tagline,
+		LogoURL: input.LogoURL, CoverURL: input.CoverURL, Theme: input.Theme, Whatsapp: input.Whatsapp, MessengerURL: input.MessengerURL,
+		Telegram: input.Telegram, PaymentInstructions: input.PaymentInstructions, PaymentNumbers: input.PaymentNumbers, IsPublished: input.IsPublished})
+	if err != nil {
+		return nil, err
+	}
+	return r.toStorefront(sf), nil
 }
 
 // PlaceOrder is the resolver for the placeOrder field.
 func (r *mutationResolver) PlaceOrder(ctx context.Context, input model.PlaceOrderInput) (*model.PublicOrder, error) {
-	return nil, errNotImplemented
+	o, err := r.StorefrontSvc.PlaceOrder(ctx, clientMeta(ctx).IP, storefront.PlaceOrderInput{Slug: input.Slug, ProductID: input.ProductID,
+		PlanID: input.PlanID, Quantity: deref(input.Quantity, 1), CustomerName: input.CustomerName, CustomerPhone: input.CustomerPhone,
+		CustomerNote: input.CustomerNote, PaymentMethod: lowerPtr(input.PaymentMethod), TrxID: input.TrxID, SenderNumber: input.SenderNumber})
+	if err != nil {
+		return nil, err
+	}
+	return toPublicOrder(o), nil
 }
 
 // ConfirmOrder is the resolver for the confirmOrder field.
 func (r *mutationResolver) ConfirmOrder(ctx context.Context, id uuid.UUID, slotID *uuid.UUID, deliveryNote *string) (*model.Order, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o, err := r.StorefrontSvc.ConfirmOrder(ctx, tid, uid, id, slotID, deliveryNote)
+	if err != nil {
+		return nil, err
+	}
+	return toOrder(o), nil
 }
 
 // CancelOrder is the resolver for the cancelOrder field.
 func (r *mutationResolver) CancelOrder(ctx context.Context, id uuid.UUID, reason *string) (*model.Order, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o, err := r.StorefrontSvc.CancelOrder(ctx, tid, uid, id, reason)
+	if err != nil {
+		return nil, err
+	}
+	return toOrder(o), nil
 }
 
 // CreatePortalLink is the resolver for the createPortalLink field.
 func (r *mutationResolver) CreatePortalLink(ctx context.Context, customerID uuid.UUID, sendVia *model.Platform) (string, error) {
-	return "", errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return "", err
+	}
+	return r.StorefrontSvc.CreatePortalLink(ctx, tid, customerID, deref(lowerPtr(sendVia), ""))
 }
 
 // PortalRequestRenewal is the resolver for the portalRequestRenewal field.
 func (r *mutationResolver) PortalRequestRenewal(ctx context.Context, token string, subscriptionID uuid.UUID, paymentMethod *model.PaymentMethod, trxID *string) (*model.PublicOrder, error) {
-	return nil, errNotImplemented
+	o, err := r.StorefrontSvc.PortalRequestRenewal(ctx, token, subscriptionID, lowerPtr(paymentMethod), trxID)
+	if err != nil {
+		return nil, err
+	}
+	return toPublicOrder(o), nil
 }
 
 // Customer is the resolver for the customer field.
 func (r *orderResolver) Customer(ctx context.Context, obj *model.Order) (*model.Customer, error) {
-	return nil, errNotImplemented
+	return r.customerByID(ctx, obj.CustomerID)
 }
 
 // Product is the resolver for the product field.
 func (r *orderResolver) Product(ctx context.Context, obj *model.Order) (*model.Product, error) {
-	return nil, errNotImplemented
+	return r.productByID(ctx, obj.ProductID)
 }
 
 // Plan is the resolver for the plan field.
 func (r *orderResolver) Plan(ctx context.Context, obj *model.Order) (*model.ProductPlan, error) {
-	return nil, errNotImplemented
+	if obj.PlanID == nil {
+		return nil, nil
+	}
+	p, err := r.loaders(ctx).Plan.Load(ctx, *obj.PlanID)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	return toPlan(*p), nil
 }
 
 // Payment is the resolver for the payment field.
 func (r *orderResolver) Payment(ctx context.Context, obj *model.Order) (*model.Payment, error) {
-	return nil, errNotImplemented
+	if obj.PaymentID == nil {
+		return nil, nil
+	}
+	p, err := r.loaders(ctx).Payment.Load(ctx, *obj.PaymentID)
+	if err != nil || p == nil {
+		return nil, err
+	}
+	return toPayment(*p), nil
 }
 
 // Storefront is the resolver for the storefront field.
 func (r *queryResolver) Storefront(ctx context.Context) (*model.Storefront, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sf, err := r.StorefrontSvc.Get(ctx, tid)
+	if err != nil {
+		return nilIfNotFound[model.Storefront](nil, err)
+	}
+	return r.toStorefront(sf), nil
 }
 
 // Orders is the resolver for the orders field.
 func (r *queryResolver) Orders(ctx context.Context, filter *model.OrderFilter, page *model.PageInput) ([]model.Order, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	after, first, err := afterID(page)
+	if err != nil {
+		return nil, err
+	}
+	var f storefront.OrderFilter
+	if filter != nil {
+		f = storefront.OrderFilter{Status: lowerPtr(filter.Status), Source: lowerPtr(filter.Source), Search: filter.Search}
+	}
+	os, err := r.StorefrontSvc.Orders(ctx, tid, f, after, first)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Order, len(os))
+	for i, o := range os {
+		out[i] = *toOrder(o)
+	}
+	return out, nil
 }
 
 // Order is the resolver for the order field.
 func (r *queryResolver) Order(ctx context.Context, id uuid.UUID) (*model.Order, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o, err := r.StorefrontSvc.Order(ctx, tid, id)
+	if err != nil {
+		return nilIfNotFound[model.Order](nil, err)
+	}
+	return toOrder(o), nil
 }
 
 // PublicStorefront is the resolver for the publicStorefront field.
 func (r *queryResolver) PublicStorefront(ctx context.Context, slug string) (*model.PublicStorefront, error) {
-	return nil, errNotImplemented
+	sf, err := r.StorefrontSvc.Public(ctx, slug)
+	if err != nil {
+		return nilIfNotFound[model.PublicStorefront](nil, err)
+	}
+	return toPublicStorefront(sf), nil
 }
 
 // PublicOrder is the resolver for the publicOrder field.
 func (r *queryResolver) PublicOrder(ctx context.Context, slug string, number int, phone string) (*model.PublicOrder, error) {
-	return nil, errNotImplemented
+	o, err := r.StorefrontSvc.PublicOrder(ctx, slug, number, phone)
+	if err != nil {
+		return nilIfNotFound[model.PublicOrder](nil, err)
+	}
+	return toPublicOrder(o), nil
 }
 
 // Portal is the resolver for the portal field.
 func (r *queryResolver) Portal(ctx context.Context, token string) (*model.PortalView, error) {
-	return nil, errNotImplemented
+	v, err := r.StorefrontSvc.Portal(ctx, token)
+	if err != nil {
+		return nilIfNotFound[model.PortalView](nil, err)
+	}
+	return toPortal(v), nil
 }
 
 // Order returns generated.OrderResolver implementation.

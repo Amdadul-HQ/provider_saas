@@ -39,7 +39,7 @@ type ConversationConnection { edges: [ConversationEdge!]! pageInfo: PageInfo! to
 type ConversationEdge { cursor: String! node: Conversation! }
 type InboxCounts { open: Int! unassigned: Int! mine: Int! unread: Int! }
 
-input ConversationFilter { status: ConversationStatus platform: SocialPlatform socialAccountId: UUID assignedTo: UUID unassigned: Boolean search: String label: String }
+input ConversationFilter { status: ConversationStatus platform: SocialPlatform socialAccountId: UUID customerId: UUID assignedTo: UUID unassigned: Boolean search: String label: String }
 input SendMessageInput { conversationId: UUID! body: String templateId: UUID variables: JSON attachments: JSON }
 input MessageTemplateInput { key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean = true }
 

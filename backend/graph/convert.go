@@ -30,10 +30,7 @@ func toUserSummary(u tenant.UserSummary) model.User {
 }
 
 func toTenant(t tenant.Tenant) *model.Tenant {
-	settings := t.Settings
-	if settings == nil {
-		settings = map[string]any{}
-	}
+	settings := tenant.PublicSettings(t.Settings) // never expose the vault secret id
 	return &model.Tenant{ID: t.ID, Name: t.Name, Slug: t.Slug, Plan: t.Plan, Status: t.Status, Currency: t.Currency,
 		Timezone: t.Timezone, Locale: t.Locale, Settings: settings, TrialEndsAt: t.TrialEndsAt, CreatedAt: t.CreatedAt}
 }

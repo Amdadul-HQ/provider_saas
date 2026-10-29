@@ -100,9 +100,21 @@ func seed(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	}
 	if res.Skipped {
 		log.Info("seed: demo tenant already exists", "tenant", res.TenantID, "login", app.DemoEmail)
+	} else {
+		log.Info("seed: done", "tenant", res.TenantID, "products", res.Products, "master_accounts", res.MasterAccts,
+			"customers", res.Customers, "subscriptions", res.Subscriptions, "login", app.DemoEmail, "password", app.DemoPassword)
+	}
+	e := res.Engagement
+	if e.Skipped {
+		log.Info("seed: engagement data already exists")
 		return nil
 	}
-	log.Info("seed: done", "tenant", res.TenantID, "products", res.Products, "master_accounts", res.MasterAccts,
-		"customers", res.Customers, "subscriptions", res.Subscriptions, "login", app.DemoEmail, "password", app.DemoPassword)
+	log.Info("seed: engagement", "social_accounts", e.SocialAccounts, "conversations", e.Conversations, "messages", e.Messages,
+		"templates", e.Templates, "tickets", e.Tickets, "orders", e.Orders, "reminders", e.Reminders, "posts", e.Posts,
+		"storefront", app.DemoStoreSlug)
+	if e.SMSToken != "" && cfg.IsDev() {
+		// Shown once (dev only): the SMS-forwarder bearer token for /webhooks/payments/sms.
+		log.Info("seed: sms forwarder token (shown once)", "token", e.SMSToken)
+	}
 	return nil
 }

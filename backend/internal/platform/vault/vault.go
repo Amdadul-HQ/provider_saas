@@ -176,3 +176,20 @@ func (v *Vault) Delete(ctx context.Context, tenantID, secretID uuid.UUID) error 
 		return err
 	})
 }
+
+// Open decrypts a secret for server-side machine use (calling Meta/Telegram APIs with a
+// stored token, verifying a webhook bearer token). Unlike Reveal it writes no audit row:
+// the plaintext never leaves the process. Anything shown to a human must use Reveal,
+// and callers that render a secret into an outbound message must audit explicitly.
+func (v *Vault) Open(ctx context.Context, tenantID, secretID uuid.UUID) ([]byte, error) {
+	var ct, nonce []byte
+	var ver int
+	err := db.WithTenantTx(ctx, v.pool, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT ciphertext, nonce, key_version FROM vault_secrets
+			WHERE tenant_id=$1 AND id=$2`, tenantID, secretID).Scan(&ct, &nonce, &ver)
+	})
+	if err != nil {
+		return nil, db.MapErr(err, "secret")
+	}
+	return v.cipher.Decrypt(ct, nonce, tenantID[:], ver)
+}

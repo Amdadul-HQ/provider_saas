@@ -1,3 +1,3 @@
-// Package content is the content studio: posts scheduled to connected social accounts (job post.publish).
-// Status: schema + stub resolvers; implementation pending (second engineer).
+// Package content is the content studio: posts published to connected social accounts
+// (job post.publish via social.Publisher) and a generated price-list image (/uploads).
 package content

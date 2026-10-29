@@ -1,5 +1,4 @@
 // Package storefront serves the public shop, orders and the magic-link customer portal.
-// placeOrder should record a pending payment via billing.Service.RecordPayment(RecordOptions{Source: "storefront"})
-// and confirmOrder should call subscription.Service.Create.
-// Status: schema + stub resolvers; implementation pending (second engineer).
+// placeOrder records a pending payment via billing (source "storefront"); confirmOrder
+// creates the subscription (slot allocation), invoices it, links + verifies the payment.
 package storefront

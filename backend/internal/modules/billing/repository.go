@@ -306,3 +306,16 @@ func (Repository) TenantCurrency(ctx context.Context, q db.Querier, tenantID uui
 	err := q.QueryRow(ctx, `SELECT currency FROM tenants WHERE id = $1`, tenantID).Scan(&c)
 	return c, err
 }
+
+func (Repository) SetPaymentInvoice(ctx context.Context, q db.Querier, tenantID, paymentID, invoiceID uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE payments SET invoice_id = $3 WHERE tenant_id = $1 AND id = $2`, tenantID, paymentID, invoiceID)
+	return err
+}
+
+func (Repository) PaymentsByIDs(ctx context.Context, q db.Querier, tenantID uuid.UUID, ids []uuid.UUID) ([]Payment, error) {
+	rows, err := q.Query(ctx, `SELECT `+paymentCols+` FROM payments p WHERE p.tenant_id = $1 AND p.id = ANY($2)`, tenantID, ids)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Payment, error) { return scanPayment(r) })
+}

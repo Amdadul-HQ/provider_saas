@@ -5772,7 +5772,7 @@ type ConversationConnection { edges: [ConversationEdge!]! pageInfo: PageInfo! to
 type ConversationEdge { cursor: String! node: Conversation! }
 type InboxCounts { open: Int! unassigned: Int! mine: Int! unread: Int! }
 
-input ConversationFilter { status: ConversationStatus platform: SocialPlatform socialAccountId: UUID assignedTo: UUID unassigned: Boolean search: String label: String }
+input ConversationFilter { status: ConversationStatus platform: SocialPlatform socialAccountId: UUID customerId: UUID assignedTo: UUID unassigned: Boolean search: String label: String }
 input SendMessageInput { conversationId: UUID! body: String templateId: UUID variables: JSON attachments: JSON }
 input MessageTemplateInput { key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean = true }
 
@@ -13753,8 +13753,8 @@ func (ec *executionContext) _Message_attachments(ctx context.Context, field grap
 			return obj.Attachments, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v map[string]any) graphql.Marshaler {
-			return ec.marshalNJSON2map(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v any) graphql.Marshaler {
+			return ec.marshalNJSON2interface(ctx, selections, v)
 		},
 		true,
 		true,
@@ -20661,8 +20661,8 @@ func (ec *executionContext) _Post_media(ctx context.Context, field graphql.Colle
 			return obj.Media, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v map[string]any) graphql.Marshaler {
-			return ec.marshalNJSON2map(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v any) graphql.Marshaler {
+			return ec.marshalNJSON2interface(ctx, selections, v)
 		},
 		true,
 		true,
@@ -21810,8 +21810,8 @@ func (ec *executionContext) _PublicOrder_paymentNumbers(ctx context.Context, fie
 			return obj.PaymentNumbers, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v map[string]any) graphql.Marshaler {
-			return ec.marshalNJSON2map(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v any) graphql.Marshaler {
+			return ec.marshalNJSON2interface(ctx, selections, v)
 		},
 		true,
 		true,
@@ -22348,8 +22348,8 @@ func (ec *executionContext) _PublicStorefront_paymentNumbers(ctx context.Context
 			return obj.PaymentNumbers, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v map[string]any) graphql.Marshaler {
-			return ec.marshalNJSON2map(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v any) graphql.Marshaler {
+			return ec.marshalNJSON2interface(ctx, selections, v)
 		},
 		true,
 		true,
@@ -26281,8 +26281,8 @@ func (ec *executionContext) _Storefront_paymentNumbers(ctx context.Context, fiel
 			return obj.PaymentNumbers, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v map[string]any) graphql.Marshaler {
-			return ec.marshalNJSON2map(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v any) graphql.Marshaler {
+			return ec.marshalNJSON2interface(ctx, selections, v)
 		},
 		true,
 		true,
@@ -29690,7 +29690,7 @@ func (ec *executionContext) unmarshalInputConversationFilter(ctx context.Context
 		asMap[k] = v
 	}
 
-	fieldsInOrder := [...]string{"status", "platform", "socialAccountId", "assignedTo", "unassigned", "search", "label"}
+	fieldsInOrder := [...]string{"status", "platform", "socialAccountId", "customerId", "assignedTo", "unassigned", "search", "label"}
 	for _, k := range fieldsInOrder {
 		v, ok := asMap[k]
 		if !ok {
@@ -29718,6 +29718,13 @@ func (ec *executionContext) unmarshalInputConversationFilter(ctx context.Context
 				return it, err
 			}
 			it.SocialAccountID = data
+		case "customerId":
+			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("customerId"))
+			data, err := ec.unmarshalOUUID2ᚖgithubᚗcomᚋgoogleᚋuuidᚐUUID(ctx, v)
+			if err != nil {
+				return it, err
+			}
+			it.CustomerID = data
 		case "assignedTo":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("assignedTo"))
 			data, err := ec.unmarshalOUUID2ᚖgithubᚗcomᚋgoogleᚋuuidᚐUUID(ctx, v)
@@ -31246,7 +31253,7 @@ func (ec *executionContext) unmarshalInputPostInput(ctx context.Context, obj any
 			it.Body = data
 		case "media":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("media"))
-			data, err := ec.unmarshalOJSON2map(ctx, v)
+			data, err := ec.unmarshalOJSON2interface(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -31721,7 +31728,7 @@ func (ec *executionContext) unmarshalInputSendMessageInput(ctx context.Context, 
 			it.Variables = data
 		case "attachments":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("attachments"))
-			data, err := ec.unmarshalOJSON2map(ctx, v)
+			data, err := ec.unmarshalOJSON2interface(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -31833,7 +31840,7 @@ func (ec *executionContext) unmarshalInputStorefrontInput(ctx context.Context, o
 			it.PaymentInstructions = data
 		case "paymentNumbers":
 			ctx := graphql.WithPathContext(ctx, graphql.NewPathWithField("paymentNumbers"))
-			data, err := ec.unmarshalOJSON2map(ctx, v)
+			data, err := ec.unmarshalOJSON2interface(ctx, v)
 			if err != nil {
 				return it, err
 			}
@@ -38379,6 +38386,24 @@ func (ec *executionContext) marshalNInvoiceStatus2provider_saasᚋgraphᚋmodel�
 	return v
 }
 
+func (ec *executionContext) unmarshalNJSON2interface(ctx context.Context, v any) (any, error) {
+	res, err := graphql.UnmarshalAny(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNJSON2interface(ctx context.Context, sel ast.SelectionSet, v any) graphql.Marshaler {
+	if v == nil {
+		graphql.AddInvalidNullError(ctx, "JSON!")
+		return graphql.Null
+	}
+	_ = sel
+	res := graphql.MarshalAny(v)
+	if res == graphql.Null {
+		graphql.AddInvalidNullFromMarshaler(ctx, "JSON!")
+	}
+	return res
+}
+
 func (ec *executionContext) unmarshalNJSON2map(ctx context.Context, v any) (map[string]any, error) {
 	res, err := graphql.UnmarshalMap(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -39972,6 +39997,24 @@ func (ec *executionContext) marshalOInvoiceStatus2ᚖprovider_saasᚋgraphᚋmod
 		return graphql.Null
 	}
 	return v
+}
+
+func (ec *executionContext) unmarshalOJSON2interface(ctx context.Context, v any) (any, error) {
+	if v == nil {
+		return nil, nil
+	}
+	res, err := graphql.UnmarshalAny(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalOJSON2interface(ctx context.Context, sel ast.SelectionSet, v any) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	_ = sel
+	_ = ctx
+	res := graphql.MarshalAny(v)
+	return res
 }
 
 func (ec *executionContext) unmarshalOJSON2map(ctx context.Context, v any) (map[string]any, error) {

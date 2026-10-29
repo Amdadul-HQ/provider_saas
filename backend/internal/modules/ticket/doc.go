@@ -1,4 +1,4 @@
-// Package ticket handles replacement/complaint tickets. resolveReplacement should move a
-// subscription to a new slot via subscription.Service.ReassignSlot and inventory.Service.UpdateSlot.
-// Status: schema + stub resolvers; implementation pending (second engineer).
+// Package ticket handles replacement/complaint tickets. resolveReplacement moves a
+// subscription to a new slot (subscription.ReassignSlot + inventory picker), marks the old
+// slot banned/retired and enqueues delivery.send for the new credentials.
 package ticket

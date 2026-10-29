@@ -30,6 +30,19 @@ type Notifier interface {
 	SendToCustomer(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) error
 }
 
+// PaidHook is called inside the payment transaction when an invoice becomes fully
+// paid (app wires it to enqueue delivery.send for undelivered subscriptions).
+type PaidHook interface {
+	InvoicePaid(ctx context.Context, tenantID, invoiceID uuid.UUID) error
+}
+
+// PaidHookFunc adapts a function to PaidHook.
+type PaidHookFunc func(ctx context.Context, tenantID, invoiceID uuid.UUID) error
+
+func (f PaidHookFunc) InvoicePaid(ctx context.Context, tenantID, invoiceID uuid.UUID) error {
+	return f(ctx, tenantID, invoiceID)
+}
+
 // Service is the billing module API.
 type Service interface {
 	CreateInvoice(ctx context.Context, tenantID, actorID uuid.UUID, in CreateInvoiceInput) (Invoice, error)
@@ -56,6 +69,10 @@ type Service interface {
 	AddLedgerAdjustment(ctx context.Context, tenantID, actorID, customerID uuid.UUID, entryType string, amount int64, note *string) (LedgerEntry, error)
 
 	MarkOverdue(ctx context.Context, tenantID uuid.UUID, now time.Time) (int64, error)
+	// AttachPayment links an invoice-less payment (e.g. a storefront order payment) to an
+	// invoice; a verified payment is applied to the invoice (its ledger credit already exists).
+	AttachPayment(ctx context.Context, tenantID, paymentID, invoiceID uuid.UUID) (Payment, error)
+	PaymentsByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Payment, error)
 }
 
 type service struct {
@@ -63,11 +80,21 @@ type service struct {
 	repo      Repository
 	customers Customers
 	notifier  Notifier
+	hooks     []PaidHook
 	now       func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, customers Customers, notifier Notifier) Service {
-	return &service{pool: pool, customers: customers, notifier: notifier, now: time.Now}
+func NewService(pool *pgxpool.Pool, customers Customers, notifier Notifier, hooks ...PaidHook) Service {
+	return &service{pool: pool, customers: customers, notifier: notifier, hooks: hooks, now: time.Now}
+}
+
+func (s *service) invoicePaid(ctx context.Context, tenantID, invoiceID uuid.UUID) error {
+	for _, h := range s.hooks {
+		if err := h.InvoicePaid(ctx, tenantID, invoiceID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) tx(ctx context.Context, tenantID uuid.UUID, fn db.TxFn) error {
@@ -122,8 +149,17 @@ func (s *service) CreateInvoice(ctx context.Context, tenantID, actorID uuid.UUID
 				return err
 			}
 		}
+		if status == InvoicePaid {
+			if err := s.invoicePaid(ctx, tenantID, inv.ID); err != nil {
+				return err
+			}
+		}
 		if in.Send {
-			return s.notify(ctx, tenantID, inv, "")
+			// The invoice is issued even if the customer has no reachable channel yet
+			// (validation error from the notifier); sendInvoice reports that explicitly.
+			if err := s.notify(ctx, tenantID, inv, ""); err != nil && !errors.Is(err, apperr.ErrValidation) {
+				return err
+			}
 		}
 		return nil
 	})
@@ -366,6 +402,11 @@ func (s *service) applyVerified(ctx context.Context, tx pgx.Tx, tenantID uuid.UU
 		if err := s.repo.UpdateInvoicePayment(ctx, tx, tenantID, inv.ID, paid, status, paidAt); err != nil {
 			return err
 		}
+		if status == InvoicePaid && inv.Status != InvoicePaid {
+			if err := s.invoicePaid(ctx, tenantID, inv.ID); err != nil {
+				return err
+			}
+		}
 	}
 	if p.CustomerID == nil {
 		return nil
@@ -601,4 +642,66 @@ func (s *service) AddLedgerAdjustment(ctx context.Context, tenantID, actorID, cu
 		return s.customers.AdjustBalance(ctx, tenantID, customerID, delta, 0)
 	})
 	return e, err
+}
+
+func (s *service) AttachPayment(ctx context.Context, tenantID, paymentID, invoiceID uuid.UUID) (p Payment, err error) {
+	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		cur, err := s.repo.GetPayment(ctx, tx, tenantID, paymentID, true)
+		if err != nil {
+			return err
+		}
+		if cur.InvoiceID != nil {
+			if *cur.InvoiceID == invoiceID {
+				p = cur
+				return nil
+			}
+			return apperr.Validation("payment is already linked to another invoice")
+		}
+		inv, err := s.repo.GetInvoice(ctx, tx, tenantID, invoiceID, true)
+		if err != nil {
+			return err
+		}
+		switch {
+		case inv.Status == InvoiceVoid:
+			return apperr.Validation("invoice is void")
+		case cur.CustomerID != nil && *cur.CustomerID != inv.CustomerID:
+			return apperr.Validation("invoice belongs to another customer")
+		}
+		if err := s.repo.SetPaymentInvoice(ctx, tx, tenantID, paymentID, invoiceID); err != nil {
+			return err
+		}
+		cur.InvoiceID = &invoiceID
+		if cur.Status == PaymentVerified {
+			paid := inv.PaidAmount + cur.Amount
+			status := StatusAfterPayment(inv.Status, paid, inv.Total)
+			var paidAt *time.Time
+			if status == InvoicePaid {
+				t := s.now()
+				paidAt = &t
+			}
+			if err := s.repo.UpdateInvoicePayment(ctx, tx, tenantID, inv.ID, paid, status, paidAt); err != nil {
+				return err
+			}
+			if status == InvoicePaid && inv.Status != InvoicePaid {
+				if err := s.invoicePaid(ctx, tenantID, inv.ID); err != nil {
+					return err
+				}
+			}
+		}
+		p = cur
+		return nil
+	})
+	return p, err
+}
+
+func (s *service) PaymentsByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Payment, error) {
+	out := map[uuid.UUID]Payment{}
+	err := s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		ps, err := s.repo.PaymentsByIDs(ctx, tx, tenantID, ids)
+		for _, p := range ps {
+			out[p.ID] = p
+		}
+		return err
+	})
+	return out, err
 }

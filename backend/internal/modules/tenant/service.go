@@ -37,16 +37,21 @@ type Service interface {
 	AuditLogs(ctx context.Context, tenantID uuid.UUID, beforeID int64, limit int) ([]AuditLog, error)
 	Audit(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, action, entityType string, entityID *uuid.UUID, meta map[string]any) error
 	TenantIDs(ctx context.Context) ([]uuid.UUID, error)
+	// EnsureSMSWebhookToken creates the SMS-forwarder token on first use (plaintext returned once).
+	EnsureSMSWebhookToken(ctx context.Context, tenantID uuid.UUID) (token, hint string, created bool, err error)
+	VerifySMSWebhookToken(ctx context.Context, token string) (uuid.UUID, error)
 }
 
 type service struct {
-	pool  *pgxpool.Pool
-	repo  Repository
-	users UserDirectory
+	pool    *pgxpool.Pool
+	repo    Repository
+	users   UserDirectory
+	secrets Secrets
 }
 
-func NewService(pool *pgxpool.Pool, users UserDirectory) Service {
-	return &service{pool: pool, users: users}
+// NewService builds the tenant service. secrets (the vault) backs the SMS-forwarder token.
+func NewService(pool *pgxpool.Pool, users UserDirectory, secrets Secrets) Service {
+	return &service{pool: pool, users: users, secrets: secrets}
 }
 
 func (s *service) tx(ctx context.Context, tenantID uuid.UUID, fn db.TxFn) error {

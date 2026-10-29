@@ -9,9 +9,14 @@ import (
 	"provider_saas/internal/modules/auth"
 	"provider_saas/internal/modules/billing"
 	"provider_saas/internal/modules/catalog"
+	"provider_saas/internal/modules/content"
 	"provider_saas/internal/modules/customer"
+	"provider_saas/internal/modules/inbox"
 	"provider_saas/internal/modules/inventory"
+	"provider_saas/internal/modules/reminder"
+	"provider_saas/internal/modules/social"
 	"provider_saas/internal/modules/subscription"
+	"provider_saas/internal/modules/ticket"
 	"provider_saas/internal/platform/gql"
 )
 
@@ -39,6 +44,14 @@ type Loaders struct {
 	ActiveByProd  *gql.Loader[ID, int]
 	ActiveByCust  *gql.Loader[ID, int]
 	AcctsBySupp   *gql.Loader[ID, int]
+
+	SocialAccount  *gql.Loader[ID, *social.Account]
+	OpenConvByAcct *gql.Loader[ID, int]
+	Template       *gql.Loader[ID, *inbox.Template]
+	Rule           *gql.Loader[ID, *reminder.Rule]
+	Payment        *gql.Loader[ID, *billing.Payment]
+	CommentsByTkt  *gql.Loader[ID, []ticket.Comment]
+	TargetsByPost  *gql.Loader[ID, []content.Target]
 }
 
 type loadersKey struct{}
@@ -97,6 +110,14 @@ func (r *Resolver) newLoaders() *Loaders {
 		ActiveByProd:  gql.NewLoader(tenantFetch(r.SubscriptionSvc.ActiveCountByProducts)),
 		ActiveByCust:  gql.NewLoader(tenantFetch(r.SubscriptionSvc.ActiveCountByCustomers)),
 		AcctsBySupp:   gql.NewLoader(tenantFetch(r.InventorySvc.AccountCountsBySupplier)),
+
+		SocialAccount:  entity(r.SocialSvc.GetByIDs),
+		OpenConvByAcct: gql.NewLoader(tenantFetch(r.InboxSvc.OpenCountsByAccount)),
+		Template:       entity(r.InboxSvc.TemplatesByIDs),
+		Rule:           entity(r.ReminderSvc.RulesByIDs),
+		Payment:        entity(r.BillingSvc.PaymentsByIDs),
+		CommentsByTkt:  gql.NewLoader(tenantFetch(r.TicketSvc.CommentsByTickets)),
+		TargetsByPost:  gql.NewLoader(tenantFetch(r.ContentSvc.TargetsByPosts)),
 	}
 }
 

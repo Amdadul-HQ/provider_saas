@@ -46,7 +46,11 @@ func (Repository) UpdateTenant(ctx context.Context, q db.Querier, id uuid.UUID, 
 	}
 	t, err := scanTenant(q.QueryRow(ctx, `UPDATE tenants SET
 		name = COALESCE($2, name), currency = COALESCE($3, currency), timezone = COALESCE($4, timezone),
-		locale = COALESCE($5, locale), settings = COALESCE($6::jsonb, settings)
+		locale = COALESCE($5, locale),
+		settings = CASE WHEN $6::jsonb IS NULL THEN settings
+		  ELSE ($6::jsonb - 'sms_webhook_secret_id' - 'sms_webhook_token_hint')
+		    || jsonb_strip_nulls(jsonb_build_object('sms_webhook_secret_id', settings->'sms_webhook_secret_id',
+		         'sms_webhook_token_hint', settings->'sms_webhook_token_hint')) END
 		WHERE id = $1 RETURNING `+tenantCols, id, in.Name, in.Currency, in.Timezone, in.Locale, settings))
 	return t, db.MapErr(err, "tenant")
 }

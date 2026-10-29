@@ -28,6 +28,10 @@ type Service interface {
 	LinkIdentity(ctx context.Context, tenantID, customerID, identityID uuid.UUID) (Customer, error)
 	AddIdentity(ctx context.Context, tenantID, customerID uuid.UUID, platform, externalID string, handle *string, socialAccountID *uuid.UUID) (Identity, error)
 	IdentitiesByCustomers(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]Identity, error)
+	// FindIdentity looks up a channel identity by (platform, external id); NotFound when unknown.
+	FindIdentity(ctx context.Context, tenantID uuid.UUID, platform, externalID string) (Identity, error)
+	// FindByPhone returns the oldest live customer with this (normalised) phone; NotFound when none.
+	FindByPhone(ctx context.Context, tenantID uuid.UUID, phone string) (Customer, error)
 	// AdjustBalance changes the cached due balance / lifetime value (called by billing inside its tx).
 	AdjustBalance(ctx context.Context, tenantID, customerID uuid.UUID, dueDelta, ltvDelta int64) error
 	Touch(ctx context.Context, tenantID, customerID uuid.UUID, at time.Time) error
@@ -229,4 +233,24 @@ func (s *service) Touch(ctx context.Context, tenantID, customerID uuid.UUID, at 
 	return s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		return s.repo.Touch(ctx, tx, tenantID, customerID, at)
 	})
+}
+
+func (s *service) FindIdentity(ctx context.Context, tenantID uuid.UUID, platform, externalID string) (i Identity, err error) {
+	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		i, err = s.repo.FindIdentity(ctx, tx, tenantID, strings.ToLower(platform), externalID)
+		return err
+	})
+	return i, err
+}
+
+func (s *service) FindByPhone(ctx context.Context, tenantID uuid.UUID, phone string) (c Customer, err error) {
+	p := normPhone(&phone)
+	if p == nil {
+		return c, apperr.ValidationField("phone", "required")
+	}
+	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		c, err = s.repo.FindByPhone(ctx, tx, tenantID, *p)
+		return err
+	})
+	return c, err
 }

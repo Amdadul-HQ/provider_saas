@@ -41,3 +41,8 @@ Each adapter implements `social.Sender` interface; a `FakeSender` is used in tes
 
 ## Payment auto-match
 `payment.match` job: for a `payment_inbox` row with trx_id: find `payments` with same tenant, method, trx_id, status pending → verify (source `sms_match`) → invoice paid/partial → if invoice fully paid and linked subscription is pending → activate + enqueue `delivery.send` (product delivery_template, credentials from vault rendered server-side, never stored in message body as plaintext beyond what provider configured).
+
+## Notes after implementation (Sprint 1)
+- **SMS forwarder token** is per tenant, generated server-side on the first owner/admin `tenant` query (or by seed) and stored in the vault; `tenant.settings.sms_webhook_token_hint` shows a masked hint. A `rotateSmsWebhookToken` mutation that returns the full token once is planned (Sprint 2).
+- **Facebook Login** redirect URI is `PUBLIC_API_URL/webhooks/meta/oauth`; that route completes the connection and redirects to `PUBLIC_APP_URL/social?connected=N`. `completeMetaConnect` remains for SPA-style flows.
+- Not yet: WhatsApp template messages outside the 24h window, `inbox.autoreply`, `POST /uploads`, Bengali glyphs in the price-list PNG (Latin font only), Telegram channel posting UI.

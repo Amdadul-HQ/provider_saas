@@ -9,78 +9,165 @@ import (
 	"context"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/ticket"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
 
 // CreateTicket is the resolver for the createTicket field.
 func (r *mutationResolver) CreateTicket(ctx context.Context, input model.CreateTicketInput) (*model.Ticket, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TicketSvc.Create(ctx, tid, uid, ticket.CreateInput{CustomerID: input.CustomerID, SubscriptionID: input.SubscriptionID,
+		ConversationID: input.ConversationID, Kind: lower(input.Kind), Priority: deref(lowerPtr(input.Priority), "normal"),
+		Title: input.Title, Description: input.Description, Reason: input.Reason})
+	if err != nil {
+		return nil, err
+	}
+	return toTicket(t), nil
 }
 
 // UpdateTicket is the resolver for the updateTicket field.
 func (r *mutationResolver) UpdateTicket(ctx context.Context, id uuid.UUID, input model.UpdateTicketInput) (*model.Ticket, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TicketSvc.Update(ctx, tid, uid, id, ticket.UpdateInput{Priority: lowerPtr(input.Priority), Status: lowerPtr(input.Status),
+		Title: input.Title, Description: input.Description, Reason: input.Reason, AssignedTo: input.AssignedTo})
+	if err != nil {
+		return nil, err
+	}
+	return toTicket(t), nil
 }
 
 // AddTicketComment is the resolver for the addTicketComment field.
 func (r *mutationResolver) AddTicketComment(ctx context.Context, ticketID uuid.UUID, body string, isInternal *bool) (*model.TicketComment, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c, err := r.TicketSvc.AddComment(ctx, tid, uid, ticketID, body, deref(isInternal, true))
+	if err != nil {
+		return nil, err
+	}
+	return toComment(c), nil
 }
 
 // ResolveReplacement is the resolver for the resolveReplacement field.
 func (r *mutationResolver) ResolveReplacement(ctx context.Context, ticketID uuid.UUID, newSlotID *uuid.UUID, markOldSlot *model.SlotStatus, extendDays *int) (*model.Ticket, error) {
-	return nil, errNotImplemented
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TicketSvc.ResolveReplacement(ctx, tid, uid, ticketID, newSlotID, deref(lowerPtr(markOldSlot), "banned"), deref(extendDays, 0))
+	if err != nil {
+		return nil, err
+	}
+	return toTicket(t), nil
 }
 
 // Tickets is the resolver for the tickets field.
 func (r *queryResolver) Tickets(ctx context.Context, filter *model.TicketFilter, page *model.PageInput) ([]model.Ticket, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	after, first, err := afterID(page)
+	if err != nil {
+		return nil, err
+	}
+	var f ticket.Filter
+	if filter != nil {
+		f = ticket.Filter{Status: lowerPtr(filter.Status), Kind: lowerPtr(filter.Kind), Priority: lowerPtr(filter.Priority),
+			CustomerID: filter.CustomerID, AssignedTo: filter.AssignedTo, Search: filter.Search}
+	}
+	ts, err := r.TicketSvc.List(ctx, tid, f, after, first)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Ticket, len(ts))
+	for i, t := range ts {
+		out[i] = *toTicket(t)
+	}
+	return out, nil
 }
 
 // Ticket is the resolver for the ticket field.
 func (r *queryResolver) Ticket(ctx context.Context, id uuid.UUID) (*model.Ticket, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t, err := r.TicketSvc.Get(ctx, tid, id)
+	if err != nil {
+		return nilIfNotFound[model.Ticket](nil, err)
+	}
+	return toTicket(t), nil
 }
 
 // TicketStats is the resolver for the ticketStats field.
 func (r *queryResolver) TicketStats(ctx context.Context) (*model.TicketStats, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	s, err := r.TicketSvc.Stats(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	return &model.TicketStats{Open: s.Open, InProgress: s.InProgress, ResolvedThisMonth: s.ResolvedThisMonth,
+		ReplacementsThisMonth: s.ReplacementsThisMonth}, nil
 }
 
 // Customer is the resolver for the customer field.
 func (r *ticketResolver) Customer(ctx context.Context, obj *model.Ticket) (*model.Customer, error) {
-	return nil, errNotImplemented
+	c, err := r.customerByID(ctx, &obj.CustomerID)
+	if err == nil && c == nil {
+		err = apperr.NotFound("customer")
+	}
+	return c, err
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *ticketResolver) Subscription(ctx context.Context, obj *model.Ticket) (*model.Subscription, error) {
-	return nil, errNotImplemented
+	return r.subscriptionByID(ctx, obj.SubscriptionID)
 }
 
 // OldSlot is the resolver for the oldSlot field.
 func (r *ticketResolver) OldSlot(ctx context.Context, obj *model.Ticket) (*model.Slot, error) {
-	return nil, errNotImplemented
+	return r.slotByID(ctx, obj.OldSlotID)
 }
 
 // NewSlot is the resolver for the newSlot field.
 func (r *ticketResolver) NewSlot(ctx context.Context, obj *model.Ticket) (*model.Slot, error) {
-	return nil, errNotImplemented
+	return r.slotByID(ctx, obj.NewSlotID)
 }
 
 // AssignedTo is the resolver for the assignedTo field.
 func (r *ticketResolver) AssignedTo(ctx context.Context, obj *model.Ticket) (*model.User, error) {
-	return nil, errNotImplemented
+	return r.userByID(ctx, obj.AssignedToID)
 }
 
 // Comments is the resolver for the comments field.
 func (r *ticketResolver) Comments(ctx context.Context, obj *model.Ticket) ([]model.TicketComment, error) {
-	return nil, errNotImplemented
+	cs, err := r.loaders(ctx).CommentsByTkt.Load(ctx, obj.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.TicketComment, len(cs))
+	for i, c := range cs {
+		out[i] = *toComment(c)
+	}
+	return out, nil
 }
 
 // Author is the resolver for the author field.
 func (r *ticketCommentResolver) Author(ctx context.Context, obj *model.TicketComment) (*model.User, error) {
-	return nil, errNotImplemented
+	return r.userByID(ctx, obj.AuthorID)
 }
 
 // Ticket returns generated.TicketResolver implementation.

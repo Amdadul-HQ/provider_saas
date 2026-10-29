@@ -35,16 +35,21 @@ func main() {
 	w := jobs.NewWorker(c.Pool, log)
 	c.RegisterJobs(w)
 
-	// Scheduler: enqueue subscription.expire_check now and every hour (deduped per hour,
-	// so several worker replicas do not double-schedule).
+	// Scheduler: subscription.expire_check + reminder.plan hourly, reminder.dispatch every
+	// minute. Dedupe keys (per hour / per minute) keep several worker replicas from
+	// double-scheduling.
 	go func() {
 		schedule := func() {
-			if err := c.ScheduleExpireCheck(ctx, time.Now()); err != nil && ctx.Err() == nil {
+			now := time.Now()
+			if err := c.ScheduleExpireCheck(ctx, now); err != nil && ctx.Err() == nil {
 				log.Error("worker: schedule expire_check", "err", err)
+			}
+			if err := c.ScheduleReminders(ctx, now); err != nil && ctx.Err() == nil {
+				log.Error("worker: schedule reminders", "err", err)
 			}
 		}
 		schedule()
-		t := time.NewTicker(time.Hour)
+		t := time.NewTicker(time.Minute)
 		defer t.Stop()
 		for {
 			select {

@@ -25,7 +25,11 @@ models:
   Money:
     model: provider_saas/graph/scalars.Money
   JSON:
-    model: github.com/99designs/gqlgen/graphql.Map
+    # Map first (generated object-only JSON fields); Any for bound fields typed `any`
+    # that may hold arrays (attachments, media, paymentNumbers).
+    model:
+      - github.com/99designs/gqlgen/graphql.Map
+      - github.com/99designs/gqlgen/graphql.Any
   ID:
     model: github.com/99designs/gqlgen/graphql.ID
   Int:
@@ -47,6 +51,36 @@ models:
     model: provider_saas/graph/model.ProductStat
   AtRiskCustomer:
     model: provider_saas/graph/model.AtRiskCustomer
+  Conversation:
+    model: provider_saas/graph/model.Conversation
+  Message:
+    model: provider_saas/graph/model.Message
+  SendMessageInput:
+    model: provider_saas/graph/model.SendMessageInput
+  Post:
+    model: provider_saas/graph/model.Post
+  PostTarget:
+    model: provider_saas/graph/model.PostTarget
+  PostInput:
+    model: provider_saas/graph/model.PostInput
+  Ticket:
+    model: provider_saas/graph/model.Ticket
+  TicketComment:
+    model: provider_saas/graph/model.TicketComment
+  ReminderRule:
+    model: provider_saas/graph/model.ReminderRule
+  Reminder:
+    model: provider_saas/graph/model.Reminder
+  Order:
+    model: provider_saas/graph/model.Order
+  Storefront:
+    model: provider_saas/graph/model.Storefront
+  PublicStorefront:
+    model: provider_saas/graph/model.PublicStorefront
+  PublicOrder:
+    model: provider_saas/graph/model.PublicOrder
+  StorefrontInput:
+    model: provider_saas/graph/model.StorefrontInput
   User:
     fields:
       memberships:

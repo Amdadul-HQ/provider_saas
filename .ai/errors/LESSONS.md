@@ -110,3 +110,21 @@ Grep this file for your area before starting a task.
 - Root cause: Inbox wrapper grid had no explicit mobile column, so the implicit auto track sized to the header's min-content
 - Fix: grid-cols-1 + minmax(0,1fr) tracks and min-w-0 on panes; status select narrower on mobile
 - Prevention rule: Every multi-pane grid declares explicit minmax(0,1fr) tracks and min-w-0 children; verify scrollWidth==375 in the browser
+
+## L-019 · 2026-10-29 · backend/seed
+- What broke: api seed on a fresh DB failed: 'pending payment 29: invoice is already paid'
+- Root cause: seed picked the customer's newest invoice with Page{First:1}, but every row in the single seed tx has the same created_at (now() = tx start), so ORDER BY created_at DESC, id DESC returned a random (already paid) invoice; latent flake since the first seed
+- Fix: Look up the invoice through its invoice_items.subscription_id (invoiceOfSubscription)
+- Prevention rule: Never rely on created_at ordering for rows created in the same transaction (now() is constant per tx); select by a real foreign key instead
+
+## L-020 · 2026-10-29 · backend/storefront
+- What broke: TestPortalTokenValidThenExpired: portal view returned 0 invoices for a customer with an unpaid invoice
+- Root cause: Portal filtered out draft invoices, but subscription.Create(CreateInvoice) issues invoices as draft and already books the ledger debit, so the customer's due balance had no visible invoice
+- Fix: Portal hides only void invoices
+- Prevention rule: Customer-facing views must be consistent with the ledger: anything that moved due_balance (draft included) must be visible
+
+## L-021 · 2026-10-29 · tooling
+- What broke: A Bash step hung for 120s and had to be killed
+- Root cause: A stray 'cat > /dev/null' in a chained command waited on stdin forever
+- Fix: Stopped the task and re-ran the real command alone
+- Prevention rule: Never leave stdin-reading commands (cat without file, read) in non-interactive chains; review heredoc tails before running

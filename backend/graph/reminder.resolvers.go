@@ -9,58 +9,133 @@ import (
 	"context"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
+	"provider_saas/internal/modules/reminder"
 
 	"github.com/google/uuid"
 )
 
 // UpsertReminderRule is the resolver for the upsertReminderRule field.
 func (r *mutationResolver) UpsertReminderRule(ctx context.Context, id *uuid.UUID, input model.ReminderRuleInput) (*model.ReminderRule, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rule, err := r.ReminderSvc.UpsertRule(ctx, tid, id, reminder.RuleInput{Name: input.Name, Trigger: lower(input.Trigger),
+		OffsetDays: deref(input.OffsetDays, 0), SendHour: deref(input.SendHour, 10), Channel: deref(lowerPtr(input.Channel), "preferred"),
+		TemplateID: input.TemplateID, ProductID: input.ProductID, IsActive: deref(input.IsActive, true)})
+	if err != nil {
+		return nil, err
+	}
+	return toRule(rule), nil
 }
 
 // DeleteReminderRule is the resolver for the deleteReminderRule field.
 func (r *mutationResolver) DeleteReminderRule(ctx context.Context, id uuid.UUID) (bool, error) {
-	return false, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.ReminderSvc.DeleteRule(ctx, tid, id); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // SendReminderNow is the resolver for the sendReminderNow field.
 func (r *mutationResolver) SendReminderNow(ctx context.Context, subscriptionID uuid.UUID, templateID *uuid.UUID, channel *model.ReminderChannel) (*model.Reminder, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rem, err := r.ReminderSvc.SendNow(ctx, tid, subscriptionID, templateID, deref(lowerPtr(channel), "preferred"))
+	if err != nil {
+		return nil, err
+	}
+	return toReminder(rem), nil
 }
 
 // CancelReminder is the resolver for the cancelReminder field.
 func (r *mutationResolver) CancelReminder(ctx context.Context, id uuid.UUID) (bool, error) {
-	return false, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return false, err
+	}
+	if err := r.ReminderSvc.Cancel(ctx, tid, id); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ReminderRules is the resolver for the reminderRules field.
 func (r *queryResolver) ReminderRules(ctx context.Context) ([]model.ReminderRule, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rules, err := r.ReminderSvc.Rules(ctx, tid)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.ReminderRule, len(rules))
+	for i, x := range rules {
+		out[i] = *toRule(x)
+	}
+	return out, nil
 }
 
 // Reminders is the resolver for the reminders field.
 func (r *queryResolver) Reminders(ctx context.Context, status *model.ReminderStatus, customerID *uuid.UUID, page *model.PageInput) ([]model.Reminder, error) {
-	return nil, errNotImplemented
+	tid, _, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	after, first, err := afterID(page)
+	if err != nil {
+		return nil, err
+	}
+	rs, err := r.ReminderSvc.List(ctx, tid, reminder.Filter{Status: lowerPtr(status), CustomerID: customerID}, after, first)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Reminder, len(rs))
+	for i, x := range rs {
+		out[i] = *toReminder(x)
+	}
+	return out, nil
 }
 
 // Rule is the resolver for the rule field.
 func (r *reminderResolver) Rule(ctx context.Context, obj *model.Reminder) (*model.ReminderRule, error) {
-	return nil, errNotImplemented
+	if obj.RuleID == nil {
+		return nil, nil
+	}
+	x, err := r.loaders(ctx).Rule.Load(ctx, *obj.RuleID)
+	if err != nil || x == nil {
+		return nil, err
+	}
+	return toRule(*x), nil
 }
 
 // Customer is the resolver for the customer field.
 func (r *reminderResolver) Customer(ctx context.Context, obj *model.Reminder) (*model.Customer, error) {
-	return nil, errNotImplemented
+	return r.customerByID(ctx, obj.CustomerID)
 }
 
 // Subscription is the resolver for the subscription field.
 func (r *reminderResolver) Subscription(ctx context.Context, obj *model.Reminder) (*model.Subscription, error) {
-	return nil, errNotImplemented
+	return r.subscriptionByID(ctx, obj.SubscriptionID)
 }
 
 // Template is the resolver for the template field.
 func (r *reminderRuleResolver) Template(ctx context.Context, obj *model.ReminderRule) (*model.MessageTemplate, error) {
-	return nil, errNotImplemented
+	if obj.TemplateID == nil {
+		return nil, nil
+	}
+	t, err := r.loaders(ctx).Template.Load(ctx, *obj.TemplateID)
+	if err != nil || t == nil {
+		return nil, err
+	}
+	return toTemplate(*t), nil
 }
 
 // Reminder returns generated.ReminderResolver implementation.

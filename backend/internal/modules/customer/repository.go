@@ -233,3 +233,15 @@ func (Repository) Merge(ctx context.Context, q db.Querier, tenantID, keepID, mer
 		notes = COALESCE(notes || E'\n', '') || 'merged into ' || $3::text WHERE tenant_id = $1 AND id = $2`, tenantID, mergeID, keepID)
 	return err
 }
+
+func (Repository) FindIdentity(ctx context.Context, q db.Querier, tenantID uuid.UUID, platform, externalID string) (Identity, error) {
+	i, err := scanIdentity(q.QueryRow(ctx, `SELECT `+identityCols+` FROM customer_identities
+		WHERE tenant_id = $1 AND platform = $2 AND external_id = $3`, tenantID, platform, externalID))
+	return i, db.MapErr(err, "identity")
+}
+
+func (Repository) FindByPhone(ctx context.Context, q db.Querier, tenantID uuid.UUID, phone string) (Customer, error) {
+	c, err := scan(q.QueryRow(ctx, `SELECT `+cols+` FROM customers c WHERE c.tenant_id = $1 AND c.deleted_at IS NULL
+		AND (c.phone = $2 OR c.whatsapp = $2) ORDER BY c.created_at LIMIT 1`, tenantID, phone))
+	return c, db.MapErr(err, "customer")
+}
