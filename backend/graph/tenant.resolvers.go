@@ -7,11 +7,13 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/tenant"
 	"provider_saas/internal/platform/apperr"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -106,6 +108,11 @@ func (r *mutationResolver) MarkAllNotificationsRead(ctx context.Context) (bool, 
 	return true, r.TenantSvc.MarkNotificationRead(ctx, tid, uid, nil)
 }
 
+// DeleteUpload is the resolver for the deleteUpload field.
+func (r *mutationResolver) DeleteUpload(ctx context.Context, id uuid.UUID) (bool, error) {
+	panic(fmt.Errorf("not implemented: DeleteUpload - deleteUpload"))
+}
+
 // Tenant is the resolver for the tenant field.
 func (r *queryResolver) Tenant(ctx context.Context) (*model.Tenant, error) {
 	tid, _, err := tenantOf(ctx)
@@ -178,6 +185,21 @@ func (r *queryResolver) AuditLogs(ctx context.Context, page *model.PageInput) ([
 		}
 	}
 	return out, nil
+}
+
+// CommissionReport is the resolver for the commissionReport field.
+func (r *queryResolver) CommissionReport(ctx context.Context, from *time.Time, to *time.Time, memberID *uuid.UUID) ([]model.CommissionRow, error) {
+	panic(fmt.Errorf("not implemented: CommissionReport - commissionReport"))
+}
+
+// MyStats is the resolver for the myStats field.
+func (r *queryResolver) MyStats(ctx context.Context, from *time.Time, to *time.Time) (*model.MyStats, error) {
+	panic(fmt.Errorf("not implemented: MyStats - myStats"))
+}
+
+// Uploads is the resolver for the uploads field.
+func (r *queryResolver) Uploads(ctx context.Context, page *model.PageInput) ([]model.Upload, error) {
+	panic(fmt.Errorf("not implemented: Uploads - uploads"))
 }
 
 // Members is the resolver for the members field.

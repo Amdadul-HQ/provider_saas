@@ -22,10 +22,87 @@ type AuditLog struct {
 	CreatedAt  time.Time      `json:"createdAt"`
 }
 
+// refreshToken is null when the server set it as an httpOnly cookie (cookie mode).
 type AuthPayload struct {
-	AccessToken  string `json:"accessToken"`
-	RefreshToken string `json:"refreshToken"`
-	User         User   `json:"user"`
+	AccessToken  string  `json:"accessToken"`
+	RefreshToken *string `json:"refreshToken,omitempty"`
+	User         User    `json:"user"`
+}
+
+// FAQ bot: when an inbound message matches, the body/template is sent automatically (once per conversation per cooldown).
+type AutoReplyRule struct {
+	ID               uuid.UUID        `json:"id"`
+	Name             string           `json:"name"`
+	Keywords         []string         `json:"keywords"`
+	MatchType        AutoReplyMatch   `json:"matchType"`
+	Body             *string          `json:"body,omitempty"`
+	Template         *MessageTemplate `json:"template,omitempty"`
+	Platforms        []SocialPlatform `json:"platforms"`
+	OnlyOutsideHours bool             `json:"onlyOutsideHours"`
+	CooldownMinutes  int              `json:"cooldownMinutes"`
+	Priority         int              `json:"priority"`
+	IsActive         bool             `json:"isActive"`
+	Hits             int              `json:"hits"`
+	CreatedAt        time.Time        `json:"createdAt"`
+}
+
+type AutoReplyRuleInput struct {
+	Name             string           `json:"name"`
+	Keywords         []string         `json:"keywords"`
+	MatchType        *AutoReplyMatch  `json:"matchType,omitempty"`
+	Body             *string          `json:"body,omitempty"`
+	TemplateID       *uuid.UUID       `json:"templateId,omitempty"`
+	Platforms        []SocialPlatform `json:"platforms,omitempty"`
+	OnlyOutsideHours *bool            `json:"onlyOutsideHours,omitempty"`
+	CooldownMinutes  *int             `json:"cooldownMinutes,omitempty"`
+	Priority         *int             `json:"priority,omitempty"`
+	IsActive         *bool            `json:"isActive,omitempty"`
+}
+
+type AutoReplyTest struct {
+	Matched      bool           `json:"matched"`
+	Rule         *AutoReplyRule `json:"rule,omitempty"`
+	RenderedBody *string        `json:"renderedBody,omitempty"`
+}
+
+type Campaign struct {
+	ID            uuid.UUID        `json:"id"`
+	Name          string           `json:"name"`
+	Body          string           `json:"body"`
+	Template      *MessageTemplate `json:"template,omitempty"`
+	Channel       ReminderChannel  `json:"channel"`
+	Segment       map[string]any   `json:"segment"`
+	Offer         *CampaignOffer   `json:"offer,omitempty"`
+	ScheduledAt   *time.Time       `json:"scheduledAt,omitempty"`
+	Status        CampaignStatus   `json:"status"`
+	AudienceCount int              `json:"audienceCount"`
+	SentCount     int              `json:"sentCount"`
+	FailedCount   int              `json:"failedCount"`
+	CreatedBy     *User            `json:"createdBy,omitempty"`
+	CreatedAt     time.Time        `json:"createdAt"`
+	UpdatedAt     time.Time        `json:"updatedAt"`
+}
+
+type CampaignInput struct {
+	Name        string              `json:"name"`
+	Body        string              `json:"body"`
+	TemplateID  *uuid.UUID          `json:"templateId,omitempty"`
+	Channel     *ReminderChannel    `json:"channel,omitempty"`
+	Segment     SegmentInput        `json:"segment"`
+	Offer       *CampaignOfferInput `json:"offer,omitempty"`
+	ScheduledAt *time.Time          `json:"scheduledAt,omitempty"`
+}
+
+type CampaignOffer struct {
+	DiscountPercent *int    `json:"discountPercent,omitempty"`
+	ValidDays       *int    `json:"validDays,omitempty"`
+	CouponCode      *string `json:"couponCode,omitempty"`
+}
+
+type CampaignOfferInput struct {
+	DiscountPercent *int    `json:"discountPercent,omitempty"`
+	ValidDays       *int    `json:"validDays,omitempty"`
+	CouponCode      *string `json:"couponCode,omitempty"`
 }
 
 type ChannelStat struct {
@@ -33,6 +110,15 @@ type ChannelStat struct {
 	Conversations int            `json:"conversations"`
 	Customers     int            `json:"customers"`
 	Orders        int            `json:"orders"`
+}
+
+type CommissionRow struct {
+	Member     TenantMember `json:"member"`
+	Sales      int          `json:"sales"`
+	Revenue    int64        `json:"revenue"`
+	Cost       int64        `json:"cost"`
+	Commission int64        `json:"commission"`
+	Currency   string       `json:"currency"`
 }
 
 type ConnectTelegramInput struct {
@@ -221,6 +307,37 @@ type DashboardStats struct {
 	Currency                      string `json:"currency"`
 }
 
+type Import struct {
+	ID         uuid.UUID      `json:"id"`
+	Kind       ImportKind     `json:"kind"`
+	FileURL    string         `json:"fileUrl"`
+	Status     ImportStatus   `json:"status"`
+	Stats      map[string]any `json:"stats"`
+	Error      *string        `json:"error,omitempty"`
+	CreatedBy  *User          `json:"createdBy,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	FinishedAt *time.Time     `json:"finishedAt,omitempty"`
+}
+
+type ImportMappingInput struct {
+	Mapping               map[string]any  `json:"mapping"`
+	CreateMissingProducts *bool           `json:"createMissingProducts,omitempty"`
+	DefaultSource         *CustomerSource `json:"defaultSource,omitempty"`
+	DryRun                *bool           `json:"dryRun,omitempty"`
+}
+
+// What the parser understood before committing anything.
+type ImportPreview struct {
+	Kind             ImportKind       `json:"kind"`
+	DetectedFormat   string           `json:"detectedFormat"`
+	Columns          []string         `json:"columns"`
+	SuggestedMapping map[string]any   `json:"suggestedMapping"`
+	Rows             []map[string]any `json:"rows"`
+	TotalRows        int              `json:"totalRows"`
+	Warnings         []string         `json:"warnings"`
+	UsedAi           bool             `json:"usedAI"`
+}
+
 type InboxCounts struct {
 	Open       int `json:"open"`
 	Unassigned int `json:"unassigned"`
@@ -319,6 +436,16 @@ type MessageTemplateInput struct {
 }
 
 type Mutation struct {
+}
+
+type MyStats struct {
+	Sales               int    `json:"sales"`
+	Revenue             int64  `json:"revenue"`
+	Commission          int64  `json:"commission"`
+	ActiveSubscriptions int    `json:"activeSubscriptions"`
+	Customers           int    `json:"customers"`
+	DueBalance          int64  `json:"dueBalance"`
+	Currency            string `json:"currency"`
 }
 
 type Notification struct {
@@ -465,24 +592,26 @@ type ProductFilter struct {
 }
 
 type ProductPlan struct {
-	ID           uuid.UUID `json:"id"`
-	ProductID    uuid.UUID `json:"productId"`
-	Name         string    `json:"name"`
-	DurationDays int       `json:"durationDays"`
-	Price        int64     `json:"price"`
-	Cost         int64     `json:"cost"`
-	Currency     string    `json:"currency"`
-	IsActive     bool      `json:"isActive"`
-	SortOrder    int       `json:"sortOrder"`
+	ID            uuid.UUID `json:"id"`
+	ProductID     uuid.UUID `json:"productId"`
+	Name          string    `json:"name"`
+	DurationDays  int       `json:"durationDays"`
+	Price         int64     `json:"price"`
+	Cost          int64     `json:"cost"`
+	ResellerPrice *int64    `json:"resellerPrice,omitempty"`
+	Currency      string    `json:"currency"`
+	IsActive      bool      `json:"isActive"`
+	SortOrder     int       `json:"sortOrder"`
 }
 
 type ProductPlanInput struct {
-	Name         string `json:"name"`
-	DurationDays int    `json:"durationDays"`
-	Price        int64  `json:"price"`
-	Cost         *int64 `json:"cost,omitempty"`
-	IsActive     *bool  `json:"isActive,omitempty"`
-	SortOrder    *int   `json:"sortOrder,omitempty"`
+	Name          string `json:"name"`
+	DurationDays  int    `json:"durationDays"`
+	Price         int64  `json:"price"`
+	Cost          *int64 `json:"cost,omitempty"`
+	ResellerPrice *int64 `json:"resellerPrice,omitempty"`
+	IsActive      *bool  `json:"isActive,omitempty"`
+	SortOrder     *int   `json:"sortOrder,omitempty"`
 }
 
 type PublicPlan struct {
@@ -537,6 +666,24 @@ type RevealedCredential struct {
 	Username string         `json:"username"`
 	Password string         `json:"password"`
 	Extra    map[string]any `json:"extra,omitempty"`
+}
+
+// Audience definition; all set fields are AND-ed.
+type SegmentInput struct {
+	Status                *CustomerStatus `json:"status,omitempty"`
+	Source                *CustomerSource `json:"source,omitempty"`
+	Tags                  []string        `json:"tags,omitempty"`
+	ProductID             *uuid.UUID      `json:"productId,omitempty"`
+	ExpiredWithinDays     *int            `json:"expiredWithinDays,omitempty"`
+	ExpiringWithinDays    *int            `json:"expiringWithinDays,omitempty"`
+	NoActiveSubscription  *bool           `json:"noActiveSubscription,omitempty"`
+	HasDue                *bool           `json:"hasDue,omitempty"`
+	LastContactBeforeDays *int            `json:"lastContactBeforeDays,omitempty"`
+}
+
+type SegmentPreview struct {
+	Count  int        `json:"count"`
+	Sample []Customer `json:"sample"`
 }
 
 type SocialAccount struct {
@@ -695,6 +842,14 @@ type UpdateTicketInput struct {
 	AssignedTo  *uuid.UUID      `json:"assignedTo,omitempty"`
 }
 
+type Upload struct {
+	ID        uuid.UUID `json:"id"`
+	URL       string    `json:"url"`
+	Kind      string    `json:"kind"`
+	SizeBytes int       `json:"sizeBytes"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
 type User struct {
 	ID              uuid.UUID    `json:"id"`
 	Name            string       `json:"name"`
@@ -704,6 +859,128 @@ type User struct {
 	IsPlatformAdmin bool         `json:"isPlatformAdmin"`
 	Memberships     []Membership `json:"memberships"`
 	CreatedAt       time.Time    `json:"createdAt"`
+}
+
+type AutoReplyMatch string
+
+const (
+	AutoReplyMatchContains AutoReplyMatch = "CONTAINS"
+	AutoReplyMatchExact    AutoReplyMatch = "EXACT"
+	AutoReplyMatchRegex    AutoReplyMatch = "REGEX"
+	AutoReplyMatchAny      AutoReplyMatch = "ANY"
+)
+
+var AllAutoReplyMatch = []AutoReplyMatch{
+	AutoReplyMatchContains,
+	AutoReplyMatchExact,
+	AutoReplyMatchRegex,
+	AutoReplyMatchAny,
+}
+
+func (e AutoReplyMatch) IsValid() bool {
+	switch e {
+	case AutoReplyMatchContains, AutoReplyMatchExact, AutoReplyMatchRegex, AutoReplyMatchAny:
+		return true
+	}
+	return false
+}
+
+func (e AutoReplyMatch) String() string {
+	return string(e)
+}
+
+func (e *AutoReplyMatch) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = AutoReplyMatch(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid AutoReplyMatch", str)
+	}
+	return nil
+}
+
+func (e AutoReplyMatch) MarshalGQL(w io.Writer) {
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *AutoReplyMatch) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e AutoReplyMatch) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type CampaignStatus string
+
+const (
+	CampaignStatusDraft     CampaignStatus = "DRAFT"
+	CampaignStatusScheduled CampaignStatus = "SCHEDULED"
+	CampaignStatusSending   CampaignStatus = "SENDING"
+	CampaignStatusSent      CampaignStatus = "SENT"
+	CampaignStatusCancelled CampaignStatus = "CANCELLED"
+	CampaignStatusFailed    CampaignStatus = "FAILED"
+)
+
+var AllCampaignStatus = []CampaignStatus{
+	CampaignStatusDraft,
+	CampaignStatusScheduled,
+	CampaignStatusSending,
+	CampaignStatusSent,
+	CampaignStatusCancelled,
+	CampaignStatusFailed,
+}
+
+func (e CampaignStatus) IsValid() bool {
+	switch e {
+	case CampaignStatusDraft, CampaignStatusScheduled, CampaignStatusSending, CampaignStatusSent, CampaignStatusCancelled, CampaignStatusFailed:
+		return true
+	}
+	return false
+}
+
+func (e CampaignStatus) String() string {
+	return string(e)
+}
+
+func (e *CampaignStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = CampaignStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid CampaignStatus", str)
+	}
+	return nil
+}
+
+func (e CampaignStatus) MarshalGQL(w io.Writer) {
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *CampaignStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e CampaignStatus) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
 }
 
 type ConversationStatus string
@@ -945,6 +1222,122 @@ func (e *DeliveryType) UnmarshalJSON(b []byte) error {
 }
 
 func (e DeliveryType) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportKind string
+
+const (
+	ImportKindCustomersCSV     ImportKind = "CUSTOMERS_CSV"
+	ImportKindSubscriptionsCSV ImportKind = "SUBSCRIPTIONS_CSV"
+	ImportKindChatExport       ImportKind = "CHAT_EXPORT"
+)
+
+var AllImportKind = []ImportKind{
+	ImportKindCustomersCSV,
+	ImportKindSubscriptionsCSV,
+	ImportKindChatExport,
+}
+
+func (e ImportKind) IsValid() bool {
+	switch e {
+	case ImportKindCustomersCSV, ImportKindSubscriptionsCSV, ImportKindChatExport:
+		return true
+	}
+	return false
+}
+
+func (e ImportKind) String() string {
+	return string(e)
+}
+
+func (e *ImportKind) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportKind(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportKind", str)
+	}
+	return nil
+}
+
+func (e ImportKind) MarshalGQL(w io.Writer) {
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportKind) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportKind) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	e.MarshalGQL(&buf)
+	return buf.Bytes(), nil
+}
+
+type ImportStatus string
+
+const (
+	ImportStatusPending    ImportStatus = "PENDING"
+	ImportStatusProcessing ImportStatus = "PROCESSING"
+	ImportStatusDone       ImportStatus = "DONE"
+	ImportStatusFailed     ImportStatus = "FAILED"
+)
+
+var AllImportStatus = []ImportStatus{
+	ImportStatusPending,
+	ImportStatusProcessing,
+	ImportStatusDone,
+	ImportStatusFailed,
+}
+
+func (e ImportStatus) IsValid() bool {
+	switch e {
+	case ImportStatusPending, ImportStatusProcessing, ImportStatusDone, ImportStatusFailed:
+		return true
+	}
+	return false
+}
+
+func (e ImportStatus) String() string {
+	return string(e)
+}
+
+func (e *ImportStatus) UnmarshalGQL(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("enums must be strings")
+	}
+
+	*e = ImportStatus(str)
+	if !e.IsValid() {
+		return fmt.Errorf("%s is not a valid ImportStatus", str)
+	}
+	return nil
+}
+
+func (e ImportStatus) MarshalGQL(w io.Writer) {
+	_, _ = fmt.Fprint(w, strconv.Quote(e.String()))
+}
+
+func (e *ImportStatus) UnmarshalJSON(b []byte) error {
+	s, err := strconv.Unquote(string(b))
+	if err != nil {
+		return err
+	}
+	return e.UnmarshalGQL(s)
+}
+
+func (e ImportStatus) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	e.MarshalGQL(&buf)
 	return buf.Bytes(), nil

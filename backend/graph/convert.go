@@ -55,7 +55,7 @@ func toMember(ctx context.Context, m tenant.Member) *model.TenantMember {
 }
 
 func toPayload(s auth.Session) *model.AuthPayload {
-	return &model.AuthPayload{AccessToken: s.AccessToken, RefreshToken: s.RefreshToken, User: *toUser(s.User)}
+	return &model.AuthPayload{AccessToken: s.AccessToken, RefreshToken: &s.RefreshToken, User: *toUser(s.User)}
 }
 
 func toCustomer(c customer.Customer) *model.Customer {

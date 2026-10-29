@@ -8,6 +8,7 @@ package graph
 import (
 	"context"
 	"errors"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/auth"
@@ -36,8 +37,9 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 }
 
 // RefreshToken is the resolver for the refreshToken field.
-func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken string) (*model.AuthPayload, error) {
-	s, err := r.AuthSvc.Refresh(ctx, refreshToken, clientMeta(ctx))
+func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken *string) (*model.AuthPayload, error) {
+	// TODO(sprint2-cookie): read from httpOnly cookie when nil.
+	s, err := r.AuthSvc.Refresh(ctx, strDeref(refreshToken), clientMeta(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +47,18 @@ func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken string
 }
 
 // Logout is the resolver for the logout field.
-func (r *mutationResolver) Logout(ctx context.Context, refreshToken string) (bool, error) {
-	return true, r.AuthSvc.Logout(ctx, refreshToken)
+func (r *mutationResolver) Logout(ctx context.Context, refreshToken *string) (bool, error) {
+	return true, r.AuthSvc.Logout(ctx, strDeref(refreshToken))
+}
+
+// LogoutAll is the resolver for the logoutAll field.
+func (r *mutationResolver) LogoutAll(ctx context.Context) (bool, error) {
+	panic(fmt.Errorf("not implemented: LogoutAll - logoutAll"))
+}
+
+// CreateEventsToken is the resolver for the createEventsToken field.
+func (r *mutationResolver) CreateEventsToken(ctx context.Context) (string, error) {
+	panic(fmt.Errorf("not implemented: CreateEventsToken - createEventsToken"))
 }
 
 // SwitchTenant is the resolver for the switchTenant field.

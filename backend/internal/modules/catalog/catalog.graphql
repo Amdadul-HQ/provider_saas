@@ -16,10 +16,10 @@ type Product {
   activeSubscriptionCount: Int! @goField(forceResolver: true)
   createdAt: Time!
 }
-type ProductPlan { id: UUID! productId: UUID! name: String! durationDays: Int! price: Money! cost: Money! currency: String! isActive: Boolean! sortOrder: Int! }
+type ProductPlan { id: UUID! productId: UUID! name: String! durationDays: Int! price: Money! cost: Money! resellerPrice: Money currency: String! isActive: Boolean! sortOrder: Int! }
 
 input ProductFilter { search: String category: String isActive: Boolean }
-input ProductPlanInput { name: String! durationDays: Int! price: Money! cost: Money = 0 isActive: Boolean = true sortOrder: Int = 0 }
+input ProductPlanInput { name: String! durationDays: Int! price: Money! cost: Money = 0 resellerPrice: Money isActive: Boolean = true sortOrder: Int = 0 }
 input CreateProductInput { name: String! category: String description: String imageUrl: String deliveryType: DeliveryType = SHARED_SLOT warrantyDays: Int = 0 deliveryTemplate: String plans: [ProductPlanInput!] }
 input UpdateProductInput { name: String category: String description: String imageUrl: String deliveryType: DeliveryType warrantyDays: Int deliveryTemplate: String isActive: Boolean sortOrder: Int }
 

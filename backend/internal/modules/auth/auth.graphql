@@ -9,7 +9,8 @@ type User {
   createdAt: Time!
 }
 type Membership { id: UUID! tenant: Tenant! role: Role! commissionBps: Int! status: String! }
-type AuthPayload { accessToken: String! refreshToken: String! user: User! }
+"""refreshToken is null when the server set it as an httpOnly cookie (cookie mode)."""
+type AuthPayload { accessToken: String! refreshToken: String user: User! }
 """Public preview of a pending invite, looked up by token."""
 type InvitePreview { tenantName: String! role: Role! inviteeName: String! emailHint: String phoneHint: String expiresAt: Time! userExists: Boolean! }
 
@@ -23,8 +24,13 @@ extend type Query {
 extend type Mutation {
   register(input: RegisterInput!): AuthPayload!
   login(input: LoginInput!): AuthPayload!
-  refreshToken(refreshToken: String!): AuthPayload!
-  logout(refreshToken: String!): Boolean!
+  """Reads the refresh token from the argument or, if absent, from the httpOnly cookie."""
+  refreshToken(refreshToken: String): AuthPayload!
+  logout(refreshToken: String): Boolean!
+  """Revokes every session of the current user (bumps token version)."""
+  logoutAll: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  """Short-lived token for the SSE endpoint GET /events?token=..."""
+  createEventsToken: String! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
   switchTenant(tenantId: UUID!): AuthPayload! @auth
   changePassword(currentPassword: String!, newPassword: String!): Boolean! @auth
   """Accept a pending invite. New users set a password; existing users prove ownership with their password."""

@@ -1,0 +1,48 @@
+enum CampaignStatus { DRAFT SCHEDULED SENDING SENT CANCELLED FAILED }
+
+"""Audience definition; all set fields are AND-ed."""
+input SegmentInput {
+  status: CustomerStatus
+  source: CustomerSource
+  tags: [String!]
+  productId: UUID
+  expiredWithinDays: Int
+  expiringWithinDays: Int
+  noActiveSubscription: Boolean
+  hasDue: Boolean
+  lastContactBeforeDays: Int
+}
+type SegmentPreview { count: Int! sample: [Customer!]! }
+type CampaignOffer { discountPercent: Int validDays: Int couponCode: String }
+input CampaignOfferInput { discountPercent: Int validDays: Int couponCode: String }
+type Campaign {
+  id: UUID!
+  name: String!
+  body: String!
+  template: MessageTemplate @goField(forceResolver: true)
+  channel: ReminderChannel!
+  segment: JSON!
+  offer: CampaignOffer
+  scheduledAt: Time
+  status: CampaignStatus!
+  audienceCount: Int!
+  sentCount: Int!
+  failedCount: Int!
+  createdBy: User @goField(forceResolver: true)
+  createdAt: Time!
+  updatedAt: Time!
+}
+input CampaignInput { name: String! body: String! templateId: UUID channel: ReminderChannel = PREFERRED segment: SegmentInput! offer: CampaignOfferInput scheduledAt: Time }
+
+extend type Query {
+  campaigns(status: CampaignStatus, page: PageInput): [Campaign!]! @auth
+  campaign(id: UUID!): Campaign @auth
+  segmentPreview(segment: SegmentInput!, sampleSize: Int = 5): SegmentPreview! @auth
+}
+extend type Mutation {
+  createCampaign(input: CampaignInput!): Campaign! @auth(roles: [OWNER, ADMIN, STAFF])
+  updateCampaign(id: UUID!, input: CampaignInput!): Campaign! @auth(roles: [OWNER, ADMIN, STAFF])
+  """Sends now (or schedules at scheduledAt). Enqueues one job per recipient."""
+  sendCampaign(id: UUID!): Campaign! @auth(roles: [OWNER, ADMIN])
+  cancelCampaign(id: UUID!): Campaign! @auth(roles: [OWNER, ADMIN])
+}

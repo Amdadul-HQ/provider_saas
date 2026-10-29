@@ -24,6 +24,7 @@ type PublicPlan { id: UUID! name: String! durationDays: Int! price: Money! curre
 type Order {
   id: UUID!
   number: Int!
+  reference: String!
   customer: Customer @goField(forceResolver: true)
   product: Product! @goField(forceResolver: true)
   plan: ProductPlan @goField(forceResolver: true)
@@ -39,7 +40,7 @@ type Order {
   customerNote: String
   createdAt: Time!
 }
-type PublicOrder { number: Int! status: OrderStatus! amount: Money! currency: String! productName: String! paymentInstructions: String paymentNumbers: JSON! }
+type PublicOrder { number: Int! reference: String! status: OrderStatus! amount: Money! currency: String! productName: String! paymentInstructions: String paymentNumbers: JSON! }
 """Customer portal view via magic link."""
 type PortalView { customer: PortalCustomer! subscriptions: [PortalSubscription!]! invoices: [PortalInvoice!]! storefront: PublicStorefront! }
 type PortalCustomer { name: String! phone: String dueBalance: Money! }
@@ -55,7 +56,8 @@ extend type Query {
   orders(filter: OrderFilter, page: PageInput): [Order!]! @auth
   order(id: UUID!): Order @auth
   publicStorefront(slug: String!): PublicStorefront
-  publicOrder(slug: String!, number: Int!, phone: String!): PublicOrder
+  """Look up by the random public reference (preferred) or legacy number; phone must match."""
+  publicOrder(slug: String!, reference: String, number: Int, phone: String!): PublicOrder
   portal(token: String!): PortalView
 }
 extend type Mutation {
@@ -64,5 +66,6 @@ extend type Mutation {
   confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
   cancelOrder(id: UUID!, reason: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
   createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth(roles: [OWNER, ADMIN, STAFF])
+  revokePortalLinks(customerId: UUID!): Int! @auth(roles: [OWNER, ADMIN, STAFF])
   portalRequestRenewal(token: String!, subscriptionId: UUID!, paymentMethod: PaymentMethod, trxId: String): PublicOrder!
 }

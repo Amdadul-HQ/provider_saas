@@ -14,6 +14,9 @@ type Tenant {
 }
 type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! inviteUrl: String inviteExpiresAt: Time createdAt: Time! }
 type Notification { id: UUID! kind: String! title: String! body: String link: String readAt: Time createdAt: Time! }
+type CommissionRow { member: TenantMember! sales: Int! revenue: Money! cost: Money! commission: Money! currency: String! }
+type MyStats { sales: Int! revenue: Money! commission: Money! activeSubscriptions: Int! customers: Int! dueBalance: Money! currency: String! }
+type Upload { id: UUID! url: String! kind: String! sizeBytes: Int! createdAt: Time! }
 type AuditLog { id: ID! user: User action: String! entityType: String! entityId: UUID meta: JSON! createdAt: Time! }
 
 input UpdateTenantInput { name: String currency: String timezone: String locale: String settings: JSON }
@@ -23,6 +26,11 @@ extend type Query {
   tenant: Tenant! @auth
   notifications(unreadOnly: Boolean = false, page: PageInput): [Notification!]! @auth
   auditLogs(page: PageInput): [AuditLog!]! @auth(roles: [OWNER, ADMIN])
+  """Per-member sales and commission for a period (reseller/staff panel for owners)."""
+  commissionReport(from: Time, to: Time, memberId: UUID): [CommissionRow!]! @auth(roles: [OWNER, ADMIN])
+  """The caller's own numbers (reseller/staff self view)."""
+  myStats(from: Time, to: Time): MyStats! @auth
+  uploads(page: PageInput): [Upload!]! @auth
 }
 extend type Mutation {
   updateTenant(input: UpdateTenantInput!): Tenant! @auth(roles: [OWNER, ADMIN])
@@ -34,4 +42,5 @@ extend type Mutation {
   rotateSmsWebhookToken: String! @auth(roles: [OWNER, ADMIN])
   markNotificationRead(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
   markAllNotificationsRead: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  deleteUpload(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
 }

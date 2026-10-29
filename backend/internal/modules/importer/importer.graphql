@@ -1,0 +1,26 @@
+enum ImportKind { CUSTOMERS_CSV SUBSCRIPTIONS_CSV CHAT_EXPORT }
+enum ImportStatus { PENDING PROCESSING DONE FAILED }
+
+type Import { id: UUID! kind: ImportKind! fileUrl: String! status: ImportStatus! stats: JSON! error: String createdBy: User @goField(forceResolver: true) createdAt: Time! finishedAt: Time }
+"""What the parser understood before committing anything."""
+type ImportPreview {
+  kind: ImportKind!
+  detectedFormat: String!          # csv, whatsapp_export, messenger_json, telegram_json
+  columns: [String!]!
+  suggestedMapping: JSON!          # {name:"Name", phone:"Mobile", product:"Item", expiresAt:"Expiry"}
+  rows: [JSON!]!                   # first N parsed rows
+  totalRows: Int!
+  warnings: [String!]!
+  usedAI: Boolean!
+}
+input ImportMappingInput { mapping: JSON! createMissingProducts: Boolean = true defaultSource: CustomerSource = IMPORT dryRun: Boolean = false }
+
+extend type Query {
+  imports(page: PageInput): [Import!]! @auth
+  import(id: UUID!): Import @auth
+}
+extend type Mutation {
+  """fileUrl comes from POST /uploads. Parses with heuristics; uses Claude if ANTHROPIC_API_KEY is set."""
+  previewImport(fileUrl: String!, kind: ImportKind!, sampleSize: Int = 20): ImportPreview! @auth(roles: [OWNER, ADMIN, STAFF])
+  startImport(fileUrl: String!, kind: ImportKind!, input: ImportMappingInput!): Import! @auth(roles: [OWNER, ADMIN, STAFF])
+}

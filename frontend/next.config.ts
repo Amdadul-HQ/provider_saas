@@ -18,6 +18,16 @@ const nextConfig: NextConfig = {
   poweredByHeader: false,
   // lets `pnpm build` run next to a live `next dev` without fighting over .next (NEXT_DIST_DIR=.next-build)
   distDir: process.env.NEXT_DIST_DIR || ".next",
+  // dev only: proxy the API through this origin (NEXT_DEV_API_PROXY=http://localhost:8081) so a second
+  // dev server on another port works without touching the API's CORS allow-list
+  async rewrites() {
+    const api = process.env.NEXT_DEV_API_PROXY
+    if (isProd || !api) return []
+    return [
+      { source: "/graphql", destination: `${api}/graphql` },
+      { source: "/uploads/:path*", destination: `${api}/uploads/:path*` },
+    ]
+  },
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },

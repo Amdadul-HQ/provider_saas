@@ -15,6 +15,11 @@ import (
 	"github.com/google/uuid"
 )
 
+// Template is the resolver for the template field.
+func (r *autoReplyRuleResolver) Template(ctx context.Context, obj *model.AutoReplyRule) (*model.MessageTemplate, error) {
+	panic(fmt.Errorf("not implemented: Template - template"))
+}
+
 // SocialAccount is the resolver for the socialAccount field.
 func (r *conversationResolver) SocialAccount(ctx context.Context, obj *model.Conversation) (*model.SocialAccount, error) {
 	return r.socialAccountByID(ctx, obj.SocialAccountID)
@@ -159,6 +164,16 @@ func (r *mutationResolver) DeleteMessageTemplate(ctx context.Context, id uuid.UU
 	return true, nil
 }
 
+// UpsertAutoReplyRule is the resolver for the upsertAutoReplyRule field.
+func (r *mutationResolver) UpsertAutoReplyRule(ctx context.Context, id *uuid.UUID, input model.AutoReplyRuleInput) (*model.AutoReplyRule, error) {
+	panic(fmt.Errorf("not implemented: UpsertAutoReplyRule - upsertAutoReplyRule"))
+}
+
+// DeleteAutoReplyRule is the resolver for the deleteAutoReplyRule field.
+func (r *mutationResolver) DeleteAutoReplyRule(ctx context.Context, id uuid.UUID) (bool, error) {
+	panic(fmt.Errorf("not implemented: DeleteAutoReplyRule - deleteAutoReplyRule"))
+}
+
 // Conversations is the resolver for the conversations field.
 func (r *queryResolver) Conversations(ctx context.Context, filter *model.ConversationFilter, page *model.PageInput) (*model.ConversationConnection, error) {
 	tid, _, err := tenantOf(ctx)
@@ -229,6 +244,19 @@ func (r *queryResolver) MessageTemplates(ctx context.Context, category *model.Te
 	return out, nil
 }
 
+// AutoReplyRules is the resolver for the autoReplyRules field.
+func (r *queryResolver) AutoReplyRules(ctx context.Context) ([]model.AutoReplyRule, error) {
+	panic(fmt.Errorf("not implemented: AutoReplyRules - autoReplyRules"))
+}
+
+// TestAutoReply is the resolver for the testAutoReply field.
+func (r *queryResolver) TestAutoReply(ctx context.Context, text string, platform *model.SocialPlatform) (*model.AutoReplyTest, error) {
+	panic(fmt.Errorf("not implemented: TestAutoReply - testAutoReply"))
+}
+
+// AutoReplyRule returns generated.AutoReplyRuleResolver implementation.
+func (r *Resolver) AutoReplyRule() generated.AutoReplyRuleResolver { return &autoReplyRuleResolver{r} }
+
 // Conversation returns generated.ConversationResolver implementation.
 func (r *Resolver) Conversation() generated.ConversationResolver { return &conversationResolver{r} }
 
@@ -236,6 +264,7 @@ func (r *Resolver) Conversation() generated.ConversationResolver { return &conve
 func (r *Resolver) Message() generated.MessageResolver { return &messageResolver{r} }
 
 type (
-	conversationResolver struct{ *Resolver }
-	messageResolver      struct{ *Resolver }
+	autoReplyRuleResolver struct{ *Resolver }
+	conversationResolver  struct{ *Resolver }
+	messageResolver       struct{ *Resolver }
 )

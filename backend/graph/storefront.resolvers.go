@@ -7,9 +7,11 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/storefront"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
@@ -78,6 +80,11 @@ func (r *mutationResolver) CreatePortalLink(ctx context.Context, customerID uuid
 	return r.StorefrontSvc.CreatePortalLink(ctx, tid, customerID, deref(lowerPtr(sendVia), ""))
 }
 
+// RevokePortalLinks is the resolver for the revokePortalLinks field.
+func (r *mutationResolver) RevokePortalLinks(ctx context.Context, customerID uuid.UUID) (int, error) {
+	panic(fmt.Errorf("not implemented: RevokePortalLinks - revokePortalLinks"))
+}
+
 // PortalRequestRenewal is the resolver for the portalRequestRenewal field.
 func (r *mutationResolver) PortalRequestRenewal(ctx context.Context, token string, subscriptionID uuid.UUID, paymentMethod *model.PaymentMethod, trxID *string) (*model.PublicOrder, error) {
 	o, err := r.StorefrontSvc.PortalRequestRenewal(ctx, token, subscriptionID, lowerPtr(paymentMethod), trxID)
@@ -85,6 +92,11 @@ func (r *mutationResolver) PortalRequestRenewal(ctx context.Context, token strin
 		return nil, err
 	}
 	return toPublicOrder(o), nil
+}
+
+// Reference is the resolver for the reference field.
+func (r *orderResolver) Reference(ctx context.Context, obj *model.Order) (string, error) {
+	panic(fmt.Errorf("not implemented: Reference - reference"))
 }
 
 // Customer is the resolver for the customer field.
@@ -119,6 +131,11 @@ func (r *orderResolver) Payment(ctx context.Context, obj *model.Order) (*model.P
 		return nil, err
 	}
 	return toPayment(*p), nil
+}
+
+// Reference is the resolver for the reference field.
+func (r *publicOrderResolver) Reference(ctx context.Context, obj *model.PublicOrder) (string, error) {
+	panic(fmt.Errorf("not implemented: Reference - reference"))
 }
 
 // Storefront is the resolver for the storefront field.
@@ -182,8 +199,12 @@ func (r *queryResolver) PublicStorefront(ctx context.Context, slug string) (*mod
 }
 
 // PublicOrder is the resolver for the publicOrder field.
-func (r *queryResolver) PublicOrder(ctx context.Context, slug string, number int, phone string) (*model.PublicOrder, error) {
-	o, err := r.StorefrontSvc.PublicOrder(ctx, slug, number, phone)
+func (r *queryResolver) PublicOrder(ctx context.Context, slug string, reference *string, number *int, phone string) (*model.PublicOrder, error) {
+	// TODO(sprint2-reference): look up by reference when given.
+	if number == nil {
+		return nil, apperr.ValidationField("reference", "order reference lookup not implemented yet")
+	}
+	o, err := r.StorefrontSvc.PublicOrder(ctx, slug, *number, phone)
 	if err != nil {
 		return nilIfNotFound[model.PublicOrder](nil, err)
 	}
@@ -202,4 +223,10 @@ func (r *queryResolver) Portal(ctx context.Context, token string) (*model.Portal
 // Order returns generated.OrderResolver implementation.
 func (r *Resolver) Order() generated.OrderResolver { return &orderResolver{r} }
 
-type orderResolver struct{ *Resolver }
+// PublicOrder returns generated.PublicOrderResolver implementation.
+func (r *Resolver) PublicOrder() generated.PublicOrderResolver { return &publicOrderResolver{r} }
+
+type (
+	orderResolver       struct{ *Resolver }
+	publicOrderResolver struct{ *Resolver }
+)

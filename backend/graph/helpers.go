@@ -146,3 +146,10 @@ func (r *Resolver) requirePaymentVerifier(ctx context.Context, tenantID uuid.UUI
 	}
 	return apperr.Forbidden("your role cannot verify payments")
 }
+
+func strDeref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}

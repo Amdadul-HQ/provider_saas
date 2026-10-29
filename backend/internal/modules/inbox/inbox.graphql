@@ -34,6 +34,25 @@ type Message {
   error: String
   sentAt: Time!
 }
+enum AutoReplyMatch { CONTAINS EXACT REGEX ANY }
+"""FAQ bot: when an inbound message matches, the body/template is sent automatically (once per conversation per cooldown)."""
+type AutoReplyRule {
+  id: UUID!
+  name: String!
+  keywords: [String!]!
+  matchType: AutoReplyMatch!
+  body: String
+  template: MessageTemplate @goField(forceResolver: true)
+  platforms: [SocialPlatform!]!
+  onlyOutsideHours: Boolean!
+  cooldownMinutes: Int!
+  priority: Int!
+  isActive: Boolean!
+  hits: Int!
+  createdAt: Time!
+}
+input AutoReplyRuleInput { name: String! keywords: [String!]! matchType: AutoReplyMatch = CONTAINS body: String templateId: UUID platforms: [SocialPlatform!] onlyOutsideHours: Boolean = false cooldownMinutes: Int = 60 priority: Int = 0 isActive: Boolean = true }
+type AutoReplyTest { matched: Boolean! rule: AutoReplyRule renderedBody: String }
 type MessageTemplate { id: UUID! key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean! }
 type ConversationConnection { edges: [ConversationEdge!]! pageInfo: PageInfo! totalCount: Int! }
 type ConversationEdge { cursor: String! node: Conversation! }
@@ -48,6 +67,8 @@ extend type Query {
   conversation(id: UUID!): Conversation @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   inboxCounts: InboxCounts! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  autoReplyRules: [AutoReplyRule!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  testAutoReply(text: String!, platform: SocialPlatform): AutoReplyTest! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
   sendMessage(input: SendMessageInput!): Message! @auth(roles: [OWNER, ADMIN, STAFF])
@@ -59,4 +80,6 @@ extend type Mutation {
   linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
   upsertMessageTemplate(id: UUID, input: MessageTemplateInput!): MessageTemplate! @auth(roles: [OWNER, ADMIN])
   deleteMessageTemplate(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  upsertAutoReplyRule(id: UUID, input: AutoReplyRuleInput!): AutoReplyRule! @auth(roles: [OWNER, ADMIN])
+  deleteAutoReplyRule(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
 }
