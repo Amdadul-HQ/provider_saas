@@ -22,6 +22,9 @@ import (
 type UserDirectory interface {
 	// FindOrCreateUser returns an existing user by email/phone or creates a passwordless one.
 	FindOrCreateUser(ctx context.Context, email, phone *string, name string) (uuid.UUID, error)
+	// BumpTokenVersion revokes the user's current access tokens (SECURITY L2); it joins the
+	// caller's transaction. Called when a member is removed or their role changes.
+	BumpTokenVersion(ctx context.Context, userID uuid.UUID) error
 }
 
 // Service is the tenant module API.
@@ -315,6 +318,11 @@ func (s *service) UpdateMemberRole(ctx context.Context, tenantID, actorID, membe
 		if err := s.repo.UpdateMember(ctx, tx, tenantID, memberID, role, bps); err != nil {
 			return err
 		}
+		if cur.Role != role { // the old role in live access tokens must stop working now
+			if err := s.users.BumpTokenVersion(ctx, cur.UserID); err != nil {
+				return err
+			}
+		}
 		if err := s.repo.InsertAudit(ctx, tx, tenantID, &actorID, "member.role", "tenant_member", &memberID,
 			map[string]any{"from": cur.Role, "to": role}); err != nil {
 			return err
@@ -341,6 +349,9 @@ func (s *service) RemoveMember(ctx context.Context, tenantID, actorID, memberID 
 			}
 		}
 		if err := s.repo.DeleteMember(ctx, tx, tenantID, memberID); err != nil {
+			return err
+		}
+		if err := s.users.BumpTokenVersion(ctx, cur.UserID); err != nil { // SECURITY L2
 			return err
 		}
 		return s.repo.InsertAudit(ctx, tx, tenantID, &actorID, "member.remove", "tenant_member", &memberID, nil)

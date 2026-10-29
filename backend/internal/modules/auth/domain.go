@@ -22,6 +22,7 @@ type User struct {
 	AvatarURL       *string
 	IsPlatformAdmin bool
 	PasswordHash    *string
+	TokenVersion    int // users.token_version, copied into the access token's tv claim
 	CreatedAt       time.Time
 }
 

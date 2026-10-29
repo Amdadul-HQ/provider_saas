@@ -14,11 +14,11 @@ import (
 // Repository: users and refresh_tokens are platform tables (not tenant-scoped).
 type Repository struct{}
 
-const userCols = `id, name, email::text, phone, avatar_url, is_platform_admin, password_hash, created_at`
+const userCols = `id, name, email::text, phone, avatar_url, is_platform_admin, password_hash, token_version, created_at`
 
 func scanUser(row pgx.Row) (User, error) {
 	var u User
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.AvatarURL, &u.IsPlatformAdmin, &u.PasswordHash, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Phone, &u.AvatarURL, &u.IsPlatformAdmin, &u.PasswordHash, &u.TokenVersion, &u.CreatedAt)
 	return u, err
 }
 
@@ -109,6 +109,19 @@ func (Repository) RefreshByHash(ctx context.Context, q db.Querier, hash string) 
 func (Repository) RevokeRefresh(ctx context.Context, q db.Querier, id uuid.UUID) error {
 	_, err := q.Exec(ctx, `UPDATE refresh_tokens SET revoked_at = now() WHERE id = $1 AND revoked_at IS NULL`, id)
 	return err
+}
+
+// BumpTokenVersion invalidates every access token issued to the user (SECURITY L2).
+func (Repository) BumpTokenVersion(ctx context.Context, q db.Querier, userID uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE users SET token_version = token_version + 1 WHERE id = $1`, userID)
+	return err
+}
+
+// TokenVersion reads users.token_version (users is a platform table: no RLS).
+func (Repository) TokenVersion(ctx context.Context, q db.Querier, userID uuid.UUID) (int, error) {
+	var v int
+	err := q.QueryRow(ctx, `SELECT token_version FROM users WHERE id = $1`, userID).Scan(&v)
+	return v, db.MapErr(err, "user")
 }
 
 func (Repository) RevokeAllForUser(ctx context.Context, q db.Querier, userID uuid.UUID) error {

@@ -23,6 +23,8 @@ type Principal struct {
 	TenantID        uuid.UUID
 	Role            string
 	IsPlatformAdmin bool
+	// TokenVersion is users.token_version when the token was issued (SECURITY L2).
+	TokenVersion int
 }
 
 // HasRole reports whether the principal has one of roles (case-insensitive). Empty roles = any.
@@ -57,7 +59,8 @@ func Middleware(issuer *TokenIssuer) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			h := r.Header.Get("Authorization")
 			if tok, ok := strings.CutPrefix(h, "Bearer "); ok && tok != "" {
-				if p, err := issuer.Parse(strings.TrimSpace(tok)); err == nil {
+				// Verify = signature/aud/exp + token_version: a revoked token is anonymous.
+				if p, err := issuer.Verify(r.Context(), strings.TrimSpace(tok)); err == nil {
 					r = r.WithContext(WithPrincipal(r.Context(), p))
 				}
 			}

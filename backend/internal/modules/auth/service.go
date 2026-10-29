@@ -33,6 +33,11 @@ type Service interface {
 	Login(ctx context.Context, in LoginInput, meta ClientMeta) (Session, error)
 	Refresh(ctx context.Context, refreshToken string, meta ClientMeta) (Session, error)
 	Logout(ctx context.Context, refreshToken string) error
+	// LogoutAll revokes every refresh token of the user and bumps token_version, so every
+	// access token issued before is rejected at once (SECURITY L2).
+	LogoutAll(ctx context.Context, userID uuid.UUID) error
+	// BumpTokenVersion implements tenant.UserDirectory (member removed / role changed).
+	BumpTokenVersion(ctx context.Context, userID uuid.UUID) error
 	SwitchTenant(ctx context.Context, userID, tenantID uuid.UUID, meta ClientMeta) (Session, error)
 	ChangePassword(ctx context.Context, userID uuid.UUID, current, next string) error
 	User(ctx context.Context, id uuid.UUID) (User, error)
@@ -56,18 +61,22 @@ type service struct {
 	// limiter locks an identifier (and a client IP) after repeated failures (SECURITY H6).
 	limiter   lockout.Limiter
 	ipLimiter lockout.Limiter
+	// versions caches users.token_version for the access-token check; nil-safe.
+	versions *pauth.VersionCache
 }
 
 // NewService builds the auth service. limiter nil = bounded in-memory login lockout
 // (5 failures / 15 min per identifier); the per-IP limiter allows 30 failures / 15 min.
-func NewService(pool *pgxpool.Pool, tokens *pauth.TokenIssuer, refreshTTL time.Duration, tenants Tenants, limiter, ipLimiter lockout.Limiter) Service {
+func NewService(pool *pgxpool.Pool, tokens *pauth.TokenIssuer, refreshTTL time.Duration, tenants Tenants, limiter, ipLimiter lockout.Limiter,
+	versions *pauth.VersionCache) Service {
 	if limiter == nil {
 		limiter = lockout.NewMemory(lockout.DefaultLogin, 100_000)
 	}
 	if ipLimiter == nil {
 		ipLimiter = lockout.NewMemory(IPPolicy, 100_000)
 	}
-	return &service{pool: pool, tokens: tokens, refreshTTL: refreshTTL, tenants: tenants, limiter: limiter, ipLimiter: ipLimiter}
+	return &service{pool: pool, tokens: tokens, refreshTTL: refreshTTL, tenants: tenants, limiter: limiter, ipLimiter: ipLimiter,
+		versions: versions}
 }
 
 // IPPolicy bounds failed logins per client IP (many identifiers from one address).
@@ -75,11 +84,40 @@ var IPPolicy = lockout.Policy{MaxFailures: 30, Window: 15 * time.Minute, LockFor
 
 // NewUserDirectory returns a tenant.UserDirectory without the tenant dependency
 // (breaks the construction cycle auth <-> tenant).
-func NewUserDirectory(pool *pgxpool.Pool) tenant.UserDirectory { return &service{pool: pool} }
+func NewUserDirectory(pool *pgxpool.Pool, versions *pauth.VersionCache) tenant.UserDirectory {
+	return &service{pool: pool, versions: versions}
+}
+
+// TokenVersionLoader reads users.token_version for pauth.NewVersionCache.
+func TokenVersionLoader(pool *pgxpool.Pool) func(ctx context.Context, userID uuid.UUID) (int, error) {
+	return func(ctx context.Context, userID uuid.UUID) (v int, err error) {
+		err = db.WithPlatformTx(ctx, pool, func(ctx context.Context, tx pgx.Tx) error {
+			v, err = Repository{}.TokenVersion(ctx, tx, userID)
+			return err
+		})
+		return v, err
+	}
+}
+
+// errRegister is returned for every register attempt that cannot create an account
+// because the email/phone is taken (SECURITY L1): it never says the account exists and
+// carries no session. Repeated attempts from one IP are rate-limited.
+var errRegister = apperr.Validation("we could not create an account with these details; if you already have an account, sign in or ask your business owner for an invite")
+
+// RegisterIPPolicy bounds register attempts that hit an existing account per client IP.
+var RegisterIPPolicy = lockout.Policy{MaxFailures: 10, Window: time.Hour, LockFor: time.Hour}
 
 var errBadCredentials = apperr.Unauthenticated("invalid credentials")
 
 func (s *service) Register(ctx context.Context, in RegisterInput, meta ClientMeta) (Session, error) {
+	regKey := "register-ip:" + meta.IP
+	if meta.IP != "" {
+		if l, _, err := s.ipLimiter.Locked(ctx, regKey); err != nil {
+			return Session{}, err
+		} else if l {
+			return Session{}, errLocked
+		}
+	}
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {
 		return Session{}, apperr.ValidationField("name", "required")
@@ -110,7 +148,7 @@ func (s *service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 		u, err := s.repo.InsertUser(ctx, tx, in.Name, email, ph, &hash)
 		if err != nil {
 			if db.IsUniqueViolation(err, "") {
-				return apperr.Conflict("an account with this email or phone already exists")
+				return errRegister
 			}
 			return err
 		}
@@ -122,6 +160,15 @@ func (s *service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 		sess, err = s.issue(ctx, tx, u, &m, meta)
 		return err
 	})
+	if errors.Is(err, errRegister) {
+		if meta.IP != "" {
+			if _, ferr := s.ipLimiter.Fail(ctx, regKey); ferr != nil {
+				logger.From(ctx).Warn("register limiter", "err", ferr)
+			}
+		}
+		s.auditPlatform(ctx, nil, "auth.register_duplicate", map[string]any{"ip": meta.IP})
+		return Session{}, errRegister
+	}
 	return sess, err
 }
 
@@ -299,8 +346,9 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, meta ClientM
 	if reused {
 		// A revoked token was replayed: assume theft and revoke every session of the user.
 		_ = db.WithPlatformTx(context.WithoutCancel(ctx), s.pool, func(ctx context.Context, tx pgx.Tx) error {
-			return s.repo.RevokeAllForUser(ctx, tx, reusedUser)
+			return s.revokeEverything(ctx, tx, reusedUser)
 		})
+		s.versions.Invalidate(reusedUser)
 	}
 	return sess, err
 }
@@ -362,12 +410,46 @@ func (s *service) ChangePassword(ctx context.Context, userID uuid.UUID, current,
 		if err := s.repo.SetPassword(ctx, tx, userID, hash); err != nil {
 			return err
 		}
-		return s.repo.RevokeAllForUser(ctx, tx, userID)
+		return s.revokeEverything(ctx, tx, userID)
 	})
 }
 
+// revokeEverything revokes all refresh tokens and bumps token_version (in tx); the
+// cached version is dropped so this process rejects old access tokens immediately.
+func (s *service) revokeEverything(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
+	if err := s.repo.RevokeAllForUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	if err := s.repo.BumpTokenVersion(ctx, tx, userID); err != nil {
+		return err
+	}
+	s.versions.Invalidate(userID)
+	return nil
+}
+
+func (s *service) LogoutAll(ctx context.Context, userID uuid.UUID) error {
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		return s.revokeEverything(ctx, tx, userID)
+	})
+	s.versions.Invalidate(userID) // again after commit: a concurrent reload may have cached the old value
+	if err == nil {
+		s.auditPlatform(ctx, &userID, "auth.logout_all", map[string]any{})
+	}
+	return err
+}
+
+// BumpTokenVersion joins the caller's transaction (tenant member changes). Refresh tokens
+// stay valid: the next refresh re-reads membership and role.
+func (s *service) BumpTokenVersion(ctx context.Context, userID uuid.UUID) error {
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.BumpTokenVersion(ctx, tx, userID)
+	})
+	s.versions.Invalidate(userID)
+	return err
+}
+
 func (s *service) issue(ctx context.Context, tx pgx.Tx, u User, m *tenant.Membership, meta ClientMeta) (Session, error) {
-	p := pauth.Principal{UserID: u.ID, IsPlatformAdmin: u.IsPlatformAdmin}
+	p := pauth.Principal{UserID: u.ID, IsPlatformAdmin: u.IsPlatformAdmin, TokenVersion: u.TokenVersion}
 	if m != nil {
 		p.TenantID, p.Role = m.Tenant.ID, m.Role
 	}
