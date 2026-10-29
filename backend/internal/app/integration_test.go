@@ -271,8 +271,8 @@ func TestAuthFlows(t *testing.T) {
 	}
 	// Duplicate registration -> generic validation error (no account enumeration, bf678f0).
 	_, err = testC.Auth.Register(context.Background(), auth.RegisterInput{Name: "x", Email: &email, Password: "Passw0rd!", BusinessName: "x"}, auth.ClientMeta{})
-	if !errors.Is(err, apperr.ErrValidation) {
-		t.Fatalf("duplicate register: %v", err)
+	if !errors.Is(err, apperr.ErrValidation) || apperr.FieldOf(err) != "account" {
+		t.Fatalf("duplicate register: %v (want a validation error on field \"account\")", err)
 	}
 }
 

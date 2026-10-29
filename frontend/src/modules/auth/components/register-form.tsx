@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
 import { useForm, useWatch } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -10,6 +11,7 @@ import { FieldGroup } from "@/components/ui/field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { PasswordField, TextField } from "@/components/shared"
 import { describeError } from "@/lib/graphql/use-action"
+import { errorField } from "@/lib/graphql/errors"
 import { APP_URL } from "@/lib/config"
 import { previewSlug } from "@/lib/slug"
 import { normalizePhone, v } from "@/lib/validation"
@@ -136,7 +138,17 @@ export function RegisterForm({ onSuccess }: { onSuccess: () => void }) {
       <FieldGroup key={`${step}-${attempt}`} className={cn(attempt > 0 && "animate-shake", "animate-in fade-in-0 duration-300", step === 1 ? "slide-in-from-right-4" : attempt === 0 && "slide-in-from-left-4")}>
         {error ? (
           <Alert variant="destructive" className="animate-pop">
-            <AlertDescription>{describeError(t, error)}</AlertDescription>
+            {errorField(error) === "account" ? (
+              // the phone/email is taken: point to login instead of "check your input" (the API never says which one)
+              <AlertDescription className="space-y-2">
+                <p>{t.auth.registerAccountExists}</p>
+                <Button asChild size="sm" variant="outline" className="w-fit">
+                  <Link href="/login">{t.auth.loginInstead}</Link>
+                </Button>
+              </AlertDescription>
+            ) : (
+              <AlertDescription>{describeError(t, error)}</AlertDescription>
+            )}
           </Alert>
         ) : null}
         {step === 0 ? (

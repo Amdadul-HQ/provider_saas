@@ -26,6 +26,13 @@ export function errorCode(error: AnyError): string | null {
   return null
 }
 
+/** `extensions.field` of the first GraphQL error that names one (a form field, or "account" for register), or null. */
+export function errorField(error: AnyError): string | null {
+  if (!isCombined(error)) return null
+  const field = error.graphQLErrors.map((e) => e.extensions?.field).find((f) => typeof f === "string" && f !== "")
+  return typeof field === "string" ? field : null
+}
+
 export function errorKind(error: AnyError): ErrorKind | null {
   if (!error) return null
   switch (errorCode(error)) {

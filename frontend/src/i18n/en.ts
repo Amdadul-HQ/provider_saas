@@ -137,6 +137,8 @@ const en: Dict = {
     register: "Create account",
     registering: "Creating account…",
     haveAccount: "Already have an account?",
+    registerAccountExists: "These details may already have an account. Log in instead, or ask your business owner for an invite.",
+    loginInstead: "Log in",
     emailOrPhoneRequired: "Provide an email or a phone number",
     checkingSession: "Checking your session…",
     changePassword: "Change password",

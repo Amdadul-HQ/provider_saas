@@ -140,6 +140,8 @@ const bn = {
     register: "অ্যাকাউন্ট খুলুন",
     registering: "অ্যাকাউন্ট খোলা হচ্ছে…",
     haveAccount: "আগেই অ্যাকাউন্ট আছে?",
+    registerAccountExists: "এই ফোন বা ইমেইল দিয়ে আগেই অ্যাকাউন্ট থাকতে পারে। লগইন করুন, অথবা ব্যবসার মালিকের কাছে আমন্ত্রণ চান।",
+    loginInstead: "লগইন করুন",
     emailOrPhoneRequired: "ইমেইল বা ফোন — অন্তত একটি দিন",
     checkingSession: "সেশন যাচাই হচ্ছে…",
     changePassword: "পাসওয়ার্ড পরিবর্তন",

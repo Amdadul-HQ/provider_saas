@@ -100,9 +100,11 @@ func TokenVersionLoader(pool *pgxpool.Pool) func(ctx context.Context, userID uui
 }
 
 // errRegister is returned for every register attempt that cannot create an account
-// because the email/phone is taken (SECURITY L1): it never says the account exists and
-// carries no session. Repeated attempts from one IP are rate-limited.
-var errRegister = apperr.Validation("we could not create an account with these details; if you already have an account, sign in or ask your business owner for an invite")
+// because the email/phone is taken (SECURITY L1): it never says which detail exists and
+// carries no session. Repeated attempts from one IP are rate-limited. Field "account" (not
+// a form field) lets the web app offer "sign in instead" rather than "check your input".
+var errRegister = &apperr.Error{Kind: apperr.ErrValidation, Field: "account",
+	Msg: "we could not create an account with these details; if you already have an account, sign in or ask your business owner for an invite"}
 
 // RegisterIPPolicy bounds register attempts that hit an existing account per client IP.
 var RegisterIPPolicy = lockout.Policy{MaxFailures: 10, Window: time.Hour, LockFor: time.Hour}
