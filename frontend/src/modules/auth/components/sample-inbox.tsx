@@ -22,7 +22,7 @@ function Notification({ index, position, compact }: { index: number; position: n
   return (
     <figure
       className={cn(
-        "relative mx-auto w-full cursor-default overflow-hidden rounded-2xl bg-white text-foreground transition-transform duration-200 ease-out hover:scale-[1.03]",
+        "relative mx-auto w-full cursor-default overflow-hidden rounded-2xl bg-card text-card-foreground transition-transform dark:ring-1 dark:ring-white/10 duration-200 ease-out hover:scale-[1.03]",
         "[box-shadow:0_0_0_1px_rgba(0,0,0,.03),0_2px_4px_rgba(0,0,0,.05),0_12px_24px_rgba(0,0,0,.08)]",
         compact ? "p-3" : "p-4",
       )}

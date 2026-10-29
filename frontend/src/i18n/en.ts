@@ -116,6 +116,7 @@ const en: Dict = {
     profile: "Profile",
     logout: "Log out",
     language: "Language",
+    theme: "Switch theme",
     menu: "Menu",
   },
   auth: {

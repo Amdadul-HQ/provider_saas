@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react"
 import { usePathname } from "next/navigation"
-import { BrandMark, LanguageToggle, MobileNav, Sidebar } from "@/components/shared"
+import { BrandMark, LanguageToggle, MobileNav, Sidebar, ThemeToggle } from "@/components/shared"
 import { AuthGuard, useSession } from "@/lib/auth"
 import { UserMenu } from "@/modules/auth"
 import { NotificationBell } from "@/modules/tenant"
@@ -27,6 +27,7 @@ function Shell({ children }: { children: ReactNode }) {
             </div>
             <p className="hidden truncate text-sm font-medium text-muted-foreground md:block">{tenant?.name}</p>
             <div className="flex items-center gap-1">
+              <ThemeToggle />
               <LanguageToggle />
               <NotificationBell />
               <div className="md:hidden">

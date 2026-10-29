@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { Button } from "@/components/ui/button"
-import { BrandMark, LanguageToggle } from "@/components/shared"
+import { BrandMark, LanguageToggle, ThemeToggle } from "@/components/shared"
 import { useSession } from "@/lib/auth"
 import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils"
  * Public site header shared by the landing page and the auth pages, so both use the same
  * `max-w-6xl` container, links and actions.
  * - `overlay` (landing): fixed, transparent over the dark hero, solid once the page scrolls.
- * - `solid` (login/signup): sticky card surface from the start.
+ * - `solid`: sticky card surface from the start (for pages without a dark hero under the header).
+ * Login/signup use `overlay` too: their layout puts the hero colour under the whole header.
  */
 export function SiteHeader({ variant = "overlay" }: { variant?: "overlay" | "solid" }) {
   const t = useT()
@@ -66,6 +67,7 @@ export function SiteHeader({ variant = "overlay" }: { variant?: "overlay" | "sol
           ))}
         </nav>
         <div className="flex items-center gap-1.5">
+          <ThemeToggle className={cn(!solid && "text-white hover:bg-white/10 hover:text-white")} />
           <LanguageToggle className={cn(!solid && "text-white hover:bg-white/10 hover:text-white")} />
           {signedIn ? (
             <Button asChild size="sm" className="h-9 rounded-full px-4">
@@ -77,7 +79,7 @@ export function SiteHeader({ variant = "overlay" }: { variant?: "overlay" | "sol
                 asChild
                 variant="ghost"
                 size="sm"
-                className={cn("hidden h-9 rounded-full sm:inline-flex", !solid && "text-white hover:bg-white/10 hover:text-white", pathname === "/login" && "bg-muted")}
+                className={cn("hidden h-9 rounded-full sm:inline-flex", !solid && "text-white hover:bg-white/10 hover:text-white", pathname === "/login" && (solid ? "bg-muted" : "bg-white/15"))}
               >
                 <Link href="/login" aria-current={pathname === "/login" ? "page" : undefined}>
                   {t.auth.login}

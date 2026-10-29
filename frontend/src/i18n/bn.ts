@@ -119,6 +119,7 @@ const bn = {
     profile: "প্রোফাইল",
     logout: "লগআউট",
     language: "ভাষা",
+    theme: "থিম পরিবর্তন",
     menu: "মেনু",
   },
   auth: {
