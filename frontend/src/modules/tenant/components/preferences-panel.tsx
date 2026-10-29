@@ -13,8 +13,8 @@ export function PreferencesPanel() {
   const { locale, digits, setLocale, setDigits } = useI18nStore()
   const { theme, setTheme } = useTheme()
   return (
-    <SectionCard title={t.settings.language} className="max-w-xl">
-      <div className="space-y-4">
+    <SectionCard title={t.settings.language}>
+      <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
         <div className="space-y-2">
           <Label htmlFor="pref-locale">{t.settings.language}</Label>
           <Select value={locale} onValueChange={(v) => setLocale(v as Locale)}>

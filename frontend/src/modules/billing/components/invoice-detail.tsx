@@ -60,7 +60,7 @@ export function InvoiceDetail({ invoiceId }: { invoiceId: string }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_20rem] 2xl:grid-cols-[1fr_24rem]">
         <SectionCard title={t.billing.items} bodyClassName="p-0">
           <Table>
             <TableHeader>

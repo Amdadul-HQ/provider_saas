@@ -44,7 +44,7 @@ export default function SettingsPage() {
           <PreferencesPanel />
         </TabsContent>
         <TabsContent value="account" className="pt-3">
-          <SectionCard title={t.auth.changePassword} className="max-w-xl">
+          <SectionCard title={t.auth.changePassword}>
             <ChangePasswordForm />
           </SectionCard>
         </TabsContent>

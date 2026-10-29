@@ -115,7 +115,7 @@ export function PostList() {
         <EmptyState icon={MegaphoneIcon} title={t.content.empty} />
       ) : (
         <>
-          <ul className="grid gap-3 lg:grid-cols-2">
+          <ul className="grid gap-3 lg:grid-cols-2 3xl:grid-cols-3">
             {posts.map((p) => (
               <li key={p.id}>
                 <PostCard post={p} onDelete={() => setTarget(p)} />

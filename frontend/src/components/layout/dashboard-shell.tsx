@@ -20,7 +20,7 @@ function Shell({ children }: { children: ReactNode }) {
       <Sidebar badges={badges} footer={<UserMenu variant="sidebar" />} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-30 border-b border-border/70 bg-background/85 pt-[env(safe-area-inset-top)] backdrop-blur-md supports-backdrop-filter:bg-background/70">
-          <div className="mx-auto flex h-(--topbar-height) w-full max-w-(--content-max) items-center justify-between gap-2 px-4 md:h-16 md:px-8">
+          <div className="mx-auto flex h-(--topbar-height) w-full max-w-(--content-max) items-center justify-between gap-2 px-4 md:h-16 md:px-8 2xl:px-10">
             <div className="flex min-w-0 items-center gap-2.5 md:hidden">
               <BrandMark className="size-8 rounded-lg text-base" />
               <span className="truncate font-heading font-bold tracking-tight">{tenant?.name ?? t.meta.appName}</span>
@@ -38,7 +38,7 @@ function Shell({ children }: { children: ReactNode }) {
         </header>
         <main className="pb-safe-nav flex-1 md:pb-12">
           {/* one rise per route (ADR-009); search-param changes (inbox ?c=) keep the tree */}
-          <div key={pathname} className="page-enter mx-auto w-full max-w-(--content-max) px-4 pt-4 md:px-8 md:pt-7">
+          <div key={pathname} className="page-enter mx-auto w-full max-w-(--content-max) px-4 pt-4 md:px-8 md:pt-7 2xl:px-10">
             {children}
           </div>
         </main>

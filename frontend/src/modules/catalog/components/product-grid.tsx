@@ -73,7 +73,7 @@ export function ProductGrid({ onSelect, emptyAction }: { onSelect?: (p: ProductF
         error ? (
           <ErrorState error={error} onRetry={() => refetch({ requestPolicy: "network-only" })} />
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
             {Array.from({ length: 6 }).map((_, i) => (
               <Skeleton key={i} className="h-32 rounded-xl" />
             ))}
@@ -82,7 +82,7 @@ export function ProductGrid({ onSelect, emptyAction }: { onSelect?: (p: ProductF
       ) : products.length === 0 ? (
         <EmptyState icon={PackageIcon} title={t.catalog.empty} description={t.catalog.emptyHint} action={emptyAction} />
       ) : (
-        <ul className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-3", fetching && "opacity-70")}>
+        <ul className={cn("grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4", fetching && "opacity-70")}>
           {products.map((p) => (
             <li key={p.id}>
               <ProductCard product={p} onClick={onSelect ? () => onSelect(p) : undefined} />

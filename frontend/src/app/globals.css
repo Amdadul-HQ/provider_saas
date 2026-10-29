@@ -6,6 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* wide desktop monitors: dashboard grids add columns past 2xl */
+  --breakpoint-3xl: 112rem;
   --font-sans: var(--font-manrope), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-manrope), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;

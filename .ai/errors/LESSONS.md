@@ -320,3 +320,15 @@ Grep this file for your area before starting a task.
 - Root cause: make backend-dev exports MIGRATE_DATABASE_URL ?= .../psaas_dev; a local .env that sets only DATABASE_URL=.../psaas makes the API migrate psaas_dev but serve psaas
 - Fix: Added MIGRATE_DATABASE_URL (same database as DATABASE_URL) to the local .env; the new API applied 00015..00025 to psaas
 - Prevention rule: Local .env must set DATABASE_URL and MIGRATE_DATABASE_URL to the same database; compare goose_db_version with the newest migration file when the API misbehaves
+
+## L-054 · 2026-10-29 · frontend/css
+- What broke: Dashboard 8-card row stayed at 4 columns at 1920px although min-[1800px]:grid-cols-8 was in the class list and the media query matched
+- Root cause: Tailwind v4 emitted the px arbitrary breakpoint before the rem-based lg: rules, so lg:grid-cols-4 won the cascade
+- Fix: Added --breakpoint-3xl: 112rem in @theme (globals.css) and used 3xl: instead of min-[1800px]:
+- Prevention rule: Never mix px arbitrary min-[...] breakpoints with the rem theme breakpoints; add a named --breakpoint-* token in rem and check getComputedStyle gridTemplateColumns in the browser
+
+## L-055 · 2026-10-29 · process/ui-scope
+- What broke: Widened the landing, auth, storefront and portal containers when the user asked for full-width pages
+- Root cause: Read 'all routes' as every route in the app; the user meant only routes inside the dashboard
+- Fix: Reverted the marketing, auth, storefront and portal files; kept the changes to the dashboard shell and dashboard pages
+- Prevention rule: Layout or style requests about 'pages/routes' apply to the logged-in dashboard unless the user names the landing, auth or public pages; leave marketing and public pages untouched otherwise

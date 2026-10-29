@@ -21,14 +21,15 @@ export function ChangePasswordForm() {
   return (
     <form
       noValidate
-      className="max-w-md"
       onSubmit={form.handleSubmit(async (values) => {
         if (await changePassword(values)) form.reset()
       })}
     >
       <FieldGroup>
-        <TextField control={form.control} name="currentPassword" type="password" label={t.auth.currentPassword} autoComplete="current-password" required />
-        <TextField control={form.control} name="newPassword" type="password" label={t.auth.newPassword} autoComplete="new-password" required />
+        <div className="grid gap-4 sm:grid-cols-2 xl:max-w-3xl">
+          <TextField control={form.control} name="currentPassword" type="password" label={t.auth.currentPassword} autoComplete="current-password" required />
+          <TextField control={form.control} name="newPassword" type="password" label={t.auth.newPassword} autoComplete="new-password" required />
+        </div>
         <Button type="submit" disabled={fetching} className="w-fit">
           {t.auth.changePassword}
         </Button>

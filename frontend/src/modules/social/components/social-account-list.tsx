@@ -82,7 +82,7 @@ export function SocialAccountList() {
   if (accounts.length === 0) return <EmptyState icon={Share2Icon} title={t.social.empty} description={t.social.emptyHint} />
   return (
     <>
-      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 3xl:grid-cols-4">
         {accounts.map((a) => (
           <li key={a.id}>
             <AccountCard account={a} onDisconnect={() => setTarget(a)} />

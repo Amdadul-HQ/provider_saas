@@ -82,7 +82,8 @@
   --dock-gap: 0.75rem;
   --bottom-nav-height: calc(var(--dock-height) + var(--dock-gap));
   --topbar-height: 3.5rem;
-  --content-max: 88rem;
+  /* app pages fill the width next to the sidebar; readable line length is kept per component */
+  --content-max: none;
 }
 
 .dark {

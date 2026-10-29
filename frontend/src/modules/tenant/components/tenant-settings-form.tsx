@@ -33,13 +33,13 @@ function Form({ tenant }: { tenant: Tenant }) {
   })
   return (
     <form noValidate onSubmit={form.handleSubmit((values) => void update({ input: values }))}>
-      <FieldGroup className="max-w-xl">
-        <TextField control={form.control} name="name" label={t.settings.businessName} required />
-        <div className="grid gap-4 sm:grid-cols-2">
+      <FieldGroup>
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+          <TextField control={form.control} name="name" label={t.settings.businessName} required />
           <SelectField control={form.control} name="currency" label={t.settings.currency} options={[{ value: "BDT", label: "BDT (৳)" }, { value: "USD", label: "USD ($)" }]} />
           <SelectField control={form.control} name="timezone" label={t.settings.timezone} options={[{ value: "Asia/Dhaka", label: "Asia/Dhaka (GMT+6)" }]} />
+          <SelectField control={form.control} name="locale" label={t.settings.locale} options={[{ value: "bn", label: "বাংলা" }, { value: "en", label: "English" }]} />
         </div>
-        <SelectField control={form.control} name="locale" label={t.settings.locale} options={[{ value: "bn", label: "বাংলা" }, { value: "en", label: "English" }]} />
         <RoleGate roles={["OWNER", "ADMIN"]}>
           <Button type="submit" disabled={saving} className="w-fit">
             {saving ? t.common.saving : t.common.save}
@@ -55,7 +55,7 @@ export function TenantSettingsForm() {
   const [{ data, fetching, error }, refetch] = useTenantSettings()
   if (!data) return error ? <ErrorState error={error} onRetry={() => refetch({ requestPolicy: "network-only" })} /> : fetching ? <ListSkeleton rows={4} /> : null
   return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_18rem]">
+    <div className="grid gap-4 lg:grid-cols-[1fr_18rem] 2xl:grid-cols-[1fr_22rem]">
       <SectionCard title={t.settings.tabs.business}>
         <Form tenant={data.tenant} />
       </SectionCard>

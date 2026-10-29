@@ -47,7 +47,7 @@ export function DashboardStatsCards() {
         <StatCard label={t.dashboard.totalDue} value={<MoneyText amount={s.totalDue} currency={s.currency} tone={s.totalDue > 0 ? "due" : "default"} />} icon={HandCoinsIcon} tone="danger" href="/customers" />
         <StatCard label={t.dashboard.mrr} value={<MoneyText amount={s.mrr} currency={s.currency} />} icon={RepeatIcon} />
       </div>
-      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="stagger grid grid-cols-2 gap-3 lg:grid-cols-4 3xl:grid-cols-8">
         <StatCard label={t.dashboard.activeSubscriptions} value={n(s.activeSubscriptions)} icon={RepeatIcon} href="/subscriptions" />
         <StatCard label={t.dashboard.expiringIn7Days} value={n(s.expiringIn7Days)} hint={`${t.dashboard.expiredUnrenewed}: ${n(s.expiredUnrenewed30Days)}`} icon={CalendarClockIcon} tone="warning" href="/subscriptions" />
         <StatCard label={t.dashboard.totalCustomers} value={n(s.totalCustomers)} hint={t.dashboard.newCustomers(s.newCustomersThisMonth)} icon={UsersIcon} href="/customers" />

@@ -23,7 +23,7 @@ export default function DashboardPage() {
           }
         />
         <DashboardStatsCards />
-        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+        <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr] 2xl:grid-cols-[2fr_1fr]">
           <SectionCard title={t.dashboard.revenueChart}>
             <RevenueChart />
           </SectionCard>

@@ -153,7 +153,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
           </Button>
         ) : null}
       </div>
-      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
+      <div className="grid gap-4 lg:grid-cols-[1fr_20rem] 2xl:grid-cols-[1fr_24rem]">
         <div className="space-y-4">
           {ticket.description || ticket.reason ? (
             <SectionCard title={t.tickets.description}>

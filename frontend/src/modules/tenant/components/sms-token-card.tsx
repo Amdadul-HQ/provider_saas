@@ -25,7 +25,7 @@ export function SmsTokenCard() {
   const [token, setToken] = useState<string | null>(null)
   const endpoint = smsEndpoint()
   return (
-    <SectionCard title={t.settings.smsToken} className="max-w-2xl">
+    <SectionCard title={t.settings.smsToken}>
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">{t.settings.smsTokenHint}</p>
         <div className="space-y-1">

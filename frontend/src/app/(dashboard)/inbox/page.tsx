@@ -37,7 +37,7 @@ function Inbox() {
 
   return (
     // full-bleed on the shell: cancel main padding, fill viewport minus header (and bottom nav on phones)
-    <div className="-mx-4 -mt-4 -mb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1rem)] h-[calc(100dvh-var(--topbar-height)-var(--bottom-nav-height)-env(safe-area-inset-bottom))] md:-mx-8 md:-mt-7 md:-mb-12 md:h-[calc(100dvh-4rem)]">
+    <div className="-mx-4 -mt-4 -mb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1rem)] h-[calc(100dvh-var(--topbar-height)-var(--bottom-nav-height)-env(safe-area-inset-bottom))] md:-mx-8 md:-mt-7 md:-mb-12 md:h-[calc(100dvh-4rem)] 2xl:-mx-10">
       <div className="grid h-full grid-cols-1 bg-card md:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]">
         <section className={cn("min-h-0 min-w-0 border-r", selected && "hidden md:block")} aria-label={t.inbox.title}>
           <ConversationList selectedId={selected} hrefFor={(c) => hrefFor(c.id)} initialSearch={params.get("search") ?? undefined} />
