@@ -95,3 +95,39 @@ mutation UpsertMessageTemplate($id: UUID, $input: MessageTemplateInput!) {
 mutation DeleteMessageTemplate($id: UUID!) {
   deleteMessageTemplate(id: $id)
 }
+
+fragment AutoReplyRuleFields on AutoReplyRule {
+  id
+  name
+  keywords
+  matchType
+  body
+  template { id name body }
+  platforms
+  onlyOutsideHours
+  cooldownMinutes
+  priority
+  isActive
+  hits
+  createdAt
+}
+
+query AutoReplyRules {
+  autoReplyRules { ...AutoReplyRuleFields }
+}
+
+query TestAutoReply($text: String!, $platform: SocialPlatform) {
+  testAutoReply(text: $text, platform: $platform) {
+    matched
+    renderedBody
+    rule { id name matchType keywords }
+  }
+}
+
+mutation UpsertAutoReplyRule($id: UUID, $input: AutoReplyRuleInput!) {
+  upsertAutoReplyRule(id: $id, input: $input) { ...AutoReplyRuleFields }
+}
+
+mutation DeleteAutoReplyRule($id: UUID!) {
+  deleteAutoReplyRule(id: $id)
+}
