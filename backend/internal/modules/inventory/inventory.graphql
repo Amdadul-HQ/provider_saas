@@ -29,9 +29,9 @@ input CreateMasterAccountInput { productId: UUID! supplierId: UUID label: String
 input UpdateMasterAccountInput { supplierId: UUID label: String loginHint: String totalSlots: Int purchaseCost: Money purchasedAt: Time expiresAt: Time status: MasterAccountStatus notes: String }
 
 extend type Query {
-  suppliers: [Supplier!]! @auth
-  masterAccounts(filter: MasterAccountFilter, page: PageInput): [MasterAccount!]! @auth
-  masterAccount(id: UUID!): MasterAccount @auth
+  suppliers: [Supplier!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  masterAccounts(filter: MasterAccountFilter, page: PageInput): [MasterAccount!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  masterAccount(id: UUID!): MasterAccount @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   freeSlots(productId: UUID!): [Slot!]! @auth
 }
 extend type Mutation {
@@ -42,5 +42,5 @@ extend type Mutation {
   updateMasterAccount(id: UUID!, input: UpdateMasterAccountInput!): MasterAccount! @auth(roles: [OWNER, ADMIN])
   setMasterAccountCredential(id: UUID!, username: String!, password: String!, extra: JSON): Boolean! @auth(roles: [OWNER, ADMIN])
   revealMasterAccountCredential(id: UUID!): RevealedCredential! @auth(roles: [OWNER, ADMIN])
-  updateSlot(id: UUID!, label: String, pin: String, status: SlotStatus): Slot! @auth
+  updateSlot(id: UUID!, label: String, pin: String, status: SlotStatus): Slot! @auth(roles: [OWNER, ADMIN])
 }

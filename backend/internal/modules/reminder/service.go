@@ -236,12 +236,30 @@ func (s *service) Plan(ctx context.Context, tenantID uuid.UUID, now time.Time) (
 
 // ---- dispatcher
 
+// TenantsWithDue fans the dispatcher out. reminders is a tenant table (fail-closed RLS),
+// so each active tenant is checked inside its own tenant transaction.
 func (s *service) TenantsWithDue(ctx context.Context, now time.Time) (out []uuid.UUID, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.TenantsWithDue(ctx, tx, now)
+	var all []uuid.UUID
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		all, err = s.repo.ActiveTenants(ctx, tx)
 		return err
 	})
-	return out, err
+	if err != nil {
+		return nil, err
+	}
+	for _, tid := range all {
+		var due bool
+		if err := s.tx(ctx, tid, func(ctx context.Context, tx pgx.Tx) (err error) {
+			due, err = s.repo.HasDue(ctx, tx, tid, now)
+			return err
+		}); err != nil {
+			return out, err
+		}
+		if due {
+			out = append(out, tid)
+		}
+	}
+	return out, nil
 }
 
 const dispatchBatch = 100

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -48,29 +49,92 @@ func (Repository) UpdateTenant(ctx context.Context, q db.Querier, id uuid.UUID, 
 		name = COALESCE($2, name), currency = COALESCE($3, currency), timezone = COALESCE($4, timezone),
 		locale = COALESCE($5, locale),
 		settings = CASE WHEN $6::jsonb IS NULL THEN settings
-		  ELSE ($6::jsonb - 'sms_webhook_secret_id' - 'sms_webhook_token_hint')
+		  ELSE ($6::jsonb - 'sms_webhook_secret_id' - 'sms_webhook_token_hint' - 'vault_key_fingerprint')
 		    || jsonb_strip_nulls(jsonb_build_object('sms_webhook_secret_id', settings->'sms_webhook_secret_id',
-		         'sms_webhook_token_hint', settings->'sms_webhook_token_hint')) END
+		         'sms_webhook_token_hint', settings->'sms_webhook_token_hint',
+		         'vault_key_fingerprint', settings->'vault_key_fingerprint')) END
 		WHERE id = $1 RETURNING `+tenantCols, id, in.Name, in.Currency, in.Timezone, in.Locale, settings))
 	return t, db.MapErr(err, "tenant")
 }
 
-const memberSelect = `SELECT m.id, m.tenant_id, m.user_id, m.role, m.commission_bps, m.status, m.created_at,
+const memberSelect = `SELECT m.id, m.tenant_id, m.user_id, m.role, m.commission_bps, m.status, m.created_at, m.invite_name, m.invite_expires_at,
 	u.id, u.name, u.email::text, u.phone, u.avatar_url, u.is_platform_admin, u.created_at
 	FROM tenant_members m JOIN users u ON u.id = m.user_id`
 
 func scanMember(row pgx.Row) (Member, error) {
 	var m Member
-	err := row.Scan(&m.ID, &m.TenantID, &m.UserID, &m.Role, &m.CommissionBps, &m.Status, &m.CreatedAt,
+	var inviteName *string
+	err := row.Scan(&m.ID, &m.TenantID, &m.UserID, &m.Role, &m.CommissionBps, &m.Status, &m.CreatedAt, &inviteName, &m.InviteExpiresAt,
 		&m.User.ID, &m.User.Name, &m.User.Email, &m.User.Phone, &m.User.AvatarURL, &m.User.IsPlatformAdmin, &m.User.CreatedAt)
+	if err == nil && m.Status == MemberInvited {
+		// SECURITY M4: until the invitee accepts, show only what the inviter typed (name) and
+		// masked contact hints, never an existing user's real profile.
+		m.User = UserSummary{ID: m.User.ID, Name: deref(inviteName, m.User.Name), Email: MaskEmail(m.User.Email),
+			Phone: MaskPhone(m.User.Phone), CreatedAt: m.CreatedAt}
+	}
+	if m.Status != MemberInvited {
+		m.InviteExpiresAt = nil
+	}
 	return m, err
 }
 
-func (Repository) InsertMember(ctx context.Context, q db.Querier, tenantID, userID uuid.UUID, role string, bps int, status string, invitedBy *uuid.UUID) (uuid.UUID, error) {
+func deref(p *string, def string) string {
+	if p == nil || *p == "" {
+		return def
+	}
+	return *p
+}
+
+// NewMember is a membership row to insert (invite fields only for status invited).
+type NewMember struct {
+	TenantID, UserID uuid.UUID
+	Role             string
+	CommissionBps    int
+	Status           string
+	InvitedBy        *uuid.UUID
+	InviteHash       *string
+	InviteExpiresAt  *time.Time
+	InviteName       *string
+}
+
+func (Repository) InsertMember(ctx context.Context, q db.Querier, n NewMember) (uuid.UUID, error) {
 	var id uuid.UUID
-	err := q.QueryRow(ctx, `INSERT INTO tenant_members (tenant_id, user_id, role, commission_bps, status, invited_by)
-		VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`, tenantID, userID, role, bps, status, invitedBy).Scan(&id)
-	return id, db.MapErr(err, "member")
+	err := q.QueryRow(ctx, `INSERT INTO tenant_members (tenant_id, user_id, role, commission_bps, status, invited_by,
+		invite_token_hash, invite_expires_at, invite_name)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`, n.TenantID, n.UserID, n.Role, n.CommissionBps, n.Status, n.InvitedBy,
+		n.InviteHash, n.InviteExpiresAt, n.InviteName).Scan(&id)
+	return id, err
+}
+
+// SetInvite stores a new invite token hash/expiry on an invited membership (resendInvite).
+func (Repository) SetInvite(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, hash string, exp time.Time) (bool, error) {
+	tag, err := q.Exec(ctx, `UPDATE tenant_members SET invite_token_hash = $3, invite_expires_at = $4
+		WHERE tenant_id = $1 AND id = $2 AND status = 'invited'`, tenantID, id, hash, exp)
+	return tag.RowsAffected() == 1, err
+}
+
+// InviteByHash resolves an invite token hash (needs db.LookupInviteHash) to its invitation.
+func (Repository) InviteByHash(ctx context.Context, q db.Querier, hash string) (InviteInfo, error) {
+	var i InviteInfo
+	var name *string
+	err := q.QueryRow(ctx, `SELECT m.id, m.tenant_id, t.name, m.user_id, m.role, m.invite_name, u.name, u.email::text, u.phone,
+		u.password_hash IS NOT NULL, m.invite_expires_at
+		FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id JOIN users u ON u.id = m.user_id
+		WHERE m.invite_token_hash = $1 AND m.status = 'invited' AND t.status = 'active'`, hash).
+		Scan(&i.MemberID, &i.TenantID, &i.TenantName, &i.UserID, &i.Role, &name, &i.InviteeName, &i.Email, &i.Phone,
+			&i.UserHasPassword, &i.ExpiresAt)
+	if name != nil && *name != "" {
+		i.InviteeName = *name
+	}
+	return i, db.MapErr(err, "invite")
+}
+
+// ActivateInvite turns an open invitation into an active membership (single use).
+func (Repository) ActivateInvite(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, hash string) (bool, error) {
+	tag, err := q.Exec(ctx, `UPDATE tenant_members SET status = 'active', invite_token_hash = NULL, invite_expires_at = NULL
+		WHERE tenant_id = $1 AND id = $2 AND status = 'invited' AND invite_token_hash = $3 AND invite_expires_at > now()`,
+		tenantID, id, hash)
+	return tag.RowsAffected() == 1, err
 }
 
 func (Repository) ListMembers(ctx context.Context, q db.Querier, tenantID uuid.UUID) ([]Member, error) {
@@ -107,12 +171,13 @@ func (Repository) CountOwners(ctx context.Context, q db.Querier, tenantID uuid.U
 	return n, err
 }
 
-// MembershipsForUser is a cross-tenant lookup by user (login/switch); it filters by user_id.
+// MembershipsForUser is a cross-tenant lookup by user (login/switch, db.LookupUserID); it
+// filters by user_id. Open invitations are not memberships until accepted (BUG-03).
 func (Repository) MembershipsForUser(ctx context.Context, q db.Querier, userID uuid.UUID) ([]Membership, error) {
 	rows, err := q.Query(ctx, `SELECT m.id, m.user_id, m.role, m.commission_bps, m.status,
 		t.id, t.name, t.slug::text, t.plan, t.status, t.currency, t.timezone, t.locale, t.settings, t.trial_ends_at, t.created_at
 		FROM tenant_members m JOIN tenants t ON t.id = m.tenant_id
-		WHERE m.user_id = $1 AND t.status <> 'deleted'
+		WHERE m.user_id = $1 AND m.status <> 'invited' AND t.status <> 'deleted'
 		ORDER BY (m.role = 'owner') DESC, m.created_at`, userID)
 	if err != nil {
 		return nil, err

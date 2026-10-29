@@ -2,8 +2,11 @@ package social
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -190,7 +193,7 @@ func TestWebhookHandlersRejectUnsigned(t *testing.T) {
 		AppSecret:   "app-secret",
 		VerifyToken: "verify-me",
 		SMSTenant:   func(context.Context, string) (uuid.UUID, error) { return uuid.Nil, errBadToken },
-		SMSIngest:   func(context.Context, uuid.UUID, string, time.Time) error { return nil },
+		SMSIngest:   func(context.Context, uuid.UUID, string, string, time.Time) error { return nil },
 	})
 	mux := http.NewServeMux()
 	r := newTestRouter(h)
@@ -228,5 +231,81 @@ func TestWebhookHandlersRejectUnsigned(t *testing.T) {
 	}
 	if rec := do("POST", "/webhooks/payments/sms", "x", map[string]string{"Authorization": "Bearer nope"}); rec.Code != 401 {
 		t.Fatalf("sms bad token: %d", rec.Code)
+	}
+}
+
+func TestSMSWebhookRequiresSender(t *testing.T) {
+	tid := uuid.New()
+	var gotFrom string
+	h := NewWebhooks(WebhookDeps{
+		SMSTenant: func(context.Context, string) (uuid.UUID, error) { return tid, nil },
+		SMSIngest: func(_ context.Context, _ uuid.UUID, from, _ string, _ time.Time) error { gotFrom = from; return nil },
+	})
+	r := newTestRouter(h)
+	do := func(path, body, ctype string) int {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer sms_x")
+		req.Header.Set("Content-Type", ctype)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if c := do("/webhooks/payments/sms", `{"text":"You have received Tk 100"}`, "application/json"); c != 400 {
+		t.Fatalf("missing from: %d", c)
+	}
+	if c := do("/webhooks/payments/sms", `{"text":"You have received Tk 100","from":"bKash"}`, "application/json"); c != 200 || gotFrom != "bKash" {
+		t.Fatalf("json from: %d %q", c, gotFrom)
+	}
+	if c := do("/webhooks/payments/sms?from=16247", "You have received Tk 100", "text/plain"); c != 200 || gotFrom != "16247" {
+		t.Fatalf("query from: %d %q", c, gotFrom)
+	}
+}
+
+func TestSafeErrorNeverLeaksURL(t *testing.T) {
+	secretURL := "https://graph.facebook.com/v21.0/oauth/access_token?client_secret=APPSECRET&access_token=TOKEN123"
+	ue := &url.Error{Op: "Get", URL: secretURL, Err: context.DeadlineExceeded}
+	for _, err := range []error{ue, &TransportError{Op: "GET", Host: "graph.facebook.com", Err: ue}, fmt.Errorf("wrapped: %w", ue)} {
+		msg := SafeError(err)
+		if strings.Contains(msg, "APPSECRET") || strings.Contains(msg, "TOKEN123") || strings.Contains(msg, "client_secret") {
+			t.Fatalf("leak: %q", msg)
+		}
+	}
+	if got := SafeError(&TransportError{Op: "GET", Host: "graph.facebook.com", Err: ue}); got != "social api GET graph.facebook.com: timeout" {
+		t.Fatalf("got %q", got)
+	}
+}
+
+func TestHTTPClientSendsTokensInHeaderNotURL(t *testing.T) {
+	var gotURL, gotAuth, gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotURL, gotAuth = r.URL.String(), r.Header.Get("Authorization")
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		_, _ = io.WriteString(w, `{"data":[{"id":"PN1"}],"access_token":"x"}`)
+	}))
+	defer srv.Close()
+	c := NewHTTPClient("app", "app-secret", "v21.0")
+	c.GraphBase = srv.URL
+	nums, err := c.WhatsAppPhoneNumbers(context.Background(), "WABA1", "TOKEN-ABC")
+	if err != nil || len(nums) != 1 || nums[0] != "PN1" {
+		t.Fatalf("nums=%v err=%v", nums, err)
+	}
+	if strings.Contains(gotURL, "TOKEN-ABC") || gotAuth != "Bearer TOKEN-ABC" {
+		t.Fatalf("url=%s auth=%s", gotURL, gotAuth)
+	}
+	if !strings.Contains(gotURL, "appsecret_proof="+AppSecretProof("TOKEN-ABC", "app-secret")) {
+		t.Fatalf("missing appsecret_proof: %s", gotURL)
+	}
+	if _, err := c.ExchangeCode(context.Background(), "CODE", "https://x/cb"); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(gotURL, "app-secret") || !strings.Contains(gotBody, "client_secret=app-secret") {
+		t.Fatalf("app secret must be in the POST body only: url=%s body=%s", gotURL, gotBody)
+	}
+	// Transport failure: the error must not contain the token or the URL query.
+	c.GraphBase = "http://127.0.0.1:1"
+	err = c.VerifyToken(context.Background(), "TOKEN-ABC")
+	if err == nil || strings.Contains(err.Error(), "TOKEN-ABC") || strings.Contains(err.Error(), "appsecret_proof") {
+		t.Fatalf("transport error leaks: %v", err)
 	}
 }

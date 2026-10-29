@@ -20,7 +20,7 @@ export default function InvoicesPage() {
   return (
     <>
       <PageHeader title={t.billing.invoices} description={t.billing.invoicesSubtitle} actions={newButton} />
-      <InvoiceTable onRowClick={(i) => router.push(`/invoices/${i.id}`)} emptyAction={newButton} />
+      <InvoiceTable rowHref={(i) => `/invoices/${i.id}`} emptyAction={newButton} />
       <CreateInvoiceDialog open={open} onOpenChange={setOpen} onCreated={(id) => router.push(`/invoices/${id}`)} />
     </>
   )

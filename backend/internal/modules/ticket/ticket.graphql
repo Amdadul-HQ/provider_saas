@@ -30,14 +30,14 @@ input CreateTicketInput { customerId: UUID! subscriptionId: UUID conversationId:
 input UpdateTicketInput { priority: TicketPriority status: TicketStatus title: String description: String reason: String assignedTo: UUID }
 
 extend type Query {
-  tickets(filter: TicketFilter, page: PageInput): [Ticket!]! @auth
-  ticket(id: UUID!): Ticket @auth
-  ticketStats: TicketStats! @auth
+  tickets(filter: TicketFilter, page: PageInput): [Ticket!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ticket(id: UUID!): Ticket @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ticketStats: TicketStats! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createTicket(input: CreateTicketInput!): Ticket! @auth
-  updateTicket(id: UUID!, input: UpdateTicketInput!): Ticket! @auth
-  addTicketComment(ticketId: UUID!, body: String!, isInternal: Boolean = true): TicketComment! @auth
+  createTicket(input: CreateTicketInput!): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
+  updateTicket(id: UUID!, input: UpdateTicketInput!): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
+  addTicketComment(ticketId: UUID!, body: String!, isInternal: Boolean = true): TicketComment! @auth(roles: [OWNER, ADMIN, STAFF])
   """Resolve a replacement ticket: moves the subscription to newSlotId (or next free), marks old slot banned/retired."""
-  resolveReplacement(ticketId: UUID!, newSlotId: UUID, markOldSlot: SlotStatus = BANNED, extendDays: Int = 0): Ticket! @auth
+  resolveReplacement(ticketId: UUID!, newSlotId: UUID, markOldSlot: SlotStatus = BANNED, extendDays: Int = 0): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
 }

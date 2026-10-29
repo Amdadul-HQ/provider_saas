@@ -50,7 +50,9 @@ func telegramBot(t *testing.T, f tenantFx) social.Account {
 
 func whatsAppNumber(t *testing.T, f tenantFx) social.Account {
 	t.Helper()
-	a, err := testC.Social.ConnectWhatsApp(f.ctx, f.tid, f.uid, social.ConnectWhatsAppInput{PhoneNumberID: uniq("pn"),
+	pn := uniq("pn")
+	testC.SocialClient.(*social.Fake).AddWABANumber("waba-it", pn) // H5: the number must belong to the WABA
+	a, err := testC.Social.ConnectWhatsApp(f.ctx, f.tid, f.uid, social.ConnectWhatsAppInput{PhoneNumberID: pn,
 		BusinessAccountID: "waba-it", AccessToken: "EAAG-it-whatsapp-access-token-123456", DisplayName: "IT WhatsApp"})
 	if err != nil {
 		t.Fatal(err)
@@ -434,8 +436,26 @@ func TestDeliveryJobRendersCredentialsAndMasksNote(t *testing.T) {
 	}
 	msgs, _ := testC.Inbox.Messages(f.ctx, f.tid, in.ConversationID, nil, 10)
 	last := msgs[len(msgs)-1]
-	if last.Direction != inbox.Outbound || last.Body == nil || !strings.Contains(*last.Body, "Password: s3cret-pass") || last.Status != inbox.MsgSent {
+	// SECURITY H3: the stored copy is redacted; the platform received the real text.
+	if last.Direction != inbox.Outbound || last.Body == nil || !strings.Contains(*last.Body, "Password: "+delivery.Mask) ||
+		strings.Contains(*last.Body, "s3cret-pass") || last.Status != inbox.MsgSent {
 		t.Fatalf("delivery message = %+v body=%s", last, deref(last.Body))
+	}
+	sent := testC.SocialClient.(*social.Fake).CallsOf("SendTelegram")
+	if len(sent) == 0 || !strings.Contains(sent[len(sent)-1].Args[1], "Password: s3cret-pass") {
+		t.Fatalf("telegram did not receive the credentials: %+v", sent)
+	}
+	if n := count(t, f.tid, `SELECT count(*) FROM messages WHERE tenant_id = $1 AND body LIKE '%s3cret-pass%'`); n != 0 {
+		t.Fatalf("%d messages store the plaintext password", n)
+	}
+	if n := count(t, f.tid, `SELECT count(*) FROM conversations WHERE tenant_id = $1 AND last_message_preview LIKE '%s3cret-pass%'`); n != 0 {
+		t.Fatal("conversation preview stores the plaintext password")
+	}
+	var leftover int
+	_ = testOwner.QueryRow(context.Background(), `SELECT count(*) FROM jobs WHERE tenant_id = $1 AND kind = 'inbox.send' AND payload ? 'sealed_body'
+		AND done_at IS NOT NULL`, f.tid).Scan(&leftover)
+	if leftover != 0 {
+		t.Fatalf("%d finished jobs still carry a sealed body", leftover)
 	}
 	if n := count(t, f.tid, `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'delivery.render' AND entity_id = $2`, sub.ID); n != 1 {
 		t.Fatalf("delivery.render audit rows = %d", n)
@@ -514,7 +534,9 @@ func TestWebhooksSignatureAndSMS(t *testing.T) {
 	}
 	h := c2.HTTPHandler()
 	f := newTenant(t, "Webhook Shop")
-	wa, err := c2.Social.ConnectWhatsApp(f.ctx, f.tid, f.uid, social.ConnectWhatsAppInput{PhoneNumberID: uniq("pn"), BusinessAccountID: "w",
+	pn := uniq("pn")
+	c2.SocialClient.(*social.Fake).AddWABANumber("w", pn)
+	wa, err := c2.Social.ConnectWhatsApp(f.ctx, f.tid, f.uid, social.ConnectWhatsAppInput{PhoneNumberID: pn, BusinessAccountID: "w",
 		AccessToken: "EAAG-it-whatsapp-access-token-123456", DisplayName: "WA"})
 	if err != nil {
 		t.Fatal(err)
@@ -574,7 +596,10 @@ func TestWebhooksSignatureAndSMS(t *testing.T) {
 	if again, _, created2, _ := c2.Tenants.EnsureSMSWebhookToken(context.Background(), f.tid); created2 || again != "" {
 		t.Fatal("token must be created once and never shown again")
 	}
-	if code := post("/webhooks/payments/sms", sms, map[string]string{"Authorization": "Bearer " + tok}); code != http.StatusOK {
+	if code := post("/webhooks/payments/sms", sms, map[string]string{"Authorization": "Bearer " + tok}); code != http.StatusBadRequest {
+		t.Fatalf("sms without sender: %d", code)
+	}
+	if code := post("/webhooks/payments/sms?from=bKash", sms, map[string]string{"Authorization": "Bearer " + tok}); code != http.StatusOK {
 		t.Fatalf("sms with token: %d", code)
 	}
 	if n := count(t, f.tid, `SELECT count(*) FROM payment_inbox WHERE tenant_id = $1 AND trx_id = 'ITSMS12345'`); n != 1 {

@@ -1,8 +1,8 @@
 "use client"
 
 import { useCallback } from "react"
-import { useMutation } from "urql"
-import { ChangePasswordDocument, LoginDocument, LogoutDocument, RegisterDocument, SwitchTenantDocument, type LoginInput, type RegisterInput } from "@/gql/graphql"
+import { useMutation, useQuery } from "urql"
+import { AcceptInviteDocument, ChangePasswordDocument, InviteDocument, LoginDocument, LogoutDocument, RegisterDocument, SwitchTenantDocument, type LoginInput, type RegisterInput } from "@/gql/graphql"
 import { getRefreshToken, useSessionStore } from "@/lib/auth"
 import { useAction } from "@/lib/graphql/use-action"
 import { useT } from "@/i18n"
@@ -67,4 +67,23 @@ export function useSwitchTenant() {
 export function useChangePassword() {
   const t = useT()
   return useAction(ChangePasswordDocument, { success: t.auth.passwordChanged })
+}
+
+/** Public invite preview (no session needed). */
+export function useInvitePreview(token: string) {
+  return useQuery({ query: InviteDocument, variables: { token }, requestPolicy: "network-only" })
+}
+
+export function useAcceptInvite() {
+  const [state, execute] = useMutation(AcceptInviteDocument)
+  const setAuthenticated = useSessionStore((s) => s.setAuthenticated)
+  const accept = useCallback(
+    async (vars: { token: string; password: string; name: string | null }) => {
+      const res = await execute(vars)
+      if (res.data?.acceptInvite) setAuthenticated(res.data.acceptInvite)
+      return res
+    },
+    [execute, setAuthenticated],
+  )
+  return { accept, fetching: state.fetching, error: state.error }
 }

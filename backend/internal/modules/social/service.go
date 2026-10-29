@@ -2,9 +2,12 @@ package social
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,12 +49,14 @@ type Service interface {
 	Get(ctx context.Context, tenantID, id uuid.UUID) (Account, error)
 	GetByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Account, error)
 
+	// StartMetaConnect signs a state and stores its nonce (single use, bound to user+tenant).
 	StartMetaConnect(ctx context.Context, tenantID, userID uuid.UUID, platform string) (OAuthURL, error)
-	// CompleteMetaConnect exchanges the code for tokens, stores every page (and linked
-	// Instagram account) and subscribes the pages to webhooks. state must belong to tenantID.
+	// CompleteMetaConnect (authenticated) consumes the state (it must have been issued to
+	// this user in this tenant and not used before), exchanges the code for tokens, stores
+	// every page (and linked Instagram account) and subscribes the pages to webhooks.
 	CompleteMetaConnect(ctx context.Context, tenantID, userID uuid.UUID, code, state string) ([]Account, error)
-	// CompleteMetaCallback is the browser-redirect variant: the tenant comes from the signed state.
-	CompleteMetaCallback(ctx context.Context, code, state string) ([]Account, error)
+	// CheckState verifies a state's signature and expiry without consuming it (OAuth redirect).
+	CheckState(state string) error
 	ConnectTelegram(ctx context.Context, tenantID, userID uuid.UUID, botToken string) (Account, error)
 	ConnectWhatsApp(ctx context.Context, tenantID, userID uuid.UUID, in ConnectWhatsAppInput) (Account, error)
 	Disconnect(ctx context.Context, tenantID, id uuid.UUID) error
@@ -61,7 +66,7 @@ type Service interface {
 	ResolveInbound(ctx context.Context, platform, externalID string) (Account, error)
 	// AccountByID loads an account without tenant scope (Telegram webhook route).
 	AccountByID(ctx context.Context, id uuid.UUID) (Account, error)
-	MarkWebhookVerified(ctx context.Context, id uuid.UUID) error
+	MarkWebhookVerified(ctx context.Context, tenantID, id uuid.UUID) error
 	// WebhookSecret is the expected Telegram secret-token header for an account.
 	WebhookSecret(accountID uuid.UUID) string
 
@@ -147,7 +152,17 @@ func (s *service) StartMetaConnect(ctx context.Context, tenantID, userID uuid.UU
 	if platform != PlatformFacebook && platform != PlatformInstagram {
 		return OAuthURL{}, apperr.ValidationField("platform", "use connectWhatsApp / connectTelegram for this platform")
 	}
-	state := SignState(s.cfg.Secret, State{TenantID: tenantID, UserID: userID, Platform: platform, Exp: s.now().Add(StateTTL).Unix()})
+	nonce, err := newNonce()
+	if err != nil {
+		return OAuthURL{}, err
+	}
+	exp := s.now().Add(StateTTL)
+	if err := s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.InsertState(ctx, tx, tenantID, userID, nonce, platform, exp)
+	}); err != nil {
+		return OAuthURL{}, err
+	}
+	state := SignState(s.cfg.Secret, State{TenantID: tenantID, UserID: userID, Platform: platform, Exp: exp.Unix(), Nonce: nonce})
 	appID := s.cfg.AppID
 	if appID == "" {
 		appID = "dev-fake-app" // Fake client mode: the URL is not usable against Meta
@@ -162,23 +177,36 @@ func (s *service) StartMetaConnect(ctx context.Context, tenantID, userID uuid.UU
 	return OAuthURL{URL: "https://www.facebook.com/" + s.cfg.GraphVersion + "/dialog/oauth?" + q.Encode(), State: state}, nil
 }
 
+func (s *service) CheckState(state string) error {
+	_, err := VerifyState(s.cfg.Secret, state, s.now())
+	return err
+}
+
+// errStateUsed hides whether a state was replayed, issued to someone else or expired.
+var errStateUsed = apperr.ValidationField("state", "this connection link was already used or has expired; start again")
+
 func (s *service) CompleteMetaConnect(ctx context.Context, tenantID, userID uuid.UUID, code, state string) ([]Account, error) {
 	st, err := VerifyState(s.cfg.Secret, state, s.now())
 	if err != nil {
 		return nil, err
 	}
-	if st.TenantID != tenantID {
-		return nil, apperr.Forbidden("state was issued for another business")
+	if st.TenantID != tenantID || st.UserID != userID {
+		return nil, apperr.Forbidden("this connection was started by another user or business")
 	}
-	return s.completeMeta(ctx, st.TenantID, userID, code)
-}
-
-func (s *service) CompleteMetaCallback(ctx context.Context, code, state string) ([]Account, error) {
-	st, err := VerifyState(s.cfg.Secret, state, s.now())
-	if err != nil {
+	if strings.TrimSpace(code) == "" {
+		return nil, apperr.ValidationField("code", "required")
+	}
+	// Single use (SECURITY M2): the nonce row is deleted before any token exchange.
+	if err := s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		ok, err := s.repo.ConsumeState(ctx, tx, tenantID, userID, st.Nonce, s.now())
+		if err == nil && !ok {
+			return errStateUsed
+		}
+		return err
+	}); err != nil {
 		return nil, err
 	}
-	return s.completeMeta(ctx, st.TenantID, st.UserID, code)
+	return s.completeMeta(ctx, st.TenantID, userID, code)
 }
 
 // completeMeta performs the HTTP exchange first (outside any DB tx), then stores tokens and rows.
@@ -188,15 +216,15 @@ func (s *service) completeMeta(ctx context.Context, tenantID, userID uuid.UUID, 
 	}
 	short, err := s.client.ExchangeCode(ctx, code, s.cfg.RedirectURI())
 	if err != nil {
-		return nil, apperr.Validation("facebook login failed: " + err.Error())
+		return nil, apperr.Validation("facebook login failed: " + SafeError(err))
 	}
 	long, _, err := s.client.LongLivedToken(ctx, short)
 	if err != nil {
-		return nil, apperr.Validation("facebook token exchange failed: " + err.Error())
+		return nil, apperr.Validation("facebook token exchange failed: " + SafeError(err))
 	}
 	pages, err := s.client.Pages(ctx, long)
 	if err != nil {
-		return nil, apperr.Validation("could not list pages: " + err.Error())
+		return nil, apperr.Validation("could not list pages: " + SafeError(err))
 	}
 	if len(pages) == 0 {
 		return nil, apperr.Validation("no Facebook pages found for this login; grant access to at least one page")
@@ -211,7 +239,7 @@ func (s *service) completeMeta(ctx context.Context, tenantID, userID uuid.UUID, 
 			return nil, err
 		}
 		if subErr != nil {
-			msg := "webhook subscription failed: " + subErr.Error()
+			msg := "webhook subscription failed: " + SafeError(subErr)
 			if a, err = s.setStatus(ctx, tenantID, a.ID, StatusError, &msg, false); err != nil {
 				return nil, err
 			}
@@ -260,7 +288,12 @@ func (s *service) store(ctx context.Context, tenantID, userID uuid.UUID, a Accou
 		}
 		a.ConnectedBy = actor(userID)
 		out, err = s.repo.Upsert(ctx, tx, tenantID, a)
-		return err
+		if db.IsUniqueViolation(err, "social_accounts_external_active_key") {
+			// SECURITY H5: one live connection per page/number/bot across all businesses.
+			return apperr.Conflict("this " + a.Platform + " account is already connected to another business; " +
+				"it must be disconnected there first")
+		}
+		return db.MapErr(err, "social account")
 	})
 	return out, err
 }
@@ -280,7 +313,7 @@ func (s *service) ConnectTelegram(ctx context.Context, tenantID, userID uuid.UUI
 	}
 	bot, err := s.client.TelegramGetMe(ctx, botToken)
 	if err != nil {
-		return Account{}, apperr.ValidationField("botToken", "Telegram rejected the token: "+err.Error())
+		return Account{}, apperr.ValidationField("botToken", "Telegram rejected the token: "+SafeError(err))
 	}
 	name := firstNonEmpty(bot.FirstName, bot.Username)
 	a, err := s.store(ctx, tenantID, userID, Account{Platform: PlatformTelegram, ExternalID: strconv.FormatInt(bot.ID, 10),
@@ -290,10 +323,10 @@ func (s *service) ConnectTelegram(ctx context.Context, tenantID, userID uuid.UUI
 	}
 	hook := fmt.Sprintf("%s/webhooks/telegram/%s", s.cfg.PublicAPIURL, a.ID)
 	if err := s.client.TelegramSetWebhook(ctx, botToken, hook, s.WebhookSecret(a.ID)); err != nil {
-		msg := "setWebhook failed: " + err.Error()
+		msg := "setWebhook failed: " + SafeError(err)
 		return s.setStatus(ctx, tenantID, a.ID, StatusError, &msg, false)
 	}
-	if err := s.MarkWebhookVerified(ctx, a.ID); err != nil {
+	if err := s.MarkWebhookVerified(ctx, tenantID, a.ID); err != nil {
 		return a, err
 	}
 	a.WebhookVerified = true
@@ -305,7 +338,16 @@ func (s *service) ConnectWhatsApp(ctx context.Context, tenantID, userID uuid.UUI
 		return Account{}, err
 	}
 	if err := s.client.VerifyToken(ctx, in.AccessToken); err != nil {
-		return Account{}, apperr.ValidationField("accessToken", "Meta rejected the token: "+err.Error())
+		return Account{}, apperr.ValidationField("accessToken", "Meta rejected the token: "+SafeError(err))
+	}
+	// SECURITY H5: the number must belong to the WhatsApp Business Account the token can
+	// manage, otherwise anyone who knows a phone_number_id could route its inbox to themselves.
+	nums, err := s.client.WhatsAppPhoneNumbers(ctx, in.BusinessAccountID, in.AccessToken)
+	if err != nil {
+		return Account{}, apperr.ValidationField("businessAccountId", "could not list the phone numbers of this WhatsApp Business Account: "+SafeError(err))
+	}
+	if !slices.Contains(nums, in.PhoneNumberID) {
+		return Account{}, apperr.ValidationField("phoneNumberId", "this phone number id does not belong to the WhatsApp Business Account of the token")
 	}
 	// WhatsApp webhooks are configured on the Meta app (WABA subscription), not per number.
 	return s.store(ctx, tenantID, userID, Account{Platform: PlatformWhatsApp, ExternalID: in.PhoneNumberID, Name: in.DisplayName,
@@ -360,16 +402,18 @@ func (s *service) Sync(ctx context.Context, tenantID, id uuid.UUID) (Account, er
 	case checkErr == nil:
 		return s.setStatus(ctx, tenantID, id, StatusConnected, nil, true)
 	case IsAuthError(checkErr):
-		msg := checkErr.Error()
+		msg := SafeError(checkErr)
 		return s.setStatus(ctx, tenantID, id, StatusTokenExpired, &msg, true)
 	default:
-		msg := checkErr.Error()
+		msg := SafeError(checkErr)
 		return s.setStatus(ctx, tenantID, id, StatusError, &msg, true)
 	}
 }
 
+// ResolveInbound routes a webhook. social_accounts is a tenant table: the lookup policy
+// exposes only the row with this platform:external_id (unique among live connections).
 func (s *service) ResolveInbound(ctx context.Context, platform, externalID string) (out Account, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithLookup(ctx, s.pool, db.LookupSocialKey, platform+":"+externalID, func(ctx context.Context, tx pgx.Tx) error {
 		out, err = s.repo.ResolveInbound(ctx, tx, platform, externalID)
 		return err
 	})
@@ -377,16 +421,16 @@ func (s *service) ResolveInbound(ctx context.Context, platform, externalID strin
 }
 
 func (s *service) AccountByID(ctx context.Context, id uuid.UUID) (out Account, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithLookup(ctx, s.pool, db.LookupSocialID, id.String(), func(ctx context.Context, tx pgx.Tx) error {
 		out, err = s.repo.ByID(ctx, tx, id)
 		return err
 	})
 	return out, err
 }
 
-func (s *service) MarkWebhookVerified(ctx context.Context, id uuid.UUID) error {
-	return db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		return s.repo.MarkWebhookVerified(ctx, tx, id)
+func (s *service) MarkWebhookVerified(ctx context.Context, tenantID, id uuid.UUID) error {
+	return s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.MarkWebhookVerified(ctx, tx, tenantID, id)
 	})
 }
 
@@ -408,7 +452,7 @@ func (s *service) Send(ctx context.Context, a Account, thread, body string, att 
 	}
 	id, err := s.sender.Send(ctx, a, thread, body, att)
 	if err != nil && IsAuthError(err) {
-		msg := err.Error()
+		msg := SafeError(err)
 		_, _ = s.setStatus(context.WithoutCancel(ctx), a.TenantID, a.ID, StatusTokenExpired, &msg, false)
 	}
 	return id, err
@@ -419,4 +463,12 @@ func (s *service) Publish(ctx context.Context, a Account, body string, media []A
 		return "", apperr.Validation("the " + a.Platform + " account is disconnected")
 	}
 	return s.publisher.Publish(ctx, a, body, media)
+}
+
+func newNonce() (string, error) {
+	b := make([]byte, 18)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
 }

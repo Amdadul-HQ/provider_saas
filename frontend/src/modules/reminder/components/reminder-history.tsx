@@ -34,7 +34,7 @@ export function ReminderHistory({ customerId }: { customerId?: string }) {
         id: "status",
         header: t.common.status,
         cell: ({ row }) => (
-          <div title={row.original.error ?? undefined}>
+          <div>
             <StatusBadge enum="ReminderStatus" value={row.original.status} />
           </div>
         ),

@@ -40,7 +40,7 @@ type Payment {
   receivedAt: Time!
   createdAt: Time!
 }
-type PaymentInboxItem { id: UUID! source: String! method: PaymentMethod senderNumber: String trxId: String amount: Money rawText: String! status: String! matchedPaymentId: UUID receivedAt: Time! }
+type PaymentInboxItem { id: UUID! source: String! sender: String method: PaymentMethod senderNumber: String trxId: String amount: Money rawText: String! status: String! matchedPaymentId: UUID receivedAt: Time! }
 type LedgerEntry { id: UUID! entryType: LedgerEntryType! amount: Money! refType: String refId: UUID note: String createdBy: User @goField(forceResolver: true) createdAt: Time! }
 type InvoiceConnection { edges: [InvoiceEdge!]! pageInfo: PageInfo! totalCount: Int! }
 type InvoiceEdge { cursor: String! node: Invoice! }
@@ -54,20 +54,20 @@ input CreateInvoiceInput { customerId: UUID! items: [InvoiceItemInput!]! discoun
 input PaymentInput { method: PaymentMethod! amount: Money! trxId: String senderNumber: String receivedAt: Time notes: String }
 
 extend type Query {
-  invoices(filter: InvoiceFilter, page: PageInput): InvoiceConnection! @auth
-  invoice(id: UUID!): Invoice @auth
-  payments(filter: PaymentFilter, page: PageInput): PaymentConnection! @auth
-  paymentInbox(status: String, page: PageInput): [PaymentInboxItem!]! @auth
-  ledger(customerId: UUID!): [LedgerEntry!]! @auth
+  invoices(filter: InvoiceFilter, page: PageInput): InvoiceConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  invoice(id: UUID!): Invoice @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  payments(filter: PaymentFilter, page: PageInput): PaymentConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  paymentInbox(status: String, page: PageInput): [PaymentInboxItem!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ledger(customerId: UUID!): [LedgerEntry!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createInvoice(input: CreateInvoiceInput!): Invoice! @auth
-  sendInvoice(id: UUID!, channel: Platform): Invoice! @auth
+  createInvoice(input: CreateInvoiceInput!): Invoice! @auth(roles: [OWNER, ADMIN, STAFF])
+  sendInvoice(id: UUID!, channel: Platform): Invoice! @auth(roles: [OWNER, ADMIN, STAFF])
   voidInvoice(id: UUID!, reason: String): Invoice! @auth(roles: [OWNER, ADMIN])
-  recordPayment(invoiceId: UUID, customerId: UUID, input: PaymentInput!): Payment! @auth
-  verifyPayment(id: UUID!): Payment! @auth
-  rejectPayment(id: UUID!, reason: String): Payment! @auth
-  matchPaymentInbox(inboxId: UUID!, paymentId: UUID!): Payment! @auth
-  ignorePaymentInbox(inboxId: UUID!): Boolean! @auth
+  recordPayment(invoiceId: UUID, customerId: UUID, input: PaymentInput!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  verifyPayment(id: UUID!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  rejectPayment(id: UUID!, reason: String): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  matchPaymentInbox(inboxId: UUID!, paymentId: UUID!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  ignorePaymentInbox(inboxId: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
   addLedgerAdjustment(customerId: UUID!, entryType: LedgerEntryType!, amount: Money!, note: String): LedgerEntry! @auth(roles: [OWNER, ADMIN])
 }

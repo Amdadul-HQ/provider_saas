@@ -38,10 +38,10 @@ extend type Query {
   customerNotes(customerId: UUID!): [CustomerNote!]! @auth
 }
 extend type Mutation {
-  createCustomer(input: CreateCustomerInput!): Customer! @auth
-  updateCustomer(id: UUID!, input: UpdateCustomerInput!): Customer! @auth
+  createCustomer(input: CreateCustomerInput!): Customer! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  updateCustomer(id: UUID!, input: UpdateCustomerInput!): Customer! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
   deleteCustomer(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  addCustomerNote(customerId: UUID!, body: String!): CustomerNote! @auth
+  addCustomerNote(customerId: UUID!, body: String!): CustomerNote! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
   mergeCustomers(keepId: UUID!, mergeId: UUID!): Customer! @auth(roles: [OWNER, ADMIN])
-  linkIdentity(customerId: UUID!, identityId: UUID!): Customer! @auth
+  linkIdentity(customerId: UUID!, identityId: UUID!): Customer! @auth(roles: [OWNER, ADMIN, STAFF])
 }

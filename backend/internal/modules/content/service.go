@@ -311,13 +311,13 @@ func (s *service) Publish(ctx context.Context, pl PublishPayload) error {
 		var ext string
 		var perr error
 		if !ok {
-			perr = errors.New("social account was removed")
+			perr = apperr.Validation("social account was removed")
 		} else {
 			ext, perr = s.d.Social.Publish(ctx, a, post.Body, post.Media)
 		}
 		now := s.now()
 		if perr != nil {
-			msg := perr.Error()
+			msg := social.SafeError(perr)
 			targets[i].Status, targets[i].Error = TargetFailed, &msg
 			err = s.tx(ctx, tid, func(ctx context.Context, tx pgx.Tx) error {
 				return s.repo.SetTargetResult(ctx, tx, tid, t.ID, TargetFailed, nil, &msg, nil)

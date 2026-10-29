@@ -22,7 +22,7 @@ export default function TicketsPage() {
       <PageHeader title={t.tickets.title} description={t.tickets.subtitle} actions={newButton} />
       <div className="space-y-4">
         <TicketStatsCards />
-        <TicketTable onRowClick={(tk) => router.push(`/tickets/${tk.id}`)} emptyAction={newButton} />
+        <TicketTable rowHref={(tk) => `/tickets/${tk.id}`} emptyAction={newButton} />
       </div>
       <CreateTicketDialog open={open} onOpenChange={setOpen} onCreated={(id) => router.push(`/tickets/${id}`)} />
     </>

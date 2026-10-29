@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -38,5 +39,54 @@ func TestRouterHealthAndPlayground(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("GET", "/playground", nil))
 	if rec.Code != 404 {
 		t.Fatalf("playground in prod = %d", rec.Code)
+	}
+}
+
+func TestTrustedRealIPIgnoresSpoofedHeaders(t *testing.T) {
+	var got string
+	h := TrustedRealIP([]string{"10.0.0.0/8"})(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r.RemoteAddr }))
+	cases := []struct{ remote, xff, want string }{
+		{"203.0.113.5:4000", "1.2.3.4", "203.0.113.5:4000"},                    // untrusted peer: header ignored
+		{"10.1.2.3:4000", "198.51.100.7", "198.51.100.7:0"},                    // trusted proxy
+		{"10.1.2.3:4000", "1.1.1.1, 198.51.100.7, 10.9.9.9", "198.51.100.7:0"}, // right-most untrusted
+		{"10.1.2.3:4000", "not-an-ip", "10.1.2.3:4000"},
+	}
+	for _, c := range cases {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = c.remote
+		r.Header.Set("X-Forwarded-For", c.xff)
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		if got != c.want {
+			t.Errorf("remote %s xff %q -> %s, want %s", c.remote, c.xff, got, c.want)
+		}
+	}
+	// No trusted proxies configured: never rewritten.
+	h = TrustedRealIP(nil)(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { got = r.RemoteAddr }))
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "203.0.113.5:1"
+	r.Header.Set("X-Real-IP", "1.2.3.4")
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if got != "203.0.113.5:1" {
+		t.Fatalf("got %s", got)
+	}
+}
+
+func TestRateLimiterIsBounded(t *testing.T) {
+	rl := NewRateLimiter(1, 5)
+	rl.max = 1000
+	for i := 0; i < 20000; i++ {
+		rl.Allow("k" + strconv.Itoa(i))
+	}
+	if n := rl.Len(); n > 1000 {
+		t.Fatalf("buckets = %d", n)
+	}
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	h := NewRouter(Deps{Logger: slog.Default(), GraphQL: http.NotFoundHandler(), CORSOrigins: []string{"http://x"}})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/graphql", nil))
+	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("headers = %v", rec.Header())
 	}
 }

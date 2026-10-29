@@ -8,8 +8,8 @@ import { Loader2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { TextField } from "@/components/shared"
-import { describeError } from "@/lib/graphql/use-action"
+import { ErrorDetails, TextField } from "@/components/shared"
+import { describeError } from "@/lib/graphql/errors"
 import { useT } from "@/i18n"
 import { useLogin } from "../hooks/use-auth"
 
@@ -33,7 +33,11 @@ export function LoginForm({ onSuccess }: { onSuccess: () => void }) {
       <FieldGroup>
         {error ? (
           <Alert variant="destructive">
-            <AlertDescription>{describeError(t, error)}</AlertDescription>
+            {/* login maps UNAUTHENTICATED to "wrong credentials", never "session expired" (BUG-05) */}
+            <AlertDescription>
+              {describeError(t, error, "login")}
+              <ErrorDetails error={error} />
+            </AlertDescription>
           </Alert>
         ) : null}
         <TextField control={form.control} name="identifier" label={t.auth.identifier} placeholder={t.auth.identifierPlaceholder} autoComplete="username" required />

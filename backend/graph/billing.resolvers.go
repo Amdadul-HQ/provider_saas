@@ -121,6 +121,9 @@ func (r *mutationResolver) VerifyPayment(ctx context.Context, id uuid.UUID) (*mo
 	if err != nil {
 		return nil, err
 	}
+	if err := r.requirePaymentVerifier(ctx, tid); err != nil {
+		return nil, err
+	}
 	p, err := r.BillingSvc.VerifyPayment(ctx, tid, uid, id)
 	if err != nil {
 		return nil, err
@@ -134,6 +137,14 @@ func (r *mutationResolver) RejectPayment(ctx context.Context, id uuid.UUID, reas
 	if err != nil {
 		return nil, err
 	}
+	cur, err := r.BillingSvc.Payment(ctx, tid, id)
+	if err != nil {
+		return nil, err
+	}
+	// Reversing an already verified payment is an OWNER/ADMIN action (ADR-007).
+	if pr, _ := principal(ctx); cur.Status == billing.PaymentVerified && !pr.IsPlatformAdmin && !pr.HasRole("owner", "admin") {
+		return nil, apperr.Forbidden("only an owner or admin can reverse a verified payment")
+	}
 	p, err := r.BillingSvc.RejectPayment(ctx, tid, uid, id, reason)
 	if err != nil {
 		return nil, err
@@ -145,6 +156,9 @@ func (r *mutationResolver) RejectPayment(ctx context.Context, id uuid.UUID, reas
 func (r *mutationResolver) MatchPaymentInbox(ctx context.Context, inboxID uuid.UUID, paymentID uuid.UUID) (*model.Payment, error) {
 	tid, uid, err := tenantOf(ctx)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.requirePaymentVerifier(ctx, tid); err != nil {
 		return nil, err
 	}
 	p, err := r.BillingSvc.MatchInbox(ctx, tid, uid, inboxID, paymentID)

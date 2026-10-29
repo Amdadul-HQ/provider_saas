@@ -16,14 +16,14 @@ type PostTarget { id: UUID! socialAccount: SocialAccount! @goField(forceResolver
 input PostInput { body: String! media: JSON scheduledAt: Time socialAccountIds: [UUID!]! }
 
 extend type Query {
-  posts(status: PostStatus, page: PageInput): [Post!]! @auth
-  post(id: UUID!): Post @auth
+  posts(status: PostStatus, page: PageInput): [Post!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  post(id: UUID!): Post @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createPost(input: PostInput!): Post! @auth
-  updatePost(id: UUID!, input: PostInput!): Post! @auth
-  publishPostNow(id: UUID!): Post! @auth
-  deletePost(id: UUID!): Boolean! @auth
+  createPost(input: PostInput!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  updatePost(id: UUID!, input: PostInput!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  publishPostNow(id: UUID!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  deletePost(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
   """Generate a branded price-list image/PDF URL from active products."""
-  generatePriceList(format: String = "png"): String! @auth
+  generatePriceList(format: String = "png"): String! @auth(roles: [OWNER, ADMIN, STAFF])
 }

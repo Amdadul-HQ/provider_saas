@@ -14,7 +14,7 @@ import { EmptyState, ErrorState, LanguageToggle, MoneyText, ResponsiveDialog, Se
 import type { PaymentMethod, PublicStorefrontFieldsFragment } from "@/gql/graphql"
 import { MOBILE_WALLETS } from "@/lib/enums"
 import { normalizePhone, v } from "@/lib/validation"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useFormat, useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { usePlaceOrder, usePublicOrder, usePublicStorefront } from "../hooks/use-storefront"
 import { themeStyle } from "../lib"
@@ -24,6 +24,7 @@ type PublicProduct = PublicStorefrontFieldsFragment["products"][number]
 
 function OrderDialog({ slug, product, storefront, onOpenChange }: { slug: string; product: PublicProduct | null; storefront: PublicStorefrontFieldsFragment; onOpenChange: (o: boolean) => void }) {
   const t = useT()
+  const f = useFormat()
   const [place, placing] = usePlaceOrder()
   const [placed, setPlaced] = useState<Awaited<ReturnType<typeof place>>>(null)
   const schema = useMemo(
@@ -103,6 +104,7 @@ function OrderDialog({ slug, product, storefront, onOpenChange }: { slug: string
                   type="button"
                   role="radio"
                   aria-checked={p.id === planId}
+                  aria-label={`${p.name}, ${t.common.days(p.durationDays)}, ${f.money(p.price, { currency: p.currency })}`}
                   onClick={() => form.setValue("planId", p.id, { shouldValidate: true })}
                   className={cn("rounded-xl border-2 p-3 text-left", p.id === planId ? "border-primary bg-primary/5" : "border-transparent bg-muted")}
                 >

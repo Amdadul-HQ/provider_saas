@@ -50,13 +50,18 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   return <>{children}</>
 }
 
+/** Auth pages a signed-in user may still need (an existing user accepting an invite to another business). */
+const OPEN_TO_SIGNED_IN = ["/invite/"]
+
 /** For /login and /register: bounce signed-in users to the dashboard. */
 export function GuestGuard({ children }: { children: ReactNode }) {
   const { status } = useSession()
   const router = useRouter()
+  const pathname = usePathname()
+  const open = OPEN_TO_SIGNED_IN.some((p) => pathname.startsWith(p))
   useEffect(() => {
-    if (status === "authenticated") router.replace("/dashboard")
-  }, [status, router])
+    if (status === "authenticated" && !open) router.replace("/dashboard")
+  }, [status, router, open])
   return <>{children}</>
 }
 

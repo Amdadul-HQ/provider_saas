@@ -54,7 +54,9 @@ type Deps struct {
 	Subscriptions Subscriptions
 	Messenger     Messenger
 	Notifier      Notifier
-	PublicAppURL  string
+	// Auditor records fulfilment actions (confirmOrder; SECURITY M9). Optional.
+	Auditor      Auditor
+	PublicAppURL string
 }
 
 type service struct {
@@ -137,9 +139,14 @@ func (s *service) slugErr(err error) error {
 // published resolves a public slug to its storefront (published only).
 func (s *service) published(ctx context.Context, slug string) (Storefront, error) {
 	var sf Storefront
-	err := db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	slug = strings.ToLower(strings.TrimSpace(slug))
+	if slug == "" || len(slug) > 100 {
+		return sf, apperr.NotFound("storefront")
+	}
+	// storefronts is a tenant table: the slug lookup policy exposes only this slug's row.
+	err := db.WithLookup(ctx, s.pool, db.LookupSlug, slug, func(ctx context.Context, tx pgx.Tx) error {
 		var err error
-		sf, err = s.repo.BySlug(ctx, tx, strings.ToLower(strings.TrimSpace(slug)))
+		sf, err = s.repo.BySlug(ctx, tx, slug)
 		return err
 	})
 	if err == nil && !sf.IsPublished {
@@ -229,6 +236,15 @@ func (s *service) PlaceOrder(ctx context.Context, clientKey string, in PlaceOrde
 		product, plan, err := s.productPlan(ctx, sf.TenantID, in.ProductID, &in.PlanID)
 		if err != nil {
 			return err
+		}
+		if product.DeliveryType == catalog.DeliverySharedSlot { // QA BUG-12: same rule as inStock
+			free, err := s.d.Inventory.FreeCountsByProduct(ctx, sf.TenantID, []uuid.UUID{product.ID})
+			if err != nil {
+				return err
+			}
+			if free[product.ID] < in.Quantity {
+				return &apperr.Error{Kind: apperr.ErrConflict, Msg: "this product is out of stock right now", Field: "productId"}
+			}
 		}
 		cust, err := s.customerFor(ctx, sf.TenantID, name, ph, customer.CreateInput{Source: "storefront"})
 		if err != nil {
@@ -432,8 +448,14 @@ func (s *service) ConfirmOrder(ctx context.Context, tenantID, actorID, id uuid.U
 			o.Status = OrderPaid // confirmed on credit (baki); delivery job sends the template
 		}
 		o.SubscriptionID = &sub.ID
-		o, err = s.repo.UpdateOrder(ctx, tx, tenantID, o)
-		return err
+		if o, err = s.repo.UpdateOrder(ctx, tx, tenantID, o); err != nil {
+			return err
+		}
+		if s.d.Auditor == nil {
+			return nil
+		}
+		return s.d.Auditor.Audit(ctx, tenantID, actor(actorID), "order.confirm", "order", &o.ID, map[string]any{"number": o.Number,
+			"subscription_id": sub.ID, "invoice_id": inv.ID, "payment_id": o.PaymentID, "amount": o.Amount, "status": o.Status})
 	})
 	return o, err
 }
@@ -522,8 +544,9 @@ func (s *service) portalCustomer(ctx context.Context, token string) (tenantID, c
 	if len(token) < 20 || len(token) > 100 {
 		return uuid.Nil, uuid.Nil, apperr.NotFound("portal link")
 	}
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		tenantID, customerID, err = s.repo.PortalToken(ctx, tx, HashToken(token), s.now())
+	hash := HashToken(token)
+	err = db.WithLookup(ctx, s.pool, db.LookupTokenHash, hash, func(ctx context.Context, tx pgx.Tx) error {
+		tenantID, customerID, err = s.repo.PortalToken(ctx, tx, hash, s.now())
 		return err
 	})
 	return tenantID, customerID, err

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useState } from "react"
+import Link from "next/link"
 import { MessagesSquareIcon } from "lucide-react"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -9,10 +10,9 @@ import { EmptyState, ErrorState, FilterSelect, ListSkeleton, PlatformIcon, Searc
 import type { ConversationFilter, ConversationListFieldsFragment, ConversationStatus, SocialPlatform } from "@/gql/graphql"
 import { useCursorPagination } from "@/hooks/use-cursor-pagination"
 import { usePoll } from "@/hooks/use-poll"
-import { formatRelative } from "@/lib/dates"
 import { CONVERSATION_STATUSES, SOCIAL_PLATFORMS } from "@/lib/enums"
 import { useSession } from "@/lib/auth"
-import { enumLabel, useLocale, useT } from "@/i18n"
+import { enumLabel, useFormat, useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { useConversations, useInboxCounts } from "../hooks/use-inbox"
 
@@ -22,14 +22,18 @@ export function conversationTitle(c: Pick<ConversationListFieldsFragment, "custo
   return c.customer?.name ?? c.identity?.handle ?? c.externalThreadId
 }
 
-function ConversationRow({ c, selected, onSelect }: { c: ConversationListFieldsFragment; selected: boolean; onSelect: () => void }) {
-  const locale = useLocale()
+/** A real link (open in new tab, keyboard, accessible name) rather than a click handler (BUG-10). */
+function ConversationRow({ c, selected, href }: { c: ConversationListFieldsFragment; selected: boolean; href: string }) {
+  const t = useT()
+  const f = useFormat()
   const title = conversationTitle(c)
+  const unread = c.unreadCount > 0 ? ` · ${t.inbox.counts.unread} ${f.number(c.unreadCount)}` : ""
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-current={selected ? "true" : undefined}
+    <Link
+      href={href}
+      scroll={false}
+      aria-current={selected ? "page" : undefined}
+      aria-label={`${title}${unread} · ${c.lastMessagePreview ?? ""}`}
       className={cn(
         "flex w-full items-start gap-3 border-b px-3 py-3 text-left transition-colors last:border-b-0",
         selected ? "bg-primary/8" : "hover:bg-muted/60 active:bg-muted",
@@ -45,13 +49,13 @@ function ConversationRow({ c, selected, onSelect }: { c: ConversationListFieldsF
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <p className={cn("truncate text-sm", c.unreadCount > 0 ? "font-semibold" : "font-medium")}>{title}</p>
-          <span className="shrink-0 text-[11px] text-muted-foreground">{c.lastMessageAt ? formatRelative(c.lastMessageAt, locale) : ""}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">{c.lastMessageAt ? f.relative(c.lastMessageAt) : ""}</span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className={cn("truncate text-xs", c.unreadCount > 0 ? "text-foreground" : "text-muted-foreground")}>{c.lastMessagePreview ?? "—"}</p>
           {c.unreadCount > 0 ? (
             <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground">
-              {c.unreadCount}
+              {f.number(c.unreadCount)}
             </span>
           ) : null}
         </div>
@@ -66,21 +70,23 @@ function ConversationRow({ c, selected, onSelect }: { c: ConversationListFieldsF
           </div>
         ) : null}
       </div>
-    </button>
+    </Link>
   )
 }
 
 /** Left pane of the inbox: scope tabs (with counts), search, filters, cursor "load more". */
 export function ConversationList({
   selectedId,
-  onSelect,
+  hrefFor,
   initialSearch,
 }: {
   selectedId: string | null
-  onSelect: (c: ConversationListFieldsFragment) => void
+  /** URL that opens a conversation (keeps the page's other search params). */
+  hrefFor: (c: ConversationListFieldsFragment) => string
   initialSearch?: string
 }) {
   const t = useT()
+  const f = useFormat()
   const { user } = useSession()
   const [scope, setScope] = useState<Scope>("all")
   const [filter, setFilter] = useState<ConversationFilter>({ status: initialSearch ? undefined : "OPEN", search: initialSearch || undefined })
@@ -115,13 +121,13 @@ export function ConversationList({
         >
           <TabsList className="w-full">
             <TabsTrigger value="all" className="flex-1">
-              {t.inbox.counts.open} {counts ? <span className="tabular text-muted-foreground">{counts.inboxCounts.open}</span> : null}
+              {t.inbox.counts.open} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.open)}</span> : null}
             </TabsTrigger>
             <TabsTrigger value="mine" className="flex-1">
-              {t.inbox.counts.mine} {counts ? <span className="tabular text-muted-foreground">{counts.inboxCounts.mine}</span> : null}
+              {t.inbox.counts.mine} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.mine)}</span> : null}
             </TabsTrigger>
             <TabsTrigger value="unassigned" className="flex-1">
-              {t.inbox.counts.unassigned} {counts ? <span className="tabular text-muted-foreground">{counts.inboxCounts.unassigned}</span> : null}
+              {t.inbox.counts.unassigned} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.unassigned)}</span> : null}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -155,7 +161,7 @@ export function ConversationList({
         ) : (
           <>
             {conn.edges.map(({ node }) => (
-              <ConversationRow key={node.id} c={node} selected={node.id === selectedId} onSelect={() => onSelect(node)} />
+              <ConversationRow key={node.id} c={node} selected={node.id === selectedId} href={hrefFor(node)} />
             ))}
             {pager.canPrev || conn.pageInfo.hasNextPage ? (
               <div className="flex justify-between gap-2 p-3">

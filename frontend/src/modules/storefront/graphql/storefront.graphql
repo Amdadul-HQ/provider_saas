@@ -115,3 +115,13 @@ query Portal($token: String!) {
 mutation PortalRequestRenewal($token: String!, $subscriptionId: UUID!, $paymentMethod: PaymentMethod, $trxId: String) {
   portalRequestRenewal(token: $token, subscriptionId: $subscriptionId, paymentMethod: $paymentMethod, trxId: $trxId) { ...PublicOrderFields }
 }
+
+# server-side <title>/description for /s/[slug] (generateMetadata)
+query StorefrontMeta($slug: String!) {
+  publicStorefront(slug: $slug) { displayName tagline }
+}
+
+# server-side <title> for /p/[token]: only the store name, nothing about the customer
+query PortalMeta($token: String!) {
+  portal(token: $token) { storefront { displayName } }
+}

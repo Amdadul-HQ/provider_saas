@@ -15,6 +15,7 @@ import (
 	"provider_saas/internal/modules/customer"
 	"provider_saas/internal/modules/inventory"
 	"provider_saas/internal/platform/apperr"
+	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
 )
@@ -58,7 +59,11 @@ type Service interface {
 	ActiveCountByProducts(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]int, error)
 	// ExpireCheck applies time-based status changes for one tenant and frees slots of expired subscriptions.
 	ExpireCheck(ctx context.Context, tenantID uuid.UUID, now time.Time) (ExpireCheckResult, error)
-	TenantsWithLiveSubscriptions(ctx context.Context) ([]uuid.UUID, error)
+}
+
+// Auditor writes audit_logs rows (tenant module); joins the caller's transaction.
+type Auditor interface {
+	Audit(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, action, entityType string, entityID *uuid.UUID, meta map[string]any) error
 }
 
 type service struct {
@@ -68,11 +73,26 @@ type service struct {
 	catalog   Catalog
 	slots     Slots
 	billing   Billing
+	auditor   Auditor
 	now       func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, customers Customers, cat Catalog, slots Slots, bill Billing) Service {
-	return &service{pool: pool, customers: customers, catalog: cat, slots: slots, billing: bill, now: time.Now}
+// NewService builds the subscription module; auditor may be nil (tests).
+func NewService(pool *pgxpool.Pool, customers Customers, cat Catalog, slots Slots, bill Billing, auditor Auditor) Service {
+	return &service{pool: pool, customers: customers, catalog: cat, slots: slots, billing: bill, auditor: auditor, now: time.Now}
+}
+
+// audit records a fulfilment action (SECURITY M9); the actor is the caller in ctx (nil
+// for background jobs such as the delivery worker).
+func (s *service) audit(ctx context.Context, tenantID uuid.UUID, action string, id uuid.UUID, meta map[string]any) error {
+	if s.auditor == nil {
+		return nil
+	}
+	var by *uuid.UUID
+	if p, ok := pauth.FromContext(ctx); ok {
+		by = &p.UserID
+	}
+	return s.auditor.Audit(ctx, tenantID, by, action, "subscription", &id, meta)
 }
 
 func (s *service) tx(ctx context.Context, tenantID uuid.UUID, fn db.TxFn) error {
@@ -312,8 +332,10 @@ func (s *service) MarkDelivered(ctx context.Context, tenantID, id uuid.UUID, not
 			cur.DeliveryNote = note
 		}
 		cur.Status = StatusAt(cur.StartsAt, cur.ExpiresAt, now)
-		out, err = s.repo.Update(ctx, tx, tenantID, cur)
-		return err
+		if out, err = s.repo.Update(ctx, tx, tenantID, cur); err != nil {
+			return err
+		}
+		return s.audit(ctx, tenantID, "subscription.delivered", id, map[string]any{"customer_id": cur.CustomerID, "slot_id": cur.SlotID})
 	})
 	return out, err
 }
@@ -432,11 +454,22 @@ func (s *service) Extend(ctx context.Context, tenantID, id uuid.UUID, days int, 
 		if reason != nil && strings.TrimSpace(*reason) != "" {
 			line += ": " + strings.TrimSpace(*reason)
 		}
+		from := cur.ExpiresAt
 		cur.ExpiresAt, cur.Status, cur.Notes = newExp, next, appendNote(cur.Notes, line)
-		out, err = s.repo.Update(ctx, tx, tenantID, cur)
-		return err
+		if out, err = s.repo.Update(ctx, tx, tenantID, cur); err != nil {
+			return err
+		}
+		return s.audit(ctx, tenantID, "subscription.extend", id, map[string]any{"days": days, "from": from, "to": newExp,
+			"reason": strings.TrimSpace(deref(reason))})
 	})
 	return out, err
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func (s *service) Get(ctx context.Context, tenantID, id uuid.UUID) (out Subscription, err error) {
@@ -541,14 +574,4 @@ func (s *service) ExpireCheck(ctx context.Context, tenantID uuid.UUID, now time.
 		return err
 	})
 	return res, err
-}
-
-// TenantsWithLiveSubscriptions is a platform-level query used by the expire_check job
-// to fan out per tenant (each tenant is then processed in its own WithTenantTx).
-func (s *service) TenantsWithLiveSubscriptions(ctx context.Context) (out []uuid.UUID, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.TenantsWithLiveSubscriptions(ctx, tx)
-		return err
-	})
-	return out, err
 }

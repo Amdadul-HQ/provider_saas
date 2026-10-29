@@ -1,25 +1,12 @@
 "use client"
 
 import { useCallback } from "react"
-import { useMutation, type AnyVariables, type CombinedError, type TypedDocumentNode } from "urql"
+import { useMutation, type AnyVariables, type TypedDocumentNode } from "urql"
 import { toast } from "sonner"
-import { useT, type Dict } from "@/i18n"
-import { errorKind, serverMessage } from "./errors"
+import { useT } from "@/i18n"
+import { describeError, rawErrorMessage } from "./errors"
 
-export function describeError(t: Dict, error: CombinedError | null | undefined): string {
-  switch (errorKind(error)) {
-    case "network":
-      return t.errors.network
-    case "unauthenticated":
-      return t.errors.unauthenticated
-    case "forbidden":
-      return t.errors.forbidden
-    case "notFound":
-      return t.errors.notFound
-    default:
-      return serverMessage(error) ?? t.errors.generic
-  }
-}
+export { describeError } from "./errors"
 
 /**
  * Mutation + toast feedback + cache invalidation by typename (needed for mutations that return
@@ -37,7 +24,8 @@ export function useAction<Data, Vars extends AnyVariables>(
     async (variables: Vars): Promise<Data | null> => {
       const result = await execute(variables, typenameKey ? { additionalTypenames: typenameKey.split(",") } : undefined)
       if (result.error) {
-        if (!silent) toast.error(describeError(t, result.error))
+        // raw server text only as a dev-build description (BUG-07)
+        if (!silent) toast.error(describeError(t, result.error), { description: rawErrorMessage(result.error) ?? undefined })
         return null
       }
       if (success) toast.success(success)

@@ -1,6 +1,6 @@
 module provider_saas
 
-go 1.26.0
+go 1.27.3
 
 require (
 	github.com/99designs/gqlgen v0.17.98
@@ -10,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/pressly/goose/v3 v3.29.0
+	github.com/redis/go-redis/v9 v9.23.0
 	github.com/vektah/gqlparser/v2 v2.5.64
 	github.com/vikstrous/dataloadgen v0.0.10
 	golang.org/x/crypto v0.58.0
@@ -32,6 +33,7 @@ require (
 	github.com/urfave/cli/v3 v3.14.0 // indirect
 	go.opentelemetry.io/otel v1.47.0 // indirect
 	go.opentelemetry.io/otel/trace v1.47.0 // indirect
+	go.uber.org/atomic v1.12.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/mod v0.42.0 // indirect
 	golang.org/x/sync v0.24.0 // indirect

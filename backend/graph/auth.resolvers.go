@@ -7,10 +7,11 @@ package graph
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/auth"
+	"provider_saas/internal/platform/apperr"
 
 	"github.com/google/uuid"
 )
@@ -72,7 +73,11 @@ func (r *mutationResolver) ChangePassword(ctx context.Context, currentPassword s
 
 // AcceptInvite is the resolver for the acceptInvite field.
 func (r *mutationResolver) AcceptInvite(ctx context.Context, token string, password string, name *string) (*model.AuthPayload, error) {
-	panic(fmt.Errorf("not implemented: AcceptInvite - acceptInvite"))
+	s, err := r.AuthSvc.AcceptInvite(ctx, token, password, name, clientMeta(ctx))
+	if err != nil {
+		return nil, err
+	}
+	return r.payload(ctx, s)
 }
 
 // Me is the resolver for the me field.
@@ -90,7 +95,15 @@ func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
 
 // Invite is the resolver for the invite field.
 func (r *queryResolver) Invite(ctx context.Context, token string) (*model.InvitePreview, error) {
-	panic(fmt.Errorf("not implemented: Invite - invite"))
+	inv, err := r.AuthSvc.Invite(ctx, token)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return nil, nil // unknown, used and expired links look the same
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &model.InvitePreview{TenantName: inv.TenantName, Role: upper[model.Role](inv.Role), InviteeName: inv.InviteeName,
+		EmailHint: inv.EmailHint, PhoneHint: inv.PhoneHint, ExpiresAt: inv.ExpiresAt, UserExists: inv.UserExists}, nil
 }
 
 // Memberships is the resolver for the memberships field.

@@ -47,10 +47,10 @@ extend type Query {
   expiringSubscriptions(days: Int = 7): [Subscription!]! @auth
 }
 extend type Mutation {
-  createSubscription(input: CreateSubscriptionInput!): Subscription! @auth
-  renewSubscription(id: UUID!, input: RenewSubscriptionInput!): Subscription! @auth
-  markDelivered(id: UUID!, deliveryNote: String): Subscription! @auth
+  createSubscription(input: CreateSubscriptionInput!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  renewSubscription(id: UUID!, input: RenewSubscriptionInput!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  markDelivered(id: UUID!, deliveryNote: String): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
   cancelSubscription(id: UUID!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
-  reassignSlot(id: UUID!, slotId: UUID!): Subscription! @auth
+  reassignSlot(id: UUID!, slotId: UUID!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
   extendSubscription(id: UUID!, days: Int!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN])
 }

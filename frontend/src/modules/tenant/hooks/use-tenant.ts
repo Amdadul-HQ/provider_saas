@@ -7,6 +7,8 @@ import {
   MarkNotificationReadDocument,
   NotificationsDocument,
   RemoveMemberDocument,
+  ResendInviteDocument,
+  RotateSmsWebhookTokenDocument,
   TenantSettingsDocument,
   UpdateMemberRoleDocument,
   UpdateTenantDocument,
@@ -28,6 +30,17 @@ export function useUpdateTenant() {
 export function useInviteMember() {
   const t = useT()
   return useAction(InviteMemberDocument, { success: t.settings.invited, typenames: ["TenantMember", "Tenant"] })
+}
+
+export function useResendInvite() {
+  const t = useT()
+  return useAction(ResendInviteDocument, { success: t.settings.inviteResent, typenames: ["TenantMember"] })
+}
+
+/** Returns the new SMS-forwarder token; the API never returns it again. */
+export function useRotateSmsWebhookToken() {
+  const t = useT()
+  return useAction(RotateSmsWebhookTokenDocument, { success: t.settings.smsTokenRotated })
 }
 
 export function useUpdateMemberRole() {

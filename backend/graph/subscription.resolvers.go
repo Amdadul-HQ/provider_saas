@@ -23,6 +23,11 @@ func (r *mutationResolver) CreateSubscription(ctx context.Context, input model.C
 	if err != nil {
 		return nil, err
 	}
+	if input.MarkPaid != nil { // markPaid records a verified payment
+		if err := r.requirePaymentVerifier(ctx, tid); err != nil {
+			return nil, err
+		}
+	}
 	s, err := r.SubscriptionSvc.Create(ctx, tid, uid, subscription.CreateInput{CustomerID: input.CustomerID, ProductID: input.ProductID,
 		PlanID: input.PlanID, SlotID: input.SlotID, StartsAt: input.StartsAt, DurationDays: input.DurationDays, Price: input.Price,
 		Cost: input.Cost, AutoRenew: deref(input.AutoRenew, false), Notes: input.Notes, CreateInvoice: deref(input.CreateInvoice, true),
@@ -38,6 +43,11 @@ func (r *mutationResolver) RenewSubscription(ctx context.Context, id uuid.UUID, 
 	tid, uid, err := tenantOf(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if input.MarkPaid != nil {
+		if err := r.requirePaymentVerifier(ctx, tid); err != nil {
+			return nil, err
+		}
 	}
 	s, err := r.SubscriptionSvc.Renew(ctx, tid, uid, id, subscription.RenewInput{PlanID: input.PlanID, DurationDays: input.DurationDays,
 		Price: input.Price, CreateInvoice: deref(input.CreateInvoice, true), MarkPaid: paymentPtr(input.MarkPaid)})
@@ -190,7 +200,7 @@ func (r *subscriptionResolver) Slot(ctx context.Context, obj *model.Subscription
 	if err != nil || s == nil {
 		return nil, err
 	}
-	return toSlot(*s), nil
+	return toSlot(ctx, *s), nil
 }
 
 // SoldBy is the resolver for the soldBy field.

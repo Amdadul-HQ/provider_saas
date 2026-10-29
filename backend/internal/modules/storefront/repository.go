@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 )
 
@@ -62,6 +63,15 @@ func (Repository) Update(ctx context.Context, q db.Querier, tenantID uuid.UUID, 
 
 // ---- orders
 
+// ownerScope restricts a RESELLER caller to orders they created (ADR-007).
+func ownerScope(ctx context.Context, args *[]any) string {
+	if uid, ok := pauth.ResellerScope(ctx); ok {
+		*args = append(*args, uid)
+		return fmt.Sprintf(" AND o.created_by = $%d", len(*args))
+	}
+	return ""
+}
+
 const orderCols = `o.id, o.tenant_id, o.number, o.customer_id, o.conversation_id, o.product_id, o.plan_id, o.quantity, o.amount, o.currency,
 	o.source, o.status, o.payment_id, o.subscription_id, o.customer_name, o.customer_phone, o.customer_note, o.created_by, o.created_at`
 
@@ -80,21 +90,27 @@ func collectOrders(rows pgx.Rows, err error) ([]Order, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Order, error) { return scanOrder(r) })
 }
 
+// InsertOrder numbers the order per tenant (db.NextNumber; QA BUG-11, SECURITY L6).
 func (Repository) InsertOrder(ctx context.Context, q db.Querier, tenantID uuid.UUID, o Order) (Order, error) {
+	n, err := db.NextNumber(ctx, q, tenantID, "order")
+	if err != nil {
+		return Order{}, err
+	}
 	out, err := scanOrder(q.QueryRow(ctx, `INSERT INTO orders AS o (tenant_id, number, customer_id, conversation_id, product_id, plan_id,
 		quantity, amount, currency, source, status, payment_id, customer_name, customer_phone, customer_note, created_by)
-		VALUES ($1, nextval('order_number_seq'), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING `+orderCols,
+		VALUES ($1, $16, $2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING `+orderCols,
 		tenantID, o.CustomerID, o.ConversationID, o.ProductID, o.PlanID, o.Quantity, o.Amount, o.Currency, o.Source, o.Status,
-		o.PaymentID, o.CustomerName, o.CustomerPhone, o.CustomerNote, o.CreatedBy))
+		o.PaymentID, o.CustomerName, o.CustomerPhone, o.CustomerNote, o.CreatedBy, n))
 	return out, db.MapErr(err, "order")
 }
 
 func (Repository) GetOrder(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, lock bool) (Order, error) {
-	sql := `SELECT ` + orderCols + ` FROM orders o WHERE o.tenant_id = $1 AND o.id = $2`
+	args := []any{tenantID, id}
+	sql := `SELECT ` + orderCols + ` FROM orders o WHERE o.tenant_id = $1 AND o.id = $2` + ownerScope(ctx, &args)
 	if lock {
 		sql += ` FOR UPDATE`
 	}
-	o, err := scanOrder(q.QueryRow(ctx, sql, tenantID, id))
+	o, err := scanOrder(q.QueryRow(ctx, sql, args...))
 	return o, db.MapErr(err, "order")
 }
 
@@ -129,13 +145,16 @@ func (Repository) ListOrders(ctx context.Context, q db.Querier, tenantID uuid.UU
 	}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
 		term := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*f.Search), "#"))
-		p := add("%" + term + "%")
+		p := add(db.Contains(term))
 		conds = append(conds, fmt.Sprintf(`(o.number::text = %s OR o.customer_name ILIKE %s OR o.customer_phone ILIKE %s
 			OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = o.tenant_id AND c.id = o.customer_id AND c.name ILIKE %s))`,
 			add(term), p, p, p))
 	}
 	if after != nil {
 		conds = append(conds, "(o.created_at, o.id) < (SELECT created_at, id FROM orders WHERE tenant_id = $1 AND id = "+add(*after)+")")
+	}
+	if uid, ok := pauth.ResellerScope(ctx); ok { // ADR-007: resellers see only orders they created
+		conds = append(conds, "o.created_by = "+add(uid))
 	}
 	return collectOrders(q.Query(ctx, `SELECT `+orderCols+` FROM orders o WHERE `+strings.Join(conds, " AND ")+
 		` ORDER BY o.created_at DESC, o.id DESC LIMIT `+add(limit), args...))

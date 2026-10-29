@@ -29,6 +29,8 @@ type Deps struct {
 	Dev          bool
 	RateLimitRPS float64
 	RateBurst    int
+	// TrustedProxyCIDRs: only these peers may set the client IP via X-Forwarded-For.
+	TrustedProxyCIDRs []string
 	// Mount lets other modules register REST routes (webhooks).
 	Mount func(r chi.Router)
 }
@@ -36,7 +38,8 @@ type Deps struct {
 func NewRouter(d Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	r.Use(TrustedRealIP(d.TrustedProxyCIDRs))
+	r.Use(SecurityHeaders)
 	r.Use(requestLogger(d.Logger))
 	r.Use(recoverer)
 	r.Use(cors.Handler(cors.Options{
@@ -48,7 +51,7 @@ func NewRouter(d Deps) http.Handler {
 		MaxAge:           600,
 	}))
 	if d.RateLimitRPS > 0 {
-		rl := NewRateLimiter(d.RateLimitRPS, d.RateBurst)
+		rl := NewRateLimiter(d.RateLimitRPS, d.RateBurst) // bounded: MaxBuckets keys
 		go func() {
 			for range time.Tick(5 * time.Minute) {
 				rl.Cleanup(10 * time.Minute)

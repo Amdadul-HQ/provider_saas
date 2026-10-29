@@ -11,13 +11,14 @@ import type { OrderFieldsFragment, OrderFilter, OrderSource, OrderStatus } from 
 import { arrayPageInfo, useCursorPagination } from "@/hooks/use-cursor-pagination"
 import { ORDER_SOURCES, ORDER_STATUSES } from "@/lib/enums"
 import { SlotSelect } from "@/modules/inventory"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, useFormat } from "@/i18n"
 import { useCancelOrder, useConfirmOrder, useOrders } from "../hooks/use-storefront"
 
 const PAGE = 25
 
 function ConfirmOrderDialog({ order, onOpenChange }: { order: OrderFieldsFragment | null; onOpenChange: (o: boolean) => void }) {
   const t = useT()
+  const f = useFormat()
   const [confirm, busy] = useConfirmOrder()
   const [slotId, setSlotId] = useState<string | null>(null)
   const [note, setNote] = useState("")
@@ -26,7 +27,7 @@ function ConfirmOrderDialog({ order, onOpenChange }: { order: OrderFieldsFragmen
       open={order !== null}
       onOpenChange={onOpenChange}
       title={t.storefront.confirmOrder}
-      description={order ? `#${order.number} · ${order.customerName ?? order.customer?.name ?? ""} · ${order.product.name}` : undefined}
+      description={order ? `#${f.id(order.number)} · ${order.customerName ?? order.customer?.name ?? ""} · ${order.product.name}` : undefined}
       footer={
         <Button
           disabled={busy}
@@ -56,6 +57,7 @@ function ConfirmOrderDialog({ order, onOpenChange }: { order: OrderFieldsFragmen
 
 export function OrdersTable() {
   const t = useT()
+  const f = useFormat()
   const [filter, setFilter] = useState<OrderFilter>({})
   const pager = useCursorPagination(PAGE)
   const [{ data, fetching, error }, refetch] = useOrders(filter, pager.page)
@@ -71,7 +73,7 @@ export function OrdersTable() {
 
   const columns = useMemo<ColumnDef<OrderFieldsFragment>[]>(
     () => [
-      { id: "number", header: "#", cell: ({ row }) => <span className="font-mono">#{row.original.number}</span> },
+      { id: "number", header: "#", cell: ({ row }) => <span className="font-mono">#{f.id(row.original.number)}</span> },
       {
         id: "customer",
         header: t.common.customer,
@@ -115,7 +117,7 @@ export function OrdersTable() {
           ) : null,
       },
     ],
-    [t],
+    [t, f],
   )
 
   return (
@@ -151,7 +153,7 @@ export function OrdersTable() {
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2">
               <p className="truncate font-medium">
-                <span className="font-mono text-muted-foreground">#{o.number}</span> {o.customer?.name ?? o.customerName}
+                <span className="font-mono text-muted-foreground">#{f.id(o.number)}</span> {o.customer?.name ?? o.customerName}
               </p>
               <StatusBadge enum="OrderStatus" value={o.status} />
             </div>

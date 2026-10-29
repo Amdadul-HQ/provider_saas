@@ -23,8 +23,8 @@ input ConnectTelegramInput { botToken: String! }
 input ConnectWhatsAppInput { phoneNumberId: String! businessAccountId: String! accessToken: String! displayName: String! }
 
 extend type Query {
-  socialAccounts: [SocialAccount!]! @auth
-  socialAccount(id: UUID!): SocialAccount @auth
+  socialAccounts: [SocialAccount!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  socialAccount(id: UUID!): SocialAccount @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
   """Returns the Meta OAuth URL; the callback (/webhooks/meta/oauth) stores pages in vault."""
@@ -33,5 +33,5 @@ extend type Mutation {
   connectTelegram(input: ConnectTelegramInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
   connectWhatsApp(input: ConnectWhatsAppInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
   disconnectSocialAccount(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  syncSocialAccount(id: UUID!): SocialAccount! @auth
+  syncSocialAccount(id: UUID!): SocialAccount! @auth(roles: [OWNER, ADMIN])
 }

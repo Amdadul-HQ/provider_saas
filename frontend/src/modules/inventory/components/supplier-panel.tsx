@@ -12,7 +12,7 @@ import { ConfirmDialog, DataTable, EmptyState, NumberField, ResponsiveDialog, Te
 import type { SupplierFieldsFragment } from "@/gql/graphql"
 import { RoleGate } from "@/lib/auth"
 import { v } from "@/lib/validation"
-import { useT } from "@/i18n"
+import { useT, useFormat } from "@/i18n"
 import { useDeleteSupplier, useSaveSupplier, useSuppliers } from "../hooks/use-inventory"
 
 function SupplierDialog({ supplier, open, onOpenChange }: { supplier: SupplierFieldsFragment | null; open: boolean; onOpenChange: (o: boolean) => void }) {
@@ -61,6 +61,7 @@ function SupplierDialog({ supplier, open, onOpenChange }: { supplier: SupplierFi
 
 export function SupplierPanel() {
   const t = useT()
+  const f = useFormat()
   const [{ data, fetching, error }, refetch] = useSuppliers()
   const [editing, setEditing] = useState<SupplierFieldsFragment | null>(null)
   const [open, setOpen] = useState(false)
@@ -81,7 +82,7 @@ export function SupplierPanel() {
         cell: ({ row }) =>
           row.original.rating ? (
             <span className="flex items-center gap-1 text-warning-foreground dark:text-warning">
-              <StarIcon className="size-3.5 fill-current" /> {row.original.rating}
+              <StarIcon className="size-3.5 fill-current" /> {f.number(row.original.rating)}
             </span>
           ) : (
             "—"
@@ -105,7 +106,7 @@ export function SupplierPanel() {
         ),
       },
     ],
-    [t],
+    [t, f],
   )
 
   return (

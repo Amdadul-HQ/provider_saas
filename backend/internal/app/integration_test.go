@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	neturl "net/url"
 	"os"
 	"strings"
 	"sync"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"provider_saas/internal/app"
 	"provider_saas/internal/modules/auth"
@@ -38,21 +40,42 @@ import (
 	"provider_saas/internal/platform/pagination"
 )
 
-var testC *app.Container
+var (
+	testC *app.Container
+	// testOwner connects as the table owner (migrations, assertions on rows the API role
+	// must not see: platform audit rows, raw cross-tenant checks).
+	testOwner *pgxpool.Pool
+)
 
+// Integration tests migrate as the owner (TEST_DATABASE_URL, else DATABASE_URL, else the
+// local Homebrew superuser) and run the API container as the non-superuser role psaas_app
+// (TEST_APP_DATABASE_URL, else the owner URL with psaas_app:psaas_app), so every test runs
+// with row-level security enforced (SECURITY H1). make db-setup creates the role.
 func TestMain(m *testing.M) {
-	url := os.Getenv("TEST_DATABASE_URL")
-	if url == "" {
-		url = "postgres://amdadulhq@localhost:5432/psaas_dev?sslmode=disable"
+	ownerURL := firstEnv("TEST_DATABASE_URL", "DATABASE_URL")
+	if ownerURL == "" {
+		ownerURL = "postgres://amdadulhq@localhost:5432/psaas_dev?sslmode=disable"
+	}
+	appURL := os.Getenv("TEST_APP_DATABASE_URL")
+	if appURL == "" {
+		u, err := neturl.Parse(ownerURL)
+		if err != nil {
+			fmt.Println("TEST_DATABASE_URL:", err)
+			os.Exit(1)
+		}
+		u.User = neturl.UserPassword("psaas_app", "psaas_app")
+		appURL = u.String()
 	}
 	cfg, err := config.FromEnv(func(k string) string {
 		switch k {
 		case "DATABASE_URL":
-			return url
+			return appURL
+		case "MIGRATE_DATABASE_URL":
+			return ownerURL
 		case "JWT_SECRET":
 			return "integration-test-secret-integration-test"
 		case "VAULT_KEY":
-			return strings.Repeat("ab", 32)
+			return config.DevVaultKey // same key as seed (QA BUG-01)
 		case "APP_ENV":
 			return "test"
 		case "RATE_LIMIT_RPS":
@@ -66,18 +89,37 @@ func TestMain(m *testing.M) {
 	}
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx := context.Background()
-	if err := db.Migrate(ctx, url, log); err != nil {
+	if err := db.Migrate(ctx, ownerURL, log); err != nil {
 		fmt.Println("migrate:", err)
+		os.Exit(1)
+	}
+	if testOwner, err = db.Connect(ctx, ownerURL, 5); err != nil {
+		fmt.Println("owner pool:", err)
 		os.Exit(1)
 	}
 	testC, err = app.New(ctx, cfg, log)
 	if err != nil {
-		fmt.Println("container:", err)
+		fmt.Println("container (run `make db-setup` to create the psaas_app role):", err)
+		os.Exit(1)
+	}
+	var super, bypass bool
+	if err := testC.Pool.QueryRow(ctx, `SELECT rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`).Scan(&super, &bypass); err != nil || super || bypass {
+		fmt.Println("integration tests must run as a role subject to RLS (psaas_app); got superuser/bypassrls", err)
 		os.Exit(1)
 	}
 	code := m.Run()
 	testC.Close()
+	testOwner.Close()
 	os.Exit(code)
+}
+
+func firstEnv(keys ...string) string {
+	for _, k := range keys {
+		if v := os.Getenv(k); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 type tenantFx struct {
@@ -159,26 +201,17 @@ func TestTenantIsolation(t *testing.T) {
 		t.Fatalf("cross-tenant update err=%v", err)
 	}
 
-	// RLS defense in depth: as a non-superuser role with app.tenant_id = A, B's row is invisible
-	// even without a tenant_id filter in the query.
-	_, _ = testC.Pool.Exec(context.Background(), `DO $$ BEGIN
-		IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'psaas_rls_probe') THEN CREATE ROLE psaas_rls_probe NOLOGIN; END IF; END $$`)
-	if _, err := testC.Pool.Exec(context.Background(), `GRANT SELECT ON customers TO psaas_rls_probe`); err != nil {
-		t.Fatal(err)
-	}
+	// RLS defense in depth: the API role (psaas_app) with app.tenant_id = A cannot see B's
+	// row even without a tenant_id filter in the query.
 	var seen int
 	err = db.WithTenantTx(context.Background(), testC.Pool, a.tid, func(ctx context.Context, tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `SET LOCAL ROLE psaas_rls_probe`); err != nil {
-			return err
-		}
 		return tx.QueryRow(ctx, `SELECT count(*) FROM customers WHERE id = $1`, cb.ID).Scan(&seen)
 	})
 	if err != nil || seen != 0 {
 		t.Fatalf("RLS: tenant A saw %d of B's rows (err=%v)", seen, err)
 	}
-	// Sanity: the same probe under tenant B sees it.
+	// Sanity: the same query under tenant B sees it.
 	_ = db.WithTenantTx(context.Background(), testC.Pool, b.tid, func(ctx context.Context, tx pgx.Tx) error {
-		_, _ = tx.Exec(ctx, `SET LOCAL ROLE psaas_rls_probe`)
 		return tx.QueryRow(ctx, `SELECT count(*) FROM customers WHERE id = $1`, cb.ID).Scan(&seen)
 	})
 	if seen != 1 {
@@ -192,7 +225,7 @@ func TestRegisterBootstrapsTenant(t *testing.T) {
 		t.Fatalf("slug = %s", f.session.Membership.Tenant.Slug)
 	}
 	var stores, rules, tpls int
-	err := testC.Pool.QueryRow(context.Background(), `SELECT
+	err := testOwner.QueryRow(context.Background(), `SELECT
 		(SELECT count(*) FROM storefronts WHERE tenant_id = $1),
 		(SELECT count(*) FROM reminder_rules WHERE tenant_id = $1),
 		(SELECT count(*) FROM message_templates WHERE tenant_id = $1)`, f.tid).Scan(&stores, &rules, &tpls)
@@ -277,7 +310,7 @@ func TestCreateSubscriptionSlotsAndBilling(t *testing.T) {
 	if err != nil || pay.Status != billing.PaymentPending {
 		t.Fatalf("pending payment: %+v %v", pay, err)
 	}
-	item, err := testC.Billing.IngestSMS(f.ctx, f.tid, "You have received Tk 150.00 from 01712345678. Fee Tk 0.00. Balance Tk 1,250.00. TrxID 7QWE8RTY9U at 29/10/2026 10:15", time.Now())
+	item, err := testC.Billing.IngestSMS(f.ctx, f.tid, "bKash", "You have received Tk 150.00 from 01712345678. Fee Tk 0.00. Balance Tk 1,250.00. TrxID 7QWE8RTY9U at 29/10/2026 10:15", time.Now())
 	if err != nil || item.Status != "matched" {
 		t.Fatalf("sms: %+v %v", item, err)
 	}
@@ -404,7 +437,7 @@ func TestConcurrentSalesDoNotOversell(t *testing.T) {
 		t.Fatalf("ok=%d conflict=%d", ok, conflict)
 	}
 	var dup int
-	_ = testC.Pool.QueryRow(context.Background(), `SELECT count(*) FROM (SELECT slot_id FROM subscriptions WHERE tenant_id = $1
+	_ = testOwner.QueryRow(context.Background(), `SELECT count(*) FROM (SELECT slot_id FROM subscriptions WHERE tenant_id = $1
 		AND slot_id IS NOT NULL GROUP BY slot_id HAVING count(*) > 1) d`, f.tid).Scan(&dup)
 	if dup != 0 {
 		t.Fatalf("%d slots oversold", dup)
@@ -422,12 +455,12 @@ func TestVaultRevealIsAudited(t *testing.T) {
 		t.Fatalf("hint = %v", m.LoginHint)
 	}
 	var n int
-	_ = testC.Pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'vault.reveal' AND user_id = $2`, f.tid, f.uid).Scan(&n)
+	_ = testOwner.QueryRow(context.Background(), `SELECT count(*) FROM audit_logs WHERE tenant_id = $1 AND action = 'vault.reveal' AND user_id = $2`, f.tid, f.uid).Scan(&n)
 	if n != 1 {
 		t.Fatalf("audit rows = %d", n)
 	}
 	var plain int
-	_ = testC.Pool.QueryRow(context.Background(), `SELECT count(*) FROM vault_secrets WHERE tenant_id = $1 AND position('s3cret' in convert_from(ciphertext, 'SQL_ASCII')) > 0`, f.tid).Scan(&plain)
+	_ = testOwner.QueryRow(context.Background(), `SELECT count(*) FROM vault_secrets WHERE tenant_id = $1 AND position('s3cret' in convert_from(ciphertext, 'SQL_ASCII')) > 0`, f.tid).Scan(&plain)
 	if plain != 0 {
 		t.Fatal("plaintext found in vault ciphertext")
 	}

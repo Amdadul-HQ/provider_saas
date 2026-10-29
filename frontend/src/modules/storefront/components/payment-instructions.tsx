@@ -2,18 +2,13 @@
 
 import { CopyButton, MoneyText, PlatformIcon, StatusBadge } from "@/components/shared"
 import type { PublicOrderFieldsFragment } from "@/gql/graphql"
-import { enumLabel, useT } from "@/i18n"
-import type { PaymentMethod } from "@/gql/graphql"
-import { PAYMENT_METHODS } from "@/lib/enums"
+import { useLabel, useT } from "@/i18n"
 import { parsePaymentNumbers } from "../lib"
-
-function methodLabel(t: ReturnType<typeof useT>, method: string) {
-  return PAYMENT_METHODS.includes(method as PaymentMethod) ? enumLabel(t, "PaymentMethod", method as PaymentMethod) : method
-}
 
 /** Numbers to send money to + free-text instructions (storefront or order). */
 export function PaymentNumbersList({ paymentNumbers, instructions }: { paymentNumbers: unknown; instructions?: string | null }) {
   const t = useT()
+  const label = useLabel()
   const numbers = parsePaymentNumbers(paymentNumbers)
   return (
     <div className="space-y-3">
@@ -25,8 +20,8 @@ export function PaymentNumbersList({ paymentNumbers, instructions }: { paymentNu
               <li key={`${n.method}-${i}`} className="flex items-center justify-between gap-2 rounded-xl border bg-card p-3">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">
-                    {methodLabel(t, n.method)}
-                    {n.type ? ` · ${n.type}` : ""}
+                    {label("PaymentMethod", n.method)}
+                    {n.type ? ` · ${label("PaymentNumberType", n.type)}` : ""}
                   </p>
                   <p className="font-mono text-lg font-semibold tracking-wide">{n.number}</p>
                 </div>

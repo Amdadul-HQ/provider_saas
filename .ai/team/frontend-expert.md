@@ -22,3 +22,9 @@ Build a mobile-first, reusable, module-based UI driven by the GraphQL schema.
 - Client-only data on SSR'd routes: gate with `AuthGuard`/`useHydrated()` so `useQuery` never runs on the server; set `preferGetMethod: false` (urql defaults to GET).
 - RHF + zod v4: keep schema input == output (no type-predicate refines/transforms/defaults on fields); do null/cross-field checks with object-level `.refine(..., { path })`. Money fields store paisa via `MoneyField`.
 - Mobile grids: always give a single-column track explicitly (`grid-cols-1`, `minmax(0,1fr)`) plus `min-w-0` on panes, or long content widens the page at 375px; check `document.documentElement.scrollWidth` in the browser.
+- API codes that are plain `String` in the schema (reasons, member/tenant status, payment-number type, lowercase DB values): render with `labelFor(t, name, value)` / `useLabel()`; add keys to `t.labels`. Unknown codes humanise + `console.warn` in dev.
+- Errors: never render `error.message`. `describeError(t, err, context)` maps `extensions.code`; `<ErrorDetails>` shows raw text only in development. Auth forms pass `"login"`/`"invite"` context.
+- Numbers/dates: always `useFormat()` (`f.number/money/date/dateTime/relative/id`); `useT()` already rewrites dictionary digits to the user's setting. No bare `Intl`/`toLocaleString`.
+- Navigation rows: `DataTable rowHref` (mobile card = `<a>`, desktop link cell + row click) and `<Link>` for list items; pin row actions with column `meta: { sticky: "right" }`.
+- One-time secrets (invite URL, webhook token): select them only in the issuing mutation, show via `OneTimeSecretDialog`, drop from state on close.
+- CSP lives in `src/middleware.ts` (per-request nonce in prod). Verify a prod build next to the dev server with `NEXT_DIST_DIR=.next-build pnpm build && NEXT_DIST_DIR=.next-build next start -p 3101`; restore tsconfig.json afterwards (Next adds the alt types dir).

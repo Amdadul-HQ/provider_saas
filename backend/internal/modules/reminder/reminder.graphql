@@ -8,12 +8,12 @@ type Reminder { id: UUID! rule: ReminderRule @goField(forceResolver: true) custo
 input ReminderRuleInput { name: String! trigger: ReminderTrigger! offsetDays: Int = 0 sendHour: Int = 10 channel: ReminderChannel = PREFERRED templateId: UUID productId: UUID isActive: Boolean = true }
 
 extend type Query {
-  reminderRules: [ReminderRule!]! @auth
-  reminders(status: ReminderStatus, customerId: UUID, page: PageInput): [Reminder!]! @auth
+  reminderRules: [ReminderRule!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  reminders(status: ReminderStatus, customerId: UUID, page: PageInput): [Reminder!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
   upsertReminderRule(id: UUID, input: ReminderRuleInput!): ReminderRule! @auth(roles: [OWNER, ADMIN])
   deleteReminderRule(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  sendReminderNow(subscriptionId: UUID!, templateId: UUID, channel: ReminderChannel = PREFERRED): Reminder! @auth
-  cancelReminder(id: UUID!): Boolean! @auth
+  sendReminderNow(subscriptionId: UUID!, templateId: UUID, channel: ReminderChannel = PREFERRED): Reminder! @auth(roles: [OWNER, ADMIN, STAFF])
+  cancelReminder(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
 }

@@ -1,6 +1,7 @@
 import { differenceInCalendarDays, formatDistanceToNowStrict } from "date-fns"
 import { bn, enUS } from "date-fns/locale"
 import type { Locale } from "@/i18n/types"
+import { intlTag, toDigits, type Digits } from "./digits"
 
 /** All business dates are shown in Bangladesh time regardless of the device timezone. */
 export const APP_TIME_ZONE = "Asia/Dhaka"
@@ -9,13 +10,14 @@ function toDate(value: string | Date): Date {
   return typeof value === "string" ? new Date(value) : value
 }
 
-function intlLocale(locale: Locale) {
-  return locale === "bn" ? "bn-BD" : "en-GB"
+/** Digits follow the user's setting, not the language (BUG-08): bn-BD would otherwise force ০-৯. */
+function intlLocale(locale: Locale, digits: Digits) {
+  return intlTag(locale === "bn" ? "bn-BD" : "en-GB", digits)
 }
 
-export function formatDate(value: string | Date | null | undefined, locale: Locale = "bn"): string {
+export function formatDate(value: string | Date | null | undefined, locale: Locale = "bn", digits: Digits = "latn"): string {
   if (!value) return "—"
-  return new Intl.DateTimeFormat(intlLocale(locale), {
+  return new Intl.DateTimeFormat(intlLocale(locale, digits), {
     timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
@@ -23,9 +25,9 @@ export function formatDate(value: string | Date | null | undefined, locale: Loca
   }).format(toDate(value))
 }
 
-export function formatDateTime(value: string | Date | null | undefined, locale: Locale = "bn"): string {
+export function formatDateTime(value: string | Date | null | undefined, locale: Locale = "bn", digits: Digits = "latn"): string {
   if (!value) return "—"
-  return new Intl.DateTimeFormat(intlLocale(locale), {
+  return new Intl.DateTimeFormat(intlLocale(locale, digits), {
     timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
@@ -34,21 +36,25 @@ export function formatDateTime(value: string | Date | null | undefined, locale: 
   }).format(toDate(value))
 }
 
-export function formatTime(value: string | Date | null | undefined, locale: Locale = "bn"): string {
+export function formatTime(value: string | Date | null | undefined, locale: Locale = "bn", digits: Digits = "latn"): string {
   if (!value) return ""
-  return new Intl.DateTimeFormat(intlLocale(locale), {
+  return new Intl.DateTimeFormat(intlLocale(locale, digits), {
     timeZone: APP_TIME_ZONE,
     hour: "numeric",
     minute: "2-digit",
   }).format(toDate(value))
 }
 
-export function formatRelative(value: string | Date | null | undefined, locale: Locale = "bn"): string {
+export function formatRelative(value: string | Date | null | undefined, locale: Locale = "bn", digits: Digits = "latn"): string {
   if (!value) return "—"
-  return formatDistanceToNowStrict(toDate(value), {
-    addSuffix: true,
-    locale: locale === "bn" ? bn : enUS,
-  })
+  // date-fns' bn locale always emits ০-৯; normalise to the user's setting
+  return toDigits(
+    formatDistanceToNowStrict(toDate(value), {
+      addSuffix: true,
+      locale: locale === "bn" ? bn : enUS,
+    }),
+    digits,
+  )
 }
 
 /** Calendar days from today (Dhaka) to `value`; negative when in the past. */

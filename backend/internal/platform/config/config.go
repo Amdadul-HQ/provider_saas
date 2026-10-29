@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -16,32 +17,39 @@ import (
 )
 
 type Config struct {
-	AppEnv           string
-	HTTPAddr         string
-	DatabaseURL      string
-	DBMaxConns       int32
-	RedisURL         string
-	JWTSecret        string
-	JWTAccessTTL     time.Duration
-	JWTRefreshTTL    time.Duration
-	VaultKey         []byte
-	VaultKeyVersion  int
-	PublicAppURL     string
-	PublicAPIURL     string
-	UploadDir        string
-	CORSOrigins      []string
-	MetaAppID        string
-	MetaAppSecret    string
-	MetaVerifyToken  string
-	MetaGraphVersion string
-	SMSWebhookSecret string
-	RateLimitRPS     float64
-	RateLimitBurst   int
-	ComplexityLimit  int
+	AppEnv      string
+	HTTPAddr    string
+	DatabaseURL string
+	// MigrateDatabaseURL connects as the table owner for migrations (default DatabaseURL).
+	// The API itself must connect as the non-owner, NOBYPASSRLS role psaas_app (ADR-002).
+	MigrateDatabaseURL string
+	DBMaxConns         int32
+	RedisURL           string
+	JWTSecret          string
+	JWTAccessTTL       time.Duration
+	JWTRefreshTTL      time.Duration
+	VaultKey           []byte
+	VaultKeyVersion    int
+	PublicAppURL       string
+	PublicAPIURL       string
+	UploadDir          string
+	CORSOrigins        []string
+	MetaAppID          string
+	MetaAppSecret      string
+	MetaVerifyToken    string
+	MetaGraphVersion   string
+	SMSWebhookSecret   string
+	RateLimitRPS       float64
+	RateLimitBurst     int
+	ComplexityLimit    int
+	// TrustedProxyCIDRs: X-Forwarded-For / X-Real-IP are honoured only from these peers.
+	TrustedProxyCIDRs []string
 }
 
+// IsDev is true only for an explicit APP_ENV=development or test (SECURITY M5: an unset
+// APP_ENV means production, with masked errors, no playground and strict secret checks).
 func (c Config) IsDev() bool {
-	return c.AppEnv == "development" || c.AppEnv == "dev" || c.AppEnv == "test"
+	return c.AppEnv == "development" || c.AppEnv == "test"
 }
 func (c Config) IsProd() bool { return c.AppEnv == "production" }
 
@@ -76,7 +84,7 @@ func FromEnv(get func(string) string) (Config, error) {
 		return n
 	}
 	c := Config{
-		AppEnv:           str("APP_ENV", "development"),
+		AppEnv:           strings.ToLower(str("APP_ENV", "production")),
 		HTTPAddr:         str("HTTP_ADDR", ":8080"),
 		DatabaseURL:      str("DATABASE_URL", ""),
 		DBMaxConns:       int32(num("DB_MAX_CONNS", 20)),
@@ -110,6 +118,16 @@ func FromEnv(get func(string) string) (Config, error) {
 	if c.DatabaseURL == "" {
 		errs = append(errs, errors.New("DATABASE_URL is required"))
 	}
+	c.MigrateDatabaseURL = str("MIGRATE_DATABASE_URL", c.DatabaseURL)
+	for _, p := range strings.Split(str("TRUSTED_PROXY_CIDRS", ""), ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			if _, _, err := net.ParseCIDR(p); err != nil {
+				errs = append(errs, fmt.Errorf("TRUSTED_PROXY_CIDRS: %w", err))
+				continue
+			}
+			c.TrustedProxyCIDRs = append(c.TrustedProxyCIDRs, p)
+		}
+	}
 	if len(c.JWTSecret) < 32 {
 		errs = append(errs, errors.New("JWT_SECRET must be at least 32 bytes"))
 	}
@@ -121,16 +139,26 @@ func FromEnv(get func(string) string) (Config, error) {
 	if c.VaultKeyVersion < 1 {
 		errs = append(errs, errors.New("VAULT_KEY_VERSION must be >= 1"))
 	}
-	if c.IsProd() {
+	if !c.IsDev() { // every environment except development/test (staging included)
 		if strings.Contains(c.JWTSecret, "change-me") {
-			errs = append(errs, errors.New("JWT_SECRET must be changed in production"))
+			errs = append(errs, fmt.Errorf("JWT_SECRET must be changed (APP_ENV=%s)", c.AppEnv))
 		}
-		if isZero(key) {
-			errs = append(errs, errors.New("VAULT_KEY must not be all zeros in production"))
+		if isZero(key) || hex.EncodeToString(key) == DevVaultKey {
+			errs = append(errs, fmt.Errorf("VAULT_KEY must be a real secret, not the dev key (APP_ENV=%s)", c.AppEnv))
+		}
+		if strings.Contains(c.MetaVerifyToken, "change-me") {
+			errs = append(errs, fmt.Errorf("META_VERIFY_TOKEN must be changed (APP_ENV=%s)", c.AppEnv))
+		}
+		if c.MetaAppID != "" && c.MetaAppSecret == "" {
+			errs = append(errs, errors.New("META_APP_SECRET is required when META_APP_ID is set"))
 		}
 	}
 	return c, errors.Join(errs...)
 }
+
+// DevVaultKey is the committed development VAULT_KEY (.env.example, Makefile). It is
+// rejected outside development/test.
+const DevVaultKey = "6465762d6f6e6c792d7661756c742d6b65792d646f2d6e6f742d7573652d2121"
 
 func isZero(b []byte) bool {
 	for _, x := range b {

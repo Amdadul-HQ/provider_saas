@@ -32,6 +32,11 @@ type Job struct {
 	RunAt       time.Time
 }
 
+// SealedPayloadKey is the payload field that carries a vault-sealed transient secret
+// (vault.SealTransient). The worker deletes it as soon as the job finishes, successfully
+// or for good, so no ciphertext of a delivered credential lingers in the jobs table.
+const SealedPayloadKey = "sealed_body"
+
 // Decode unmarshals the payload.
 func (j Job) Decode(v any) error { return json.Unmarshal(j.Payload, v) }
 
@@ -63,7 +68,7 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, runAt tim
 		dk = &dedupeKey
 	}
 	var id int64
-	err = db.Conn(ctx, q.pool).QueryRow(ctx, `
+	err = db.PlatformConn(ctx, q.pool).QueryRow(ctx, `
 		INSERT INTO jobs (tenant_id, kind, payload, run_at, dedupe_key)
 		VALUES ($1,$2,$3,$4,$5)
 		ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL AND done_at IS NULL DO NOTHING
@@ -77,7 +82,7 @@ func (q *Queue) Enqueue(ctx context.Context, kind string, payload any, runAt tim
 // Cancel finishes a pending (not running) job by dedupe key so the key can be reused,
 // e.g. when a scheduled post is rescheduled. Reports whether a job was cancelled.
 func (q *Queue) Cancel(ctx context.Context, dedupeKey string) (bool, error) {
-	tag, err := db.Conn(ctx, q.pool).Exec(ctx, `UPDATE jobs SET done_at = now(), last_error = 'cancelled'
+	tag, err := db.PlatformConn(ctx, q.pool).Exec(ctx, `UPDATE jobs SET done_at = now(), last_error = 'cancelled'
 		WHERE dedupe_key = $1 AND done_at IS NULL AND locked_at IS NULL`, dedupeKey)
 	return tag.RowsAffected() > 0, err
 }
@@ -182,14 +187,15 @@ func (w *Worker) claimAndRun(ctx context.Context, pick string, extra ...any) (bo
 	runErr := w.execute(ctx, j)
 	bg := context.WithoutCancel(ctx)
 	if runErr == nil {
-		_, err = w.pool.Exec(bg, `UPDATE jobs SET done_at = now(), locked_at = NULL, last_error = NULL WHERE id = $1`, j.ID)
+		_, err = w.pool.Exec(bg, `UPDATE jobs SET done_at = now(), locked_at = NULL, last_error = NULL, payload = payload - $2 WHERE id = $1`,
+			j.ID, SealedPayloadKey)
 		return true, err
 	}
 	log := w.log.With("job_id", j.ID, "kind", j.Kind, "attempt", j.Attempts)
 	if j.Attempts >= j.MaxAttempts {
 		log.Error("jobs: giving up", "err", runErr)
-		_, err = w.pool.Exec(bg, `UPDATE jobs SET done_at = now(), locked_at = NULL, last_error = $2 WHERE id = $1`,
-			j.ID, "dead: "+runErr.Error())
+		_, err = w.pool.Exec(bg, `UPDATE jobs SET done_at = now(), locked_at = NULL, last_error = $2, payload = payload - $3 WHERE id = $1`,
+			j.ID, "dead: "+runErr.Error(), SealedPayloadKey)
 		return true, err
 	}
 	next := time.Now().Add(Backoff(j.Attempts))

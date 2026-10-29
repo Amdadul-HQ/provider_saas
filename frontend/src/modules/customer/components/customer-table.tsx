@@ -17,20 +17,24 @@ import {
 import type { CustomerFilter, CustomerListFieldsFragment, CustomerSource, CustomerStatus } from "@/gql/graphql"
 import { useCursorPagination } from "@/hooks/use-cursor-pagination"
 import { CUSTOMER_SOURCES, CUSTOMER_STATUSES } from "@/lib/enums"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, useFormat } from "@/i18n"
 import { useCustomers } from "../hooks/use-customers"
 
 /** Server-paginated customer list with filters mapped 1:1 to `CustomerFilter`. */
 export function CustomerTable({
   onRowClick,
+  rowHref,
   emptyAction,
   initialFilter,
 }: {
   onRowClick?: (customer: CustomerListFieldsFragment) => void
+  /** Detail URL per row: rows render as real links (BUG-10). */
+  rowHref?: (customer: CustomerListFieldsFragment) => string
   emptyAction?: React.ReactNode
   initialFilter?: CustomerFilter
 }) {
   const t = useT()
+  const f = useFormat()
   const [filter, setFilter] = useState<CustomerFilter>(initialFilter ?? {})
   const pager = useCursorPagination(25)
   const [{ data, fetching, error }, refetch] = useCustomers(filter, pager.page)
@@ -58,7 +62,7 @@ export function CustomerTable({
       },
       { id: "status", header: t.common.status, cell: ({ row }) => <StatusBadge enum="CustomerStatus" value={row.original.status} /> },
       { id: "source", header: t.customers.source, cell: ({ row }) => enumLabel(t, "CustomerSource", row.original.source) },
-      { id: "subs", header: t.customers.activeSubs, cell: ({ row }) => <span className="tabular">{row.original.activeSubscriptionCount}</span> },
+      { id: "subs", header: t.customers.activeSubs, cell: ({ row }) => <span className="tabular">{f.number(row.original.activeSubscriptionCount)}</span> },
       {
         id: "due",
         header: t.customers.dueBalance,
@@ -67,7 +71,7 @@ export function CustomerTable({
       { id: "ltv", header: t.customers.lifetimeValue, cell: ({ row }) => <MoneyText amount={row.original.lifetimeValue} /> },
       { id: "last", header: t.customers.lastContact, cell: ({ row }) => <DateText value={row.original.lastContactAt} relative /> },
     ],
-    [t],
+    [t, f],
   )
 
   return (
@@ -81,6 +85,7 @@ export function CustomerTable({
       totalCount={conn?.totalCount}
       pagination={{ canPrev: pager.canPrev, onPrev: pager.prev, onNext: pager.next }}
       onRowClick={onRowClick}
+      rowHref={rowHref}
       getRowId={(c) => c.id}
       toolbar={
         <>

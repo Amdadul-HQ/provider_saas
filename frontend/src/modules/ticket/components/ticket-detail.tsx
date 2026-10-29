@@ -17,7 +17,7 @@ import type { SlotStatus, TicketPriority, TicketQuery, TicketStatus } from "@/gq
 import { SLOT_STATUSES, TICKET_PRIORITIES, TICKET_STATUSES } from "@/lib/enums"
 import { SlotSelect } from "@/modules/inventory"
 import { v } from "@/lib/validation"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, labelFor, useFormat } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { useAddTicketComment, useResolveReplacement, useTicket, useUpdateTicket } from "../hooks/use-tickets"
 
@@ -124,6 +124,7 @@ function Comments({ ticket }: { ticket: Ticket }) {
 
 export function TicketDetail({ ticketId }: { ticketId: string }) {
   const t = useT()
+  const f = useFormat()
   const [{ data, fetching, error }, refetch] = useTicket(ticketId)
   const [update] = useUpdateTicket()
   const [resolveOpen, setResolveOpen] = useState(false)
@@ -138,7 +139,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="space-y-1">
           <h1 className="font-heading text-xl font-semibold">
-            <span className="text-muted-foreground">#{ticket.number}</span> {ticket.title}
+            <span className="text-muted-foreground">#{f.id(ticket.number)}</span> {ticket.title}
           </h1>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge enum="TicketStatus" value={ticket.status} />
@@ -158,7 +159,7 @@ export function TicketDetail({ ticketId }: { ticketId: string }) {
             <SectionCard title={t.tickets.description}>
               {ticket.reason ? (
                 <p className="mb-2 text-sm">
-                  <span className="text-muted-foreground">{t.tickets.reason}:</span> {ticket.reason}
+                  <span className="text-muted-foreground">{t.tickets.reason}:</span> {labelFor(t, "TicketReason", ticket.reason)}
                 </p>
               ) : null}
               {ticket.description ? <p className="text-sm whitespace-pre-wrap">{ticket.description}</p> : null}

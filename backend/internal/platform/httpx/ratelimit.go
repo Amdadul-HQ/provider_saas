@@ -8,8 +8,13 @@ import (
 	"time"
 )
 
+// MaxBuckets bounds the limiter's memory (SECURITY M1): when full, idle buckets are
+// dropped first, then arbitrary ones (a dropped key just starts with a full bucket).
+const MaxBuckets = 100_000
+
 // RateLimiter is an in-memory token bucket per client key (works without Redis).
 type RateLimiter struct {
+	max     int
 	rate    float64 // tokens per second
 	burst   float64
 	mu      sync.Mutex
@@ -23,7 +28,7 @@ type bucket struct {
 }
 
 func NewRateLimiter(rps float64, burst int) *RateLimiter {
-	return &RateLimiter{rate: rps, burst: float64(burst), buckets: map[string]*bucket{}, now: time.Now}
+	return &RateLimiter{rate: rps, burst: float64(burst), buckets: map[string]*bucket{}, now: time.Now, max: MaxBuckets}
 }
 
 // Allow consumes a token for key.
@@ -33,6 +38,9 @@ func (rl *RateLimiter) Allow(key string) bool {
 	now := rl.now()
 	b, ok := rl.buckets[key]
 	if !ok {
+		if len(rl.buckets) >= rl.max {
+			rl.evict(now)
+		}
 		b = &bucket{tokens: rl.burst, last: now}
 		rl.buckets[key] = b
 	}
@@ -43,6 +51,28 @@ func (rl *RateLimiter) Allow(key string) bool {
 	}
 	b.tokens--
 	return true
+}
+
+// evict frees room: buckets that are full again first, then any 10% (caller holds mu).
+func (rl *RateLimiter) evict(now time.Time) {
+	for k, b := range rl.buckets {
+		if b.tokens+now.Sub(b.last).Seconds()*rl.rate >= rl.burst {
+			delete(rl.buckets, k)
+		}
+	}
+	for k := range rl.buckets {
+		if len(rl.buckets) < rl.max*9/10 {
+			break
+		}
+		delete(rl.buckets, k)
+	}
+}
+
+// Len is the number of tracked keys.
+func (rl *RateLimiter) Len() int {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return len(rl.buckets)
 }
 
 // Cleanup drops buckets idle longer than maxIdle.

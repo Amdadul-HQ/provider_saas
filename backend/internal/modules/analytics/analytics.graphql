@@ -22,9 +22,9 @@ type ChannelStat { platform: SocialPlatform! conversations: Int! customers: Int!
 type AtRiskCustomer { customer: Customer! @goField(forceResolver: true) reason: String! expiresAt: Time dueBalance: Money! }
 
 extend type Query {
-  dashboardStats: DashboardStats! @auth
-  revenueSeries(days: Int = 30): [TimeSeriesPoint!]! @auth
-  productStats(days: Int = 30): [ProductStat!]! @auth
-  channelStats(days: Int = 30): [ChannelStat!]! @auth
-  atRiskCustomers(limit: Int = 20): [AtRiskCustomer!]! @auth
+  dashboardStats: DashboardStats! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  revenueSeries(days: Int = 30): [TimeSeriesPoint!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  productStats(days: Int = 30): [ProductStat!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  channelStats(days: Int = 30): [ChannelStat!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  atRiskCustomers(limit: Int = 20): [AtRiskCustomer!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }

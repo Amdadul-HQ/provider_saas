@@ -182,3 +182,69 @@ Grep this file for your area before starting a task.
 - Root cause: recordPayment/verifyPayment never compare amount against invoice dueAmount (including other pending payments)
 - Fix: Filed BUG-04
 - Prevention rule: Money mutations validate against the remaining due at verify time; overpayment is either rejected or booked as an explicit advance; add a test for it
+
+## L-031 · 2026-10-29 · infra/dev-run
+- What broke: make backend-dev could not bind :8080: an orphaned 'go run ./cmd/api serve' (parent launchd, built from older code, pointed at psaas_dev) was still listening
+- Root cause: A previous session started the API with a bare go run in a shell that exited; the server outlived it and nothing tracked it. Also no .env existed and the psaas role from .env.example is absent on the Homebrew Postgres
+- Fix: Ran this stack on :8081 (root .env + frontend/.env.local) against a fresh local DB 'psaas' created with createdb; added .claude/launch.json (api/worker/frontend) so servers are tracked by the app
+- Prevention rule: Before starting the API run 'lsof -nP -iTCP:8080 -sTCP:LISTEN'; start servers through .claude/launch.json (preview_start), never a detached go run; on this Mac use DATABASE_URL=postgres://$USER@localhost:5432/psaas?sslmode=disable
+
+## L-032 · 2026-10-29 · frontend
+- What broke: Wrong-password login showed 'session expired' and could trigger a refresh+retry of the login mutation
+- Root cause: describeError mapped every UNAUTHENTICATED to the session message, and urql authExchange.didAuthError treated a public auth mutation's UNAUTHENTICATED as an expired session
+- Fix: describeError(t, err, 'login'|'invite') context; didAuthError returns false for PUBLIC_OPERATIONS
+- Prevention rule: Auth forms pass their own error context; public operations never go through refresh/retry in the auth exchange
+
+## L-033 · 2026-10-29 · frontend
+- What broke: Bengali digits leaked into a Latin-digit UI (dates, '৭ দিনে') while amounts stayed Latin
+- Root cause: Intl bn-BD defaults to beng numerals and bn.ts hardcodes ০-৯ in static strings; only money used the digit setting
+- Fix: useT() returns a digit-localised dictionary (string args masked), dates use a -u-nu-<digits> locale tag, useFormat() for every number/date
+- Prevention rule: Never call Intl/formatters with a bare locale; go through useFormat() or pass digits; literal-digit strings go in KEEP_DIGITS
+
+## L-034 · 2026-10-29 · frontend
+- What broke: Overwriting app/s/[slug]/page.tsx (client) with a server page exporting generateMetadata logged 'use client' export errors in the running dev server
+- Root cause: next dev compiled the file between the old 'use client' version and the rewrite; stale overlay errors persisted in the console log
+- Fix: Rewrote the files in one write and confirmed with next build; ignored the stale HMR errors after re-navigating
+- Prevention rule: When converting a client page to server, write the full file at once and verify with a build, not with HMR console history
+
+## L-035 · 2026-10-29 · frontend/security
+- What broke: Production CSP with upgrade-insecure-requests would rewrite the http API origin when running next start locally
+- Root cause: upgrade-insecure-requests upgrades every http subresource, including http://localhost:8080 connect targets
+- Fix: Dropped it; HSTS (prod only) pins the app origin instead
+- Prevention rule: Do not add upgrade-insecure-requests while any environment talks to an http API; verify CSP with a prod build (NEXT_DIST_DIR=.next-build next start) before shipping
+
+## L-036 · 2026-10-29 · infra/db
+- What broke: Ran backend/scripts/dev-db-role.sql against the 'postgres' maintenance DB instead of psaas_dev, granting psaas_app on that DB's public schema
+- Root cause: psql without -d uses the default DB; I forgot -d psaas_dev
+- Fix: Revoked the grants/default privileges on 'postgres' and re-ran with -d psaas_dev
+- Prevention rule: Always pass -d <db> explicitly to psql/createuser scripts; role scripts carry per-database GRANTs even though roles are cluster-wide
+
+## L-037 · 2026-10-29 · tooling
+- What broke: A scripted str.replace edit (ledger.adjust audit) silently did nothing; the integration test caught 0 audit rows
+- Root cause: Python str.replace returns the input unchanged when the pattern (here with different indentation) is not found
+- Fix: Re-applied with assert s.count(old)==1 and grepped every other scripted edit for its marker
+- Prevention rule: Every scripted code edit asserts the pattern matched exactly once (assert s.count(old)==1) before replacing; grep the result
+
+## L-038 · 2026-10-29 · backend/vault
+- What broke: Integration self-check test failed: secrets of tenants created by an earlier test run (VAULT_KEY ab*32) could not be decrypted with the dev key
+- Root cause: The test container used its own VAULT_KEY while seed used the committed dev key, on the same psaas_dev database - the BUG-01 mismatch reproduced by our own tests
+- Fix: Tests use config.DevVaultKey (same as seed/.env.example); recreated psaas_dev
+- Prevention rule: Seed, API, worker AND integration tests share one VAULT_KEY per database; never invent a per-test key against a shared DB
+
+## L-039 · 2026-10-29 · backend/tests
+- What broke: RLS integration test failed with 'commit unexpectedly resulted in rollback'
+- Root cause: An INSERT that was expected to fail (WITH CHECK) aborted the surrounding Postgres transaction; the test returned nil and the commit failed
+- Fix: Run the expected-failure statement in its own WithTenantTx and assert the error
+- Prevention rule: In Postgres any failed statement poisons the transaction: put expected-failure statements in their own tx (or a SAVEPOINT)
+
+## L-040 · 2026-10-29 · tooling
+- What broke: curl verification script: jq --argjson got invalid JSON for queries without variables
+- Root cause: bash default expansion ${3:-{\}} produced '{}}' (brace quoting inside parameter expansion)
+- Fix: v=${3:-}; [ -z "$v" ] && v='{}'
+- Prevention rule: Never put braces in ${var:-default}; assign the default on a separate line in verification scripts
+
+## L-041 · 2026-10-29 · testing
+- What broke: integration tests failed with 0 rows (storefronts=0, audit rows=0) when run manually
+- Root cause: harness treats DATABASE_URL/TEST_DATABASE_URL as the OWNER connection and derives psaas_app itself; passing the app role as DATABASE_URL made assertion queries hit fail-closed RLS
+- Fix: ran with owner URL; use 'make test-integration'
+- Prevention rule: always run integration tests via make test-integration; never hand-roll env for them

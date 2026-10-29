@@ -32,6 +32,6 @@ extend type Mutation {
   resendInvite(memberId: UUID!): TenantMember! @auth(roles: [OWNER, ADMIN])
   """Generates a new SMS-forwarder bearer token; the full token is returned exactly once."""
   rotateSmsWebhookToken: String! @auth(roles: [OWNER, ADMIN])
-  markNotificationRead(id: UUID!): Boolean! @auth
-  markAllNotificationsRead: Boolean! @auth
+  markNotificationRead(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  markAllNotificationsRead: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
 }

@@ -14,12 +14,15 @@ export function ProductSelect({
   id,
   invalid,
   includeAllOption,
+  "aria-label": ariaLabel,
 }: {
   value: string | null | undefined
   onChange: (product: ProductFieldsFragment | null) => void
   id?: string
   invalid?: boolean
   includeAllOption?: string
+  /** Accessible name when there is no <label htmlFor={id}> (e.g. in a filter toolbar). */
+  "aria-label"?: string
 }) {
   const t = useT()
   const [{ data, fetching }] = useProducts({ isActive: true }, { first: 100 })
@@ -30,7 +33,7 @@ export function ProductSelect({
       value={value ?? (includeAllOption ? "__all__" : "")}
       onValueChange={(v) => onChange(products.find((p) => p.id === v) ?? null)}
     >
-      <SelectTrigger id={id} className="w-full" aria-invalid={invalid}>
+      <SelectTrigger id={id} className="w-full" aria-invalid={invalid} aria-label={ariaLabel ?? (id ? undefined : t.common.product)}>
         <SelectValue placeholder={t.catalog.pickProduct} />
       </SelectTrigger>
       <SelectContent>
@@ -69,6 +72,7 @@ export function PlanPicker({
             type="button"
             role="radio"
             aria-checked={selected}
+            aria-label={`${p.name}, ${t.common.days(p.durationDays)}`}
             onClick={() => onChange(p.id)}
             className={
               selected

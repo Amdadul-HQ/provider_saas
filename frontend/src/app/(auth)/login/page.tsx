@@ -4,12 +4,8 @@ import { Suspense } from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { LoginForm } from "@/modules/auth"
+import { safeNext } from "@/lib/auth"
 import { useT } from "@/i18n"
-
-function safeNext(next: string | null) {
-  // only same-origin relative paths — prevents open redirects via ?next=
-  return next && next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard"
-}
 
 function Login() {
   const t = useT()
@@ -21,7 +17,7 @@ function Login() {
         <h1 className="font-heading text-2xl font-semibold">{t.auth.loginTitle}</h1>
         <p className="text-sm text-muted-foreground">{t.auth.loginSubtitle}</p>
       </div>
-      <LoginForm onSuccess={() => router.replace(safeNext(params.get("next")))} />
+      <LoginForm onSuccess={() => router.replace(safeNext(params.get("next"), window.location.origin))} />
       <p className="text-center text-sm text-muted-foreground">
         {t.auth.noAccount}{" "}
         <Link href="/register" className="font-medium text-primary hover:underline">

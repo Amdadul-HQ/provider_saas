@@ -73,13 +73,17 @@ export function FilterSelect<V extends string>({
   const t = useT()
   return (
     <Select value={value ?? ALL} onValueChange={(v) => onChange(v === ALL ? undefined : (v as V))}>
-      <SelectTrigger aria-label={label} className={cn("w-full md:w-44", className)}>
-        <SelectValue placeholder={label} />
+      {/* label stacked above the value: "label: value" in one line was clipped in half-width cells at 375px (BUG-15) */}
+      <SelectTrigger aria-label={label} className={cn("h-auto min-h-10 w-full py-1 md:h-auto md:min-h-9 md:w-44", className)}>
+        <span className="flex min-w-0 flex-1 flex-col items-start text-left leading-tight">
+          <span className="w-full truncate text-[11px] text-muted-foreground" aria-hidden>
+            {label}
+          </span>
+          <SelectValue className="line-clamp-1" placeholder={t.common.all} />
+        </span>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={ALL}>
-          {label}: {t.common.all}
-        </SelectItem>
+        <SelectItem value={ALL}>{t.common.all}</SelectItem>
         {options.map((o) => (
           <SelectItem key={o.value} value={o.value}>
             {o.label}

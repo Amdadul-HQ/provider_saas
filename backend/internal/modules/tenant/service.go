@@ -2,14 +2,19 @@ package tenant
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"provider_saas/internal/platform/apperr"
+	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 )
 
@@ -26,7 +31,14 @@ type Service interface {
 	Get(ctx context.Context, tenantID uuid.UUID) (Tenant, error)
 	Update(ctx context.Context, tenantID, actorID uuid.UUID, in UpdateInput) (Tenant, error)
 	Members(ctx context.Context, tenantID uuid.UUID) ([]Member, error)
+	// InviteMember creates an invited membership and returns it with a one-time InviteURL.
 	InviteMember(ctx context.Context, tenantID, actorID uuid.UUID, in InviteInput) (Member, error)
+	// ResendInvite rotates the invite token of an invited membership (old link stops working).
+	ResendInvite(ctx context.Context, tenantID, actorID, memberID uuid.UUID) (Member, error)
+	// InviteByToken resolves a pending, unexpired invite (public; no tenant known yet).
+	InviteByToken(ctx context.Context, token string) (InviteInfo, error)
+	// ActivateInvite marks the invitation accepted (joins the caller's transaction).
+	ActivateInvite(ctx context.Context, inv InviteInfo, token string) error
 	UpdateMemberRole(ctx context.Context, tenantID, actorID, memberID uuid.UUID, role string, bps *int) (Member, error)
 	RemoveMember(ctx context.Context, tenantID, actorID, memberID uuid.UUID) error
 	MembershipsForUser(ctx context.Context, userID uuid.UUID) ([]Membership, error)
@@ -39,19 +51,24 @@ type Service interface {
 	TenantIDs(ctx context.Context) ([]uuid.UUID, error)
 	// EnsureSMSWebhookToken creates the SMS-forwarder token on first use (plaintext returned once).
 	EnsureSMSWebhookToken(ctx context.Context, tenantID uuid.UUID) (token, hint string, created bool, err error)
+	// RotateSMSWebhookToken replaces the SMS-forwarder token; the new plaintext is returned once.
+	RotateSMSWebhookToken(ctx context.Context, tenantID, actorID uuid.UUID) (string, error)
 	VerifySMSWebhookToken(ctx context.Context, token string) (uuid.UUID, error)
 }
 
 type service struct {
-	pool    *pgxpool.Pool
-	repo    Repository
-	users   UserDirectory
-	secrets Secrets
+	pool         *pgxpool.Pool
+	repo         Repository
+	users        UserDirectory
+	secrets      Secrets
+	publicAppURL string
+	now          func() time.Time
 }
 
-// NewService builds the tenant service. secrets (the vault) backs the SMS-forwarder token.
-func NewService(pool *pgxpool.Pool, users UserDirectory, secrets Secrets) Service {
-	return &service{pool: pool, users: users, secrets: secrets}
+// NewService builds the tenant service. secrets (the vault) backs the SMS-forwarder token;
+// publicAppURL is the frontend origin used to build invite links.
+func NewService(pool *pgxpool.Pool, users UserDirectory, secrets Secrets, publicAppURL string) Service {
+	return &service{pool: pool, users: users, secrets: secrets, publicAppURL: strings.TrimRight(publicAppURL, "/"), now: time.Now}
 }
 
 func (s *service) tx(ctx context.Context, tenantID uuid.UUID, fn db.TxFn) error {
@@ -64,7 +81,7 @@ func (s *service) Provision(ctx context.Context, ownerID uuid.UUID, businessName
 		return Tenant{}, apperr.ValidationField("businessName", "required")
 	}
 	var t Tenant
-	err := db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		slug, err := s.uniqueSlug(ctx, tx, Slugify(name))
 		if err != nil {
 			return err
@@ -73,8 +90,8 @@ func (s *service) Provision(ctx context.Context, ownerID uuid.UUID, businessName
 			return db.MapErr(err, "tenant")
 		}
 		return db.WithTenantTx(ctx, s.pool, t.ID, func(ctx context.Context, tx pgx.Tx) error {
-			if _, err := s.repo.InsertMember(ctx, tx, t.ID, ownerID, RoleOwner, 0, MemberActive, nil); err != nil {
-				return err
+			if _, err := s.repo.InsertMember(ctx, tx, NewMember{TenantID: t.ID, UserID: ownerID, Role: RoleOwner, Status: MemberActive}); err != nil {
+				return db.MapErr(err, "member")
 			}
 			return bootstrap(ctx, tx, t)
 		})
@@ -85,7 +102,12 @@ func (s *service) Provision(ctx context.Context, ownerID uuid.UUID, businessName
 func (s *service) uniqueSlug(ctx context.Context, q db.Querier, base string) (string, error) {
 	slug := base
 	for i := 2; i < 1000; i++ {
-		exists, err := s.repo.SlugExists(ctx, q, slug)
+		var exists bool
+		// storefronts is a tenant table: the slug lookup policy exposes only rows with this slug.
+		err := db.WithLookup(ctx, s.pool, db.LookupSlug, slug, func(ctx context.Context, _ pgx.Tx) (err error) {
+			exists, err = s.repo.SlugExists(ctx, q, slug)
+			return err
+		})
 		if err != nil {
 			return "", err
 		}
@@ -155,15 +177,24 @@ func (s *service) InviteMember(ctx context.Context, tenantID, actorID uuid.UUID,
 	if s.users == nil {
 		return m, fmt.Errorf("tenant: user directory not configured")
 	}
+	token, hash, err := newInviteToken()
+	if err != nil {
+		return m, err
+	}
+	exp := s.now().Add(InviteTTL)
+	name := strings.TrimSpace(in.Name)
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		userID, err := s.users.FindOrCreateUser(ctx, in.Email, in.Phone, in.Name)
+		// Creates a passwordless user only when none exists; an existing user is NOT attached
+		// until they accept with their own password (BUG-03 / M4).
+		userID, err := s.users.FindOrCreateUser(ctx, in.Email, in.Phone, name)
 		if err != nil {
 			return err
 		}
-		id, err := s.repo.InsertMember(ctx, tx, tenantID, userID, in.Role, in.CommissionBps, MemberInvited, &actorID)
+		id, err := s.repo.InsertMember(ctx, tx, NewMember{TenantID: tenantID, UserID: userID, Role: in.Role, CommissionBps: in.CommissionBps,
+			Status: MemberInvited, InvitedBy: &actorID, InviteHash: &hash, InviteExpiresAt: &exp, InviteName: &name})
 		if err != nil {
 			if db.IsUniqueViolation(err, "") {
-				return apperr.Conflict("user is already a member of this business")
+				return apperr.Conflict("this person is already a member or has a pending invite (use resend invite)")
 			}
 			return err
 		}
@@ -173,7 +204,90 @@ func (s *service) InviteMember(ctx context.Context, tenantID, actorID uuid.UUID,
 		m, err = s.repo.GetMember(ctx, tx, tenantID, id, false)
 		return err
 	})
-	return m, err
+	if err != nil {
+		return m, err
+	}
+	m.InviteURL = s.inviteURL(token)
+	return m, nil
+}
+
+func (s *service) inviteURL(token string) string { return s.publicAppURL + "/invite/" + token }
+
+// newInviteToken returns a 256-bit url-safe token and its SHA-256 (stored).
+func newInviteToken() (token, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err = rand.Read(b); err != nil {
+		return "", "", err
+	}
+	token = base64.RawURLEncoding.EncodeToString(b)
+	return token, pauth.HashToken(token), nil
+}
+
+func (s *service) ResendInvite(ctx context.Context, tenantID, actorID, memberID uuid.UUID) (m Member, err error) {
+	token, hash, err := newInviteToken()
+	if err != nil {
+		return m, err
+	}
+	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		ok, err := s.repo.SetInvite(ctx, tx, tenantID, memberID, hash, s.now().Add(InviteTTL))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			if _, err := s.repo.GetMember(ctx, tx, tenantID, memberID, false); err != nil {
+				return err
+			}
+			return apperr.Validation("this member has already accepted the invite")
+		}
+		if err := s.repo.InsertAudit(ctx, tx, tenantID, &actorID, "member.invite_resend", "tenant_member", &memberID, nil); err != nil {
+			return err
+		}
+		m, err = s.repo.GetMember(ctx, tx, tenantID, memberID, false)
+		return err
+	})
+	if err != nil {
+		return m, err
+	}
+	m.InviteURL = s.inviteURL(token)
+	return m, nil
+}
+
+// errInvite is deliberately generic: unknown, expired and used tokens look the same.
+var errInvite = apperr.NotFound("invite")
+
+func (s *service) InviteByToken(ctx context.Context, token string) (inv InviteInfo, err error) {
+	token = strings.TrimSpace(token)
+	if len(token) < 20 || len(token) > 100 {
+		return inv, errInvite
+	}
+	hash := pauth.HashToken(token)
+	err = db.WithLookup(ctx, s.pool, db.LookupInviteHash, hash, func(ctx context.Context, tx pgx.Tx) error {
+		inv, err = s.repo.InviteByHash(ctx, tx, hash)
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, apperr.ErrNotFound) {
+			return inv, errInvite
+		}
+		return inv, err
+	}
+	if !s.now().Before(inv.ExpiresAt) {
+		return inv, errInvite
+	}
+	return inv, nil
+}
+
+func (s *service) ActivateInvite(ctx context.Context, inv InviteInfo, token string) error {
+	return s.tx(ctx, inv.TenantID, func(ctx context.Context, tx pgx.Tx) error {
+		ok, err := s.repo.ActivateInvite(ctx, tx, inv.TenantID, inv.MemberID, pauth.HashToken(token))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errInvite
+		}
+		return s.repo.InsertAudit(ctx, tx, inv.TenantID, &inv.UserID, "member.accept", "tenant_member", &inv.MemberID, map[string]any{"role": inv.Role})
+	})
 }
 
 func (s *service) UpdateMemberRole(ctx context.Context, tenantID, actorID, memberID uuid.UUID, role string, bps *int) (m Member, err error) {
@@ -234,7 +348,7 @@ func (s *service) RemoveMember(ctx context.Context, tenantID, actorID, memberID 
 }
 
 func (s *service) MembershipsForUser(ctx context.Context, userID uuid.UUID) (out []Membership, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithLookup(ctx, s.pool, db.LookupUserID, userID.String(), func(ctx context.Context, tx pgx.Tx) error {
 		out, err = s.repo.MembershipsForUser(ctx, tx, userID)
 		return err
 	})

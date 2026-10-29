@@ -5,7 +5,7 @@ import { Loader2Icon, RefreshCwIcon, Share2Icon, UnplugIcon } from "lucide-react
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { ConfirmDialog, DateText, EmptyState, ErrorState, ListSkeleton, PlatformIcon, StatusBadge, ToneBadge } from "@/components/shared"
+import { ConfirmDialog, DateText, EmptyState, ErrorState, ListSkeleton, PlatformIcon, StatusBadge, ToneBadge, ErrorDetails } from "@/components/shared"
 import type { SocialAccountFieldsFragment } from "@/gql/graphql"
 import { RoleGate } from "@/lib/auth"
 import { useT } from "@/i18n"
@@ -34,7 +34,12 @@ function AccountCard({ account, onDisconnect }: { account: SocialAccountFieldsFr
         <ToneBadge tone={account.webhookVerified ? "success" : "warning"}>{account.webhookVerified ? t.social.webhookOk : t.social.webhookPending}</ToneBadge>
         <ToneBadge tone="primary">{t.social.openConversations(account.openConversationCount)}</ToneBadge>
       </div>
-      {account.lastError ? <p className="rounded-lg bg-destructive/10 p-2 text-xs text-destructive">{account.lastError}</p> : null}
+      {account.lastError ? (
+        <div className="rounded-lg bg-destructive/10 p-2 text-xs text-destructive" role="alert">
+          {t.social.lastErrorGeneric}
+          <ErrorDetails error={account.lastError} />
+        </div>
+      ) : null}
       <dl className="grid grid-cols-2 gap-2 text-xs">
         <div>
           <dt className="text-muted-foreground">{t.social.lastSynced}</dt>

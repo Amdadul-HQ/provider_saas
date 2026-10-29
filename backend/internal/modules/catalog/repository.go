@@ -49,7 +49,7 @@ func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f 
 	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
 	conds := []string{"tenant_id = $1", "deleted_at IS NULL"}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add("%" + strings.TrimSpace(*f.Search) + "%")
+		p := add(db.Contains(*f.Search))
 		conds = append(conds, fmt.Sprintf("(name ILIKE %[1]s OR description ILIKE %[1]s)", p))
 	}
 	if f.Category != nil {

@@ -17,8 +17,8 @@ import {
 import { typenameContext, useAction } from "@/lib/graphql/use-action"
 import { useT } from "@/i18n"
 
-export function useSubscriptions(filter: SubscriptionFilter, page: PageInput) {
-  return useQuery({ query: SubscriptionsDocument, variables: { filter, page }, context: typenameContext("Subscription") })
+export function useSubscriptions(filter: SubscriptionFilter, page: PageInput, opts: { pause?: boolean } = {}) {
+  return useQuery({ query: SubscriptionsDocument, variables: { filter, page }, pause: opts.pause, context: typenameContext("Subscription") })
 }
 
 export function useSubscription(id: string | null | undefined) {

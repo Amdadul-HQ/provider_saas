@@ -6,6 +6,8 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
@@ -24,6 +26,7 @@ const (
 // Secrets is the vault subset used for the SMS-forwarder token.
 type Secrets interface {
 	Store(ctx context.Context, tenantID uuid.UUID, kind string, plaintext []byte) (uuid.UUID, error)
+	Update(ctx context.Context, tenantID, secretID uuid.UUID, plaintext []byte) error
 	Open(ctx context.Context, tenantID, secretID uuid.UUID) ([]byte, error)
 }
 
@@ -98,6 +101,53 @@ func (s *service) EnsureSMSWebhookToken(ctx context.Context, tenantID uuid.UUID)
 		return s.repo.InsertAudit(ctx, tx, tenantID, nil, "sms_token.create", "tenant", &tenantID, nil)
 	})
 	return token, hint, created, err
+}
+
+// RotateSMSWebhookToken generates a new SMS-forwarder token (SECURITY L3). The vault
+// secret is re-encrypted in place, so the old token stops verifying immediately. The
+// plaintext is returned exactly once and the rotation is audit-logged.
+func (s *service) RotateSMSWebhookToken(ctx context.Context, tenantID, actorID uuid.UUID) (token string, err error) {
+	if s.secrets == nil {
+		return "", apperr.Validation("vault not configured")
+	}
+	tok, err := NewSMSToken(tenantID)
+	if err != nil {
+		return "", err
+	}
+	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		var cur map[string]any
+		if err := tx.QueryRow(ctx, `SELECT settings FROM tenants WHERE id = $1 FOR UPDATE`, tenantID).Scan(&cur); err != nil {
+			return db.MapErr(err, "tenant")
+		}
+		sid, perr := uuid.Parse(fmt.Sprint(cur[SettingSMSSecretID]))
+		updated := false
+		if perr == nil {
+			switch err := s.secrets.Update(ctx, tenantID, sid, []byte(tok)); {
+			case err == nil:
+				updated = true
+			case !errors.Is(err, apperr.ErrNotFound):
+				return err
+			}
+		}
+		if !updated {
+			if sid, err = s.secrets.Store(ctx, tenantID, "api_key", []byte(tok)); err != nil {
+				return err
+			}
+		}
+		if _, err := tx.Exec(ctx, `UPDATE tenants SET settings = settings || jsonb_build_object($2::text, $3::text, $4::text, $5::text) WHERE id = $1`,
+			tenantID, SettingSMSSecretID, sid.String(), SettingSMSTokenHint, SMSTokenHint(tok)); err != nil {
+			return err
+		}
+		var by *uuid.UUID
+		if actorID != uuid.Nil {
+			by = &actorID
+		}
+		return s.repo.InsertAudit(ctx, tx, tenantID, by, "sms_token.rotate", "tenant", &tenantID, map[string]any{"hint": SMSTokenHint(tok)})
+	})
+	if err != nil {
+		return "", err
+	}
+	return tok, nil
 }
 
 // VerifySMSWebhookToken resolves a bearer token to its tenant (constant-time compare).

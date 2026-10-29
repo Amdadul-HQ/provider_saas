@@ -10,7 +10,7 @@ import { DateText, DetailRow, ErrorState, ListSkeleton, SectionCard, SelectField
 import type { TenantSettingsQuery } from "@/gql/graphql"
 import { RoleGate } from "@/lib/auth"
 import { v } from "@/lib/validation"
-import { useT } from "@/i18n"
+import { useT, labelFor } from "@/i18n"
 import { useTenantSettings, useUpdateTenant } from "../hooks/use-tenant"
 
 type Tenant = TenantSettingsQuery["tenant"]
@@ -62,8 +62,8 @@ export function TenantSettingsForm() {
       <SectionCard>
         <dl>
           <DetailRow label={t.settings.slug}>{data.tenant.slug}</DetailRow>
-          <DetailRow label={t.settings.plan}>{data.tenant.plan}</DetailRow>
-          <DetailRow label={t.common.status}>{data.tenant.status}</DetailRow>
+          <DetailRow label={t.settings.plan}>{labelFor(t, "TenantPlan", data.tenant.plan)}</DetailRow>
+          <DetailRow label={t.common.status}>{labelFor(t, "TenantStatus", data.tenant.status)}</DetailRow>
           <DetailRow label={t.settings.trialEnds}>
             <DateText value={data.tenant.trialEndsAt} />
           </DetailRow>

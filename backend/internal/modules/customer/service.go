@@ -2,6 +2,7 @@ package customer
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -110,6 +111,9 @@ func (s *service) Update(ctx context.Context, tenantID, id uuid.UUID, in UpdateI
 		return c, err
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := s.repo.Get(ctx, tx, tenantID, id, true); err != nil { // visibility (reseller scope)
+			return err
+		}
 		c, err = s.repo.Update(ctx, tx, tenantID, id, in)
 		return err
 	})
@@ -143,6 +147,13 @@ func (s *service) AddNote(ctx context.Context, tenantID, customerID, authorID uu
 
 func (s *service) Notes(ctx context.Context, tenantID, customerID uuid.UUID) (out []Note, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		if _, err := s.repo.Get(ctx, tx, tenantID, customerID, false); err != nil {
+			if errors.Is(err, apperr.ErrNotFound) {
+				out = []Note{}
+				return nil
+			}
+			return err
+		}
 		out, err = s.repo.Notes(ctx, tx, tenantID, customerID)
 		return err
 	})

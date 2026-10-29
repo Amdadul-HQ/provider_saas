@@ -7,7 +7,6 @@ package graph
 
 import (
 	"context"
-	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/tenant"
@@ -42,7 +41,7 @@ func (r *mutationResolver) InviteMember(ctx context.Context, input model.InviteM
 	if err != nil {
 		return nil, err
 	}
-	return toMember(m), nil
+	return toMember(ctx, m), nil
 }
 
 // UpdateMemberRole is the resolver for the updateMemberRole field.
@@ -55,7 +54,7 @@ func (r *mutationResolver) UpdateMemberRole(ctx context.Context, memberID uuid.U
 	if err != nil {
 		return nil, err
 	}
-	return toMember(m), nil
+	return toMember(ctx, m), nil
 }
 
 // RemoveMember is the resolver for the removeMember field.
@@ -69,12 +68,24 @@ func (r *mutationResolver) RemoveMember(ctx context.Context, memberID uuid.UUID)
 
 // ResendInvite is the resolver for the resendInvite field.
 func (r *mutationResolver) ResendInvite(ctx context.Context, memberID uuid.UUID) (*model.TenantMember, error) {
-	panic(fmt.Errorf("not implemented: ResendInvite - resendInvite"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m, err := r.TenantSvc.ResendInvite(ctx, tid, uid, memberID)
+	if err != nil {
+		return nil, err
+	}
+	return toMember(ctx, m), nil
 }
 
 // RotateSmsWebhookToken is the resolver for the rotateSmsWebhookToken field.
 func (r *mutationResolver) RotateSmsWebhookToken(ctx context.Context) (string, error) {
-	panic(fmt.Errorf("not implemented: RotateSmsWebhookToken - rotateSmsWebhookToken"))
+	tid, uid, err := tenantOf(ctx)
+	if err != nil {
+		return "", err
+	}
+	return r.TenantSvc.RotateSMSWebhookToken(ctx, tid, uid)
 }
 
 // MarkNotificationRead is the resolver for the markNotificationRead field.
@@ -101,13 +112,8 @@ func (r *queryResolver) Tenant(ctx context.Context) (*model.Tenant, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Owners/admins get the SMS-forwarder token created on first use; settings then
-	// carry only sms_webhook_token_hint (the token itself stays in the vault).
-	if p, ok := principalOK(ctx); ok && p.HasRole("owner", "admin") {
-		if _, _, _, err := r.TenantSvc.EnsureSMSWebhookToken(ctx, tid); err != nil {
-			return nil, err
-		}
-	}
+	// A read has no side effects (SECURITY L3): the SMS-forwarder token is created or
+	// replaced only by rotateSmsWebhookToken, which returns it once.
 	t, err := r.TenantSvc.Get(ctx, tid)
 	if err != nil {
 		return nil, err
@@ -189,7 +195,7 @@ func (r *tenantResolver) Members(ctx context.Context, obj *model.Tenant) ([]mode
 	}
 	out := make([]model.TenantMember, len(ms))
 	for i, m := range ms {
-		out[i] = *toMember(m)
+		out[i] = *toMember(ctx, m)
 	}
 	return out, nil
 }

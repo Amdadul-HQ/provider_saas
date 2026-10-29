@@ -44,19 +44,19 @@ input SendMessageInput { conversationId: UUID! body: String templateId: UUID var
 input MessageTemplateInput { key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean = true }
 
 extend type Query {
-  conversations(filter: ConversationFilter, page: PageInput): ConversationConnection! @auth
-  conversation(id: UUID!): Conversation @auth
-  inboxCounts: InboxCounts! @auth
-  messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth
+  conversations(filter: ConversationFilter, page: PageInput): ConversationConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  conversation(id: UUID!): Conversation @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  inboxCounts: InboxCounts! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  sendMessage(input: SendMessageInput!): Message! @auth
-  assignConversation(id: UUID!, userId: UUID): Conversation! @auth
-  setConversationStatus(id: UUID!, status: ConversationStatus!): Conversation! @auth
-  markConversationRead(id: UUID!): Conversation! @auth
-  addConversationLabel(id: UUID!, label: String!): Conversation! @auth
-  removeConversationLabel(id: UUID!, label: String!): Conversation! @auth
-  linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth
+  sendMessage(input: SendMessageInput!): Message! @auth(roles: [OWNER, ADMIN, STAFF])
+  assignConversation(id: UUID!, userId: UUID): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  setConversationStatus(id: UUID!, status: ConversationStatus!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  markConversationRead(id: UUID!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  addConversationLabel(id: UUID!, label: String!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  removeConversationLabel(id: UUID!, label: String!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
   upsertMessageTemplate(id: UUID, input: MessageTemplateInput!): MessageTemplate! @auth(roles: [OWNER, ADMIN])
   deleteMessageTemplate(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
 }

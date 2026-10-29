@@ -3,16 +3,23 @@ package social
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"provider_saas/internal/platform/apperr"
 )
 
 // MetaPage is a Facebook page the user manages (from /me/accounts), with its linked
@@ -46,6 +53,8 @@ type Client interface {
 	Pages(ctx context.Context, userToken string) ([]MetaPage, error)
 	SubscribePage(ctx context.Context, pageID, pageToken string) error
 	VerifyToken(ctx context.Context, token string) error
+	// WhatsAppPhoneNumbers lists the phone number ids of a WABA visible to token.
+	WhatsAppPhoneNumbers(ctx context.Context, wabaID, token string) ([]string, error)
 	// Telegram bot setup
 	TelegramGetMe(ctx context.Context, botToken string) (TelegramBot, error)
 	TelegramSetWebhook(ctx context.Context, botToken, webhookURL, secret string) error
@@ -74,6 +83,71 @@ func IsAuthError(err error) bool {
 	return errors.As(err, &ae) && (ae.Status == http.StatusUnauthorized || strings.Contains(strings.ToLower(ae.Msg), "access token"))
 }
 
+// TransportError is a network-level failure talking to Meta/Telegram. It carries only the
+// operation and host: *url.Error would include the full URL, and with it access tokens,
+// the app secret or the Telegram bot token (SECURITY M3).
+type TransportError struct {
+	Op   string
+	Host string
+	Err  error
+}
+
+func (e *TransportError) Error() string {
+	return fmt.Sprintf("social api %s %s: %s", e.Op, e.Host, transportReason(e.Err))
+}
+
+func (e *TransportError) Unwrap() error { return e.Err }
+
+// transportReason keeps the error class but never the URL.
+func transportReason(err error) string {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		err = ue.Err
+	}
+	switch {
+	case errors.Is(err, context.DeadlineExceeded):
+		return "timeout"
+	case errors.Is(err, context.Canceled):
+		return "cancelled"
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return "timeout"
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return "dns lookup failed"
+	}
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		return "connection failed (" + opErr.Op + ")"
+	}
+	return "request failed"
+}
+
+// SafeError renders an upstream error for users, logs and stored last_error fields: API
+// errors keep the provider message, transport errors only op + host, anything else is
+// replaced by a generic text (it might embed a URL).
+func SafeError(err error) string {
+	var ae *APIError
+	var te *TransportError
+	switch {
+	case err == nil:
+		return ""
+	case errors.As(err, &ae):
+		return ae.Error()
+	case errors.As(err, &te):
+		return te.Error()
+	case errors.Is(err, ErrUnsupported), apperr.Code(err) != "":
+		return err.Error() // our own domain errors carry no URLs
+	}
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		return "social api: " + transportReason(err)
+	}
+	return "social api: request failed"
+}
+
 // ---- real implementation
 
 type HTTPClient struct {
@@ -88,28 +162,57 @@ func NewHTTPClient(appID, appSecret, graphVersion string) *HTTPClient {
 		TelegramBase: "https://api.telegram.org", HTTP: &http.Client{Timeout: 20 * time.Second}}
 }
 
-func (c *HTTPClient) do(ctx context.Context, method, rawURL string, body any, bearer string, out any) error {
+// req describes one outbound call. Meta access tokens go in the Authorization header with
+// appsecret_proof, never in the URL; app credentials go in a POST form body.
+type req struct {
+	method string
+	url    string
+	json   any        // JSON body
+	form   url.Values // form body (takes precedence over json)
+	token  string     // Meta access token -> "Authorization: Bearer" + appsecret_proof
+}
+
+// AppSecretProof is HMAC-SHA256(access_token, app_secret) in hex (Meta "Require App Secret").
+func AppSecretProof(token, appSecret string) string {
+	m := hmac.New(sha256.New, []byte(appSecret))
+	m.Write([]byte(token))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+func (c *HTTPClient) do(ctx context.Context, r req, out any) error {
 	var rd io.Reader
-	if body != nil {
-		b, err := json.Marshal(body)
+	ctype := ""
+	switch {
+	case r.form != nil:
+		rd, ctype = strings.NewReader(r.form.Encode()), "application/x-www-form-urlencoded"
+	case r.json != nil:
+		b, err := json.Marshal(r.json)
 		if err != nil {
 			return err
 		}
-		rd = bytes.NewReader(b)
+		rd, ctype = bytes.NewReader(b), "application/json"
 	}
-	req, err := http.NewRequestWithContext(ctx, method, rawURL, rd)
+	u := r.url
+	if r.token != "" && c.AppSecret != "" {
+		sep := "?"
+		if strings.Contains(u, "?") {
+			sep = "&"
+		}
+		u += sep + "appsecret_proof=" + AppSecretProof(r.token, c.AppSecret)
+	}
+	hreq, err := http.NewRequestWithContext(ctx, r.method, u, rd)
 	if err != nil {
-		return err
+		return &TransportError{Op: r.method, Host: hostOf(r.url), Err: errors.New("bad request")}
 	}
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+	if ctype != "" {
+		hreq.Header.Set("Content-Type", ctype)
 	}
-	if bearer != "" {
-		req.Header.Set("Authorization", "Bearer "+bearer)
+	if r.token != "" {
+		hreq.Header.Set("Authorization", "Bearer "+r.token)
 	}
-	resp, err := c.HTTP.Do(req)
+	resp, err := c.HTTP.Do(hreq)
 	if err != nil {
-		return err
+		return &TransportError{Op: r.method, Host: hreq.URL.Host, Err: err}
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
@@ -131,9 +234,18 @@ func (c *HTTPClient) do(ctx context.Context, method, rawURL string, body any, be
 		return &APIError{Status: resp.StatusCode, Msg: msg}
 	}
 	if out != nil {
-		return json.Unmarshal(raw, out)
+		if err := json.Unmarshal(raw, out); err != nil {
+			return &APIError{Status: resp.StatusCode, Msg: "unexpected response"}
+		}
 	}
 	return nil
+}
+
+func hostOf(raw string) string {
+	if u, err := url.Parse(raw); err == nil {
+		return u.Host
+	}
+	return "?"
 }
 
 func (c *HTTPClient) graph(path string, q url.Values) string {
@@ -148,8 +260,8 @@ func (c *HTTPClient) ExchangeCode(ctx context.Context, code, redirectURI string)
 	var out struct {
 		AccessToken string `json:"access_token"`
 	}
-	err := c.do(ctx, http.MethodGet, c.graph("/oauth/access_token", url.Values{"client_id": {c.AppID},
-		"client_secret": {c.AppSecret}, "redirect_uri": {redirectURI}, "code": {code}}), nil, "", &out)
+	err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/oauth/access_token", nil), form: url.Values{"client_id": {c.AppID},
+		"client_secret": {c.AppSecret}, "redirect_uri": {redirectURI}, "code": {code}}}, &out)
 	return out.AccessToken, err
 }
 
@@ -158,8 +270,8 @@ func (c *HTTPClient) LongLivedToken(ctx context.Context, token string) (string, 
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int64  `json:"expires_in"`
 	}
-	err := c.do(ctx, http.MethodGet, c.graph("/oauth/access_token", url.Values{"grant_type": {"fb_exchange_token"},
-		"client_id": {c.AppID}, "client_secret": {c.AppSecret}, "fb_exchange_token": {token}}), nil, "", &out)
+	err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/oauth/access_token", nil), form: url.Values{"grant_type": {"fb_exchange_token"},
+		"client_id": {c.AppID}, "client_secret": {c.AppSecret}, "fb_exchange_token": {token}}}, &out)
 	if err != nil {
 		return "", nil, err
 	}
@@ -189,8 +301,8 @@ func (c *HTTPClient) Pages(ctx context.Context, userToken string) ([]MetaPage, e
 			} `json:"instagram_business_account"`
 		} `json:"data"`
 	}
-	err := c.do(ctx, http.MethodGet, c.graph("/me/accounts", url.Values{"limit": {"100"}, "access_token": {userToken},
-		"fields": {"id,name,access_token,picture{url},instagram_business_account{id,username,profile_picture_url}"}}), nil, "", &out)
+	err := c.do(ctx, req{method: http.MethodGet, token: userToken, url: c.graph("/me/accounts", url.Values{"limit": {"100"},
+		"fields": {"id,name,access_token,picture{url},instagram_business_account{id,username,profile_picture_url}"}})}, &out)
 	if err != nil {
 		return nil, err
 	}
@@ -206,12 +318,31 @@ func (c *HTTPClient) Pages(ctx context.Context, userToken string) ([]MetaPage, e
 }
 
 func (c *HTTPClient) SubscribePage(ctx context.Context, pageID, pageToken string) error {
-	return c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(pageID)+"/subscribed_apps", url.Values{
-		"subscribed_fields": {"messages,messaging_postbacks,message_echoes"}, "access_token": {pageToken}}), nil, "", nil)
+	return c.do(ctx, req{method: http.MethodPost, token: pageToken, url: c.graph("/"+url.PathEscape(pageID)+"/subscribed_apps", nil),
+		form: url.Values{"subscribed_fields": {"messages,messaging_postbacks,message_echoes"}}}, nil)
 }
 
 func (c *HTTPClient) VerifyToken(ctx context.Context, token string) error {
-	return c.do(ctx, http.MethodGet, c.graph("/me", url.Values{"fields": {"id"}, "access_token": {token}}), nil, "", nil)
+	return c.do(ctx, req{method: http.MethodGet, token: token, url: c.graph("/me", url.Values{"fields": {"id"}})}, nil)
+}
+
+// WhatsAppPhoneNumbers lists the phone number ids of a WhatsApp Business Account that the
+// token can see (GET /{waba-id}/phone_numbers); used to prove number ownership (H5).
+func (c *HTTPClient) WhatsAppPhoneNumbers(ctx context.Context, wabaID, token string) ([]string, error) {
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, req{method: http.MethodGet, token: token, url: c.graph("/"+url.PathEscape(wabaID)+"/phone_numbers",
+		url.Values{"fields": {"id"}, "limit": {"100"}})}, &out); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(out.Data))
+	for _, d := range out.Data {
+		ids = append(ids, d.ID)
+	}
+	return ids, nil
 }
 
 func (c *HTTPClient) tg(botToken, method string) string {
@@ -226,15 +357,15 @@ func (c *HTTPClient) TelegramGetMe(ctx context.Context, botToken string) (Telegr
 			FirstName string `json:"first_name"`
 		} `json:"result"`
 	}
-	if err := c.do(ctx, http.MethodGet, c.tg(botToken, "getMe"), nil, "", &out); err != nil {
+	if err := c.do(ctx, req{method: http.MethodGet, url: c.tg(botToken, "getMe")}, &out); err != nil {
 		return TelegramBot{}, err
 	}
 	return TelegramBot{ID: out.Result.ID, Username: out.Result.Username, FirstName: out.Result.FirstName}, nil
 }
 
 func (c *HTTPClient) TelegramSetWebhook(ctx context.Context, botToken, webhookURL, secret string) error {
-	return c.do(ctx, http.MethodPost, c.tg(botToken, "setWebhook"), map[string]any{
-		"url": webhookURL, "secret_token": secret, "allowed_updates": []string{"message", "edited_message"}}, "", nil)
+	return c.do(ctx, req{method: http.MethodPost, url: c.tg(botToken, "setWebhook"), json: map[string]any{
+		"url": webhookURL, "secret_token": secret, "allowed_updates": []string{"message", "edited_message"}}}, nil)
 }
 
 func messengerBody(recipient, text, tag string, att *Attachment) map[string]any {
@@ -262,7 +393,7 @@ func (c *HTTPClient) sendMeta(ctx context.Context, endpoint, token, recipient, t
 		var out struct {
 			MessageID string `json:"message_id"`
 		}
-		if err := c.do(ctx, http.MethodPost, c.graph(endpoint, url.Values{"access_token": {token}}), messengerBody(recipient, text, tag, a), "", &out); err != nil {
+		if err := c.do(ctx, req{method: http.MethodPost, url: c.graph(endpoint, nil), token: token, json: messengerBody(recipient, text, tag, a)}, &out); err != nil {
 			return err
 		}
 		if first == "" {
@@ -303,7 +434,7 @@ func (c *HTTPClient) SendWhatsApp(ctx context.Context, phoneNumberID, token, to,
 				ID string `json:"id"`
 			} `json:"messages"`
 		}
-		if err := c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(phoneNumberID)+"/messages", nil), body, token, &out); err != nil {
+		if err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(phoneNumberID)+"/messages", nil), token: token, json: body}, &out); err != nil {
 			return err
 		}
 		if first == "" && len(out.Messages) > 0 {
@@ -337,7 +468,7 @@ func (c *HTTPClient) telegramSend(ctx context.Context, botToken, method string, 
 			MessageID int64 `json:"message_id"`
 		} `json:"result"`
 	}
-	if err := c.do(ctx, http.MethodPost, c.tg(botToken, method), body, "", &out); err != nil {
+	if err := c.do(ctx, req{method: http.MethodPost, url: c.tg(botToken, method), json: body}, &out); err != nil {
 		return "", err
 	}
 	return strconv.FormatInt(out.Result.MessageID, 10), nil
@@ -372,12 +503,13 @@ func (c *HTTPClient) PublishFacebook(ctx context.Context, pageID, pageToken, mes
 		ID     string `json:"id"`
 		PostID string `json:"post_id"`
 	}
-	q := url.Values{"access_token": {pageToken}}
 	var err error
 	if imageURL != "" {
-		err = c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(pageID)+"/photos", q), map[string]any{"url": imageURL, "caption": message}, "", &out)
+		err = c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(pageID)+"/photos", nil), token: pageToken,
+			json: map[string]any{"url": imageURL, "caption": message}}, &out)
 	} else {
-		err = c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(pageID)+"/feed", q), map[string]any{"message": message}, "", &out)
+		err = c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(pageID)+"/feed", nil), token: pageToken,
+			json: map[string]any{"message": message}}, &out)
 	}
 	if out.PostID != "" {
 		return out.PostID, err
@@ -389,19 +521,18 @@ func (c *HTTPClient) PublishInstagram(ctx context.Context, igUserID, token, capt
 	if imageURL == "" {
 		return "", &APIError{Status: http.StatusBadRequest, Msg: "Instagram posts need an image"}
 	}
-	q := url.Values{"access_token": {token}}
 	var container struct {
 		ID string `json:"id"`
 	}
-	if err := c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(igUserID)+"/media", q),
-		map[string]any{"image_url": imageURL, "caption": caption}, "", &container); err != nil {
+	if err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(igUserID)+"/media", nil), token: token,
+		json: map[string]any{"image_url": imageURL, "caption": caption}}, &container); err != nil {
 		return "", err
 	}
 	var out struct {
 		ID string `json:"id"`
 	}
-	err := c.do(ctx, http.MethodPost, c.graph("/"+url.PathEscape(igUserID)+"/media_publish", q),
-		map[string]any{"creation_id": container.ID}, "", &out)
+	err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(igUserID)+"/media_publish", nil), token: token,
+		json: map[string]any{"creation_id": container.ID}}, &out)
 	return out.ID, err
 }
 
@@ -427,6 +558,30 @@ type Fake struct {
 	Calls []FakeCall
 	// Fail, when set, makes every send/publish fail with this error.
 	Fail error
+	// wabaNumbers: phone number ids per WhatsApp Business Account (AddWABANumber).
+	wabaNumbers map[string][]string
+}
+
+// AddWABANumber registers phoneNumberID as belonging to wabaID.
+func (f *Fake) AddWABANumber(wabaID, phoneNumberID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.wabaNumbers == nil {
+		f.wabaNumbers = map[string][]string{}
+	}
+	f.wabaNumbers[wabaID] = append(f.wabaNumbers[wabaID], phoneNumberID)
+}
+
+// WhatsAppPhoneNumbers returns the numbers registered for wabaID plus, for manual testing
+// in dev without a Meta app, "<wabaID>-1", "<wabaID>-2" and "<wabaID>-3".
+func (f *Fake) WhatsAppPhoneNumbers(_ context.Context, wabaID, token string) ([]string, error) {
+	f.record("WhatsAppPhoneNumbers", wabaID)
+	if err := badToken(token); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append(append([]string{}, f.wabaNumbers[wabaID]...), wabaID+"-1", wabaID+"-2", wabaID+"-3"), nil
 }
 
 func NewFake() *Fake { return &Fake{} }
@@ -478,8 +633,13 @@ func (f *Fake) Pages(_ context.Context, userToken string) ([]MetaPage, error) {
 	if err := badToken(userToken); err != nil {
 		return nil, err
 	}
-	return []MetaPage{{ID: "100200300400500", Name: "Demo Digital Store", AccessToken: "fake-page-token-1",
-		Instagram: &MetaInstagram{ID: "17841400000000001", Username: "demo.digital.store"}}}, nil
+	// Page ids derive from the login (code) so different fake logins own different pages
+	// (page ids are unique across businesses, SECURITY H5).
+	h := fnv.New64a()
+	_, _ = h.Write([]byte(userToken))
+	n := h.Sum64() % 1_000_000_000_000
+	return []MetaPage{{ID: fmt.Sprintf("10%013d", n), Name: "Demo Digital Store", AccessToken: "fake-page-token-" + strconv.FormatUint(n, 10),
+		Instagram: &MetaInstagram{ID: fmt.Sprintf("178414%011d", n%100_000_000_000), Username: "demo.digital.store"}}}, nil
 }
 
 func (f *Fake) SubscribePage(_ context.Context, pageID, pageToken string) error {

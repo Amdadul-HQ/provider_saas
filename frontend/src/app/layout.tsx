@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next"
+import { headers } from "next/headers"
 import { Inter, Noto_Sans_Bengali } from "next/font/google"
 import { Providers } from "./providers"
 import "./globals.css"
@@ -30,11 +31,13 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 }
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  // per-request CSP nonce from middleware (also makes every route dynamic, which nonces require)
+  const nonce = (await headers()).get("x-nonce") ?? undefined
   return (
     <html lang="bn" suppressHydrationWarning>
       <body className={`${inter.variable} ${bengali.variable}`}>
-        <Providers>{children}</Providers>
+        <Providers nonce={nonce}>{children}</Providers>
       </body>
     </html>
   )

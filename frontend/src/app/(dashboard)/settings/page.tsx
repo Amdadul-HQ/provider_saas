@@ -5,7 +5,7 @@ import { PageHeader, SectionCard } from "@/components/shared"
 import { ChangePasswordForm } from "@/modules/auth"
 import { TemplateManager } from "@/modules/inbox"
 import { StorefrontEditor } from "@/modules/storefront"
-import { MembersPanel, PreferencesPanel, TenantSettingsForm } from "@/modules/tenant"
+import { MembersPanel, PreferencesPanel, SmsTokenCard, TenantSettingsForm } from "@/modules/tenant"
 import { useT } from "@/i18n"
 
 export default function SettingsPage() {
@@ -20,6 +20,7 @@ export default function SettingsPage() {
             <TabsTrigger value="members">{t.settings.tabs.members}</TabsTrigger>
             <TabsTrigger value="storefront">{t.settings.tabs.storefront}</TabsTrigger>
             <TabsTrigger value="templates">{t.settings.tabs.templates}</TabsTrigger>
+            <TabsTrigger value="integrations">{t.settings.tabs.integrations}</TabsTrigger>
             <TabsTrigger value="language">{t.settings.tabs.language}</TabsTrigger>
             <TabsTrigger value="account">{t.settings.tabs.account}</TabsTrigger>
           </TabsList>
@@ -35,6 +36,9 @@ export default function SettingsPage() {
         </TabsContent>
         <TabsContent value="templates" className="pt-3">
           <TemplateManager />
+        </TabsContent>
+        <TabsContent value="integrations" className="pt-3">
+          <SmsTokenCard />
         </TabsContent>
         <TabsContent value="language" className="pt-3">
           <PreferencesPanel />

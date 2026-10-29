@@ -27,19 +27,20 @@ function Inbox() {
   const [panelOpen, setPanelOpen] = useState(false)
   const [subFor, setSubFor] = useState<PickedCustomer | null>(null)
 
-  const select = (id: string | null) => {
+  const hrefFor = (id: string | null) => {
     const next = new URLSearchParams(params.toString())
     if (id) next.set("c", id)
     else next.delete("c")
-    router.push(`${pathname}?${next.toString()}`, { scroll: false })
+    return `${pathname}?${next.toString()}`
   }
+  const select = (id: string | null) => router.push(hrefFor(id), { scroll: false })
 
   return (
     // full-bleed on the shell: cancel main padding, fill viewport minus header (and bottom nav on phones)
     <div className="-mx-4 -mt-4 -mb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1rem)] h-[calc(100dvh-3.5rem-var(--bottom-nav-height)-env(safe-area-inset-bottom))] md:-mx-6 md:-mt-6 md:-mb-10 md:h-[calc(100dvh-4rem)]">
       <div className="grid h-full grid-cols-1 md:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]">
         <section className={cn("min-h-0 min-w-0 border-r bg-card", selected && "hidden md:block")} aria-label={t.inbox.title}>
-          <ConversationList selectedId={selected} onSelect={(c) => select(c.id)} initialSearch={params.get("search") ?? undefined} />
+          <ConversationList selectedId={selected} hrefFor={(c) => hrefFor(c.id)} initialSearch={params.get("search") ?? undefined} />
         </section>
         <section className={cn("min-h-0 min-w-0", !selected && "hidden md:block")}>
           {selected ? (

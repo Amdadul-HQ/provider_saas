@@ -7,7 +7,7 @@ import { DataTable, DateText, EmptyState, FilterSelect, SearchInput, StatCard, S
 import type { TicketFilter, TicketKind, TicketListFieldsFragment, TicketPriority, TicketStatus } from "@/gql/graphql"
 import { arrayPageInfo, useCursorPagination } from "@/hooks/use-cursor-pagination"
 import { TICKET_KINDS, TICKET_PRIORITIES, TICKET_STATUSES } from "@/lib/enums"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, useFormat } from "@/i18n"
 import { useTickets, useTicketStats } from "../hooks/use-tickets"
 
 const PAGE = 25
@@ -30,13 +30,17 @@ export function TicketStatsCards() {
 export function TicketTable({
   customerId,
   onRowClick,
+  rowHref,
   emptyAction,
 }: {
   customerId?: string
   onRowClick?: (ticket: TicketListFieldsFragment) => void
+  /** Detail URL per row: rows render as real links (BUG-10). */
+  rowHref?: (ticket: TicketListFieldsFragment) => string
   emptyAction?: React.ReactNode
 }) {
   const t = useT()
+  const f = useFormat()
   const [filter, setFilter] = useState<TicketFilter>({})
   const pager = useCursorPagination(PAGE)
   const effective = useMemo(() => ({ ...filter, customerId }), [filter, customerId])
@@ -55,7 +59,7 @@ export function TicketTable({
         cell: ({ row }) => (
           <div>
             <p className="font-medium">
-              <span className="text-muted-foreground">#{row.original.number}</span> {row.original.title}
+              <span className="text-muted-foreground">#{f.id(row.original.number)}</span> {row.original.title}
             </p>
             <p className="text-xs text-muted-foreground">
               {row.original.customer.name}
@@ -70,7 +74,7 @@ export function TicketTable({
       { id: "assigned", header: t.tickets.assignedTo, cell: ({ row }) => row.original.assignedTo?.name ?? "—" },
       { id: "created", header: t.common.createdAt, cell: ({ row }) => <DateText value={row.original.createdAt} relative /> },
     ],
-    [t],
+    [t, f],
   )
 
   return (
@@ -83,6 +87,7 @@ export function TicketTable({
       pageInfo={arrayPageInfo(rows, PAGE)}
       pagination={{ canPrev: pager.canPrev, onPrev: pager.prev, onNext: pager.next }}
       onRowClick={onRowClick}
+      rowHref={rowHref}
       getRowId={(r) => r.id}
       toolbar={
         <>
@@ -112,7 +117,7 @@ export function TicketTable({
         <div className="space-y-1.5">
           <div className="flex items-start justify-between gap-2">
             <p className="font-medium">
-              <span className="text-muted-foreground">#{tk.number}</span> {tk.title}
+              <span className="text-muted-foreground">#{f.id(tk.number)}</span> {tk.title}
             </p>
             <StatusBadge enum="TicketStatus" value={tk.status} />
           </div>

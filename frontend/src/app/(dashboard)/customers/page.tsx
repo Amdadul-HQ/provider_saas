@@ -20,7 +20,7 @@ export default function CustomersPage() {
   return (
     <>
       <PageHeader title={t.customers.title} description={t.customers.subtitle} actions={newButton} />
-      <CustomerTable onRowClick={(c) => router.push(`/customers/${c.id}`)} emptyAction={newButton} />
+      <CustomerTable rowHref={(c) => `/customers/${c.id}`} emptyAction={newButton} />
       <CustomerFormDialog open={open} onOpenChange={setOpen} onSaved={(c) => router.push(`/customers/${c.id}`)} />
     </>
   )

@@ -473,6 +473,7 @@ type ComplexityRoot struct {
 		Method           func(childComplexity int) int
 		RawText          func(childComplexity int) int
 		ReceivedAt       func(childComplexity int) int
+		Sender           func(childComplexity int) int
 		SenderNumber     func(childComplexity int) int
 		Source           func(childComplexity int) int
 		Status           func(childComplexity int) int
@@ -3452,6 +3453,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.PaymentInboxItem.ReceivedAt(childComplexity), true
+	case "PaymentInboxItem.sender":
+		if e.ComplexityRoot.PaymentInboxItem.Sender == nil {
+			break
+		}
+
+		return e.ComplexityRoot.PaymentInboxItem.Sender(childComplexity), true
 	case "PaymentInboxItem.senderNumber":
 		if e.ComplexityRoot.PaymentInboxItem.SenderNumber == nil {
 			break
@@ -5595,7 +5602,7 @@ type PageInfo { hasNextPage: Boolean! endCursor: String }
 input PageInput { first: Int = 25, after: String }
 
 type Query { health: String! }
-type Mutation { ping: Boolean! @auth }
+type Mutation { ping: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER]) }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/analytics/analytics.graphql", Input: `type DashboardStats {
   activeSubscriptions: Int!
@@ -5621,11 +5628,11 @@ type ChannelStat { platform: SocialPlatform! conversations: Int! customers: Int!
 type AtRiskCustomer { customer: Customer! @goField(forceResolver: true) reason: String! expiresAt: Time dueBalance: Money! }
 
 extend type Query {
-  dashboardStats: DashboardStats! @auth
-  revenueSeries(days: Int = 30): [TimeSeriesPoint!]! @auth
-  productStats(days: Int = 30): [ProductStat!]! @auth
-  channelStats(days: Int = 30): [ChannelStat!]! @auth
-  atRiskCustomers(limit: Int = 20): [AtRiskCustomer!]! @auth
+  dashboardStats: DashboardStats! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  revenueSeries(days: Int = 30): [TimeSeriesPoint!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  productStats(days: Int = 30): [ProductStat!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  channelStats(days: Int = 30): [ChannelStat!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  atRiskCustomers(limit: Int = 20): [AtRiskCustomer!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/auth/auth.graphql", Input: `type User {
@@ -5703,7 +5710,7 @@ type Payment {
   receivedAt: Time!
   createdAt: Time!
 }
-type PaymentInboxItem { id: UUID! source: String! method: PaymentMethod senderNumber: String trxId: String amount: Money rawText: String! status: String! matchedPaymentId: UUID receivedAt: Time! }
+type PaymentInboxItem { id: UUID! source: String! sender: String method: PaymentMethod senderNumber: String trxId: String amount: Money rawText: String! status: String! matchedPaymentId: UUID receivedAt: Time! }
 type LedgerEntry { id: UUID! entryType: LedgerEntryType! amount: Money! refType: String refId: UUID note: String createdBy: User @goField(forceResolver: true) createdAt: Time! }
 type InvoiceConnection { edges: [InvoiceEdge!]! pageInfo: PageInfo! totalCount: Int! }
 type InvoiceEdge { cursor: String! node: Invoice! }
@@ -5717,21 +5724,21 @@ input CreateInvoiceInput { customerId: UUID! items: [InvoiceItemInput!]! discoun
 input PaymentInput { method: PaymentMethod! amount: Money! trxId: String senderNumber: String receivedAt: Time notes: String }
 
 extend type Query {
-  invoices(filter: InvoiceFilter, page: PageInput): InvoiceConnection! @auth
-  invoice(id: UUID!): Invoice @auth
-  payments(filter: PaymentFilter, page: PageInput): PaymentConnection! @auth
-  paymentInbox(status: String, page: PageInput): [PaymentInboxItem!]! @auth
-  ledger(customerId: UUID!): [LedgerEntry!]! @auth
+  invoices(filter: InvoiceFilter, page: PageInput): InvoiceConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  invoice(id: UUID!): Invoice @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  payments(filter: PaymentFilter, page: PageInput): PaymentConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  paymentInbox(status: String, page: PageInput): [PaymentInboxItem!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ledger(customerId: UUID!): [LedgerEntry!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createInvoice(input: CreateInvoiceInput!): Invoice! @auth
-  sendInvoice(id: UUID!, channel: Platform): Invoice! @auth
+  createInvoice(input: CreateInvoiceInput!): Invoice! @auth(roles: [OWNER, ADMIN, STAFF])
+  sendInvoice(id: UUID!, channel: Platform): Invoice! @auth(roles: [OWNER, ADMIN, STAFF])
   voidInvoice(id: UUID!, reason: String): Invoice! @auth(roles: [OWNER, ADMIN])
-  recordPayment(invoiceId: UUID, customerId: UUID, input: PaymentInput!): Payment! @auth
-  verifyPayment(id: UUID!): Payment! @auth
-  rejectPayment(id: UUID!, reason: String): Payment! @auth
-  matchPaymentInbox(inboxId: UUID!, paymentId: UUID!): Payment! @auth
-  ignorePaymentInbox(inboxId: UUID!): Boolean! @auth
+  recordPayment(invoiceId: UUID, customerId: UUID, input: PaymentInput!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  verifyPayment(id: UUID!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  rejectPayment(id: UUID!, reason: String): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  matchPaymentInbox(inboxId: UUID!, paymentId: UUID!): Payment! @auth(roles: [OWNER, ADMIN, STAFF])
+  ignorePaymentInbox(inboxId: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
   addLedgerAdjustment(customerId: UUID!, entryType: LedgerEntryType!, amount: Money!, note: String): LedgerEntry! @auth(roles: [OWNER, ADMIN])
 }
 `, BuiltIn: false},
@@ -5790,16 +5797,16 @@ type PostTarget { id: UUID! socialAccount: SocialAccount! @goField(forceResolver
 input PostInput { body: String! media: JSON scheduledAt: Time socialAccountIds: [UUID!]! }
 
 extend type Query {
-  posts(status: PostStatus, page: PageInput): [Post!]! @auth
-  post(id: UUID!): Post @auth
+  posts(status: PostStatus, page: PageInput): [Post!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  post(id: UUID!): Post @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createPost(input: PostInput!): Post! @auth
-  updatePost(id: UUID!, input: PostInput!): Post! @auth
-  publishPostNow(id: UUID!): Post! @auth
-  deletePost(id: UUID!): Boolean! @auth
+  createPost(input: PostInput!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  updatePost(id: UUID!, input: PostInput!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  publishPostNow(id: UUID!): Post! @auth(roles: [OWNER, ADMIN, STAFF])
+  deletePost(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
   """Generate a branded price-list image/PDF URL from active products."""
-  generatePriceList(format: String = "png"): String! @auth
+  generatePriceList(format: String = "png"): String! @auth(roles: [OWNER, ADMIN, STAFF])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/customer/customer.graphql", Input: `enum CustomerStatus { LEAD ACTIVE INACTIVE BLOCKED }
@@ -5842,12 +5849,12 @@ extend type Query {
   customerNotes(customerId: UUID!): [CustomerNote!]! @auth
 }
 extend type Mutation {
-  createCustomer(input: CreateCustomerInput!): Customer! @auth
-  updateCustomer(id: UUID!, input: UpdateCustomerInput!): Customer! @auth
+  createCustomer(input: CreateCustomerInput!): Customer! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  updateCustomer(id: UUID!, input: UpdateCustomerInput!): Customer! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
   deleteCustomer(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  addCustomerNote(customerId: UUID!, body: String!): CustomerNote! @auth
+  addCustomerNote(customerId: UUID!, body: String!): CustomerNote! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
   mergeCustomers(keepId: UUID!, mergeId: UUID!): Customer! @auth(roles: [OWNER, ADMIN])
-  linkIdentity(customerId: UUID!, identityId: UUID!): Customer! @auth
+  linkIdentity(customerId: UUID!, identityId: UUID!): Customer! @auth(roles: [OWNER, ADMIN, STAFF])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/inbox/inbox.graphql", Input: `enum ConversationStatus { OPEN PENDING CLOSED SPAM }
@@ -5896,19 +5903,19 @@ input SendMessageInput { conversationId: UUID! body: String templateId: UUID var
 input MessageTemplateInput { key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean = true }
 
 extend type Query {
-  conversations(filter: ConversationFilter, page: PageInput): ConversationConnection! @auth
-  conversation(id: UUID!): Conversation @auth
-  inboxCounts: InboxCounts! @auth
-  messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth
+  conversations(filter: ConversationFilter, page: PageInput): ConversationConnection! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  conversation(id: UUID!): Conversation @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  inboxCounts: InboxCounts! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  sendMessage(input: SendMessageInput!): Message! @auth
-  assignConversation(id: UUID!, userId: UUID): Conversation! @auth
-  setConversationStatus(id: UUID!, status: ConversationStatus!): Conversation! @auth
-  markConversationRead(id: UUID!): Conversation! @auth
-  addConversationLabel(id: UUID!, label: String!): Conversation! @auth
-  removeConversationLabel(id: UUID!, label: String!): Conversation! @auth
-  linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth
+  sendMessage(input: SendMessageInput!): Message! @auth(roles: [OWNER, ADMIN, STAFF])
+  assignConversation(id: UUID!, userId: UUID): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  setConversationStatus(id: UUID!, status: ConversationStatus!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  markConversationRead(id: UUID!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  addConversationLabel(id: UUID!, label: String!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  removeConversationLabel(id: UUID!, label: String!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
+  linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth(roles: [OWNER, ADMIN, STAFF])
   upsertMessageTemplate(id: UUID, input: MessageTemplateInput!): MessageTemplate! @auth(roles: [OWNER, ADMIN])
   deleteMessageTemplate(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
 }
@@ -5944,9 +5951,9 @@ input CreateMasterAccountInput { productId: UUID! supplierId: UUID label: String
 input UpdateMasterAccountInput { supplierId: UUID label: String loginHint: String totalSlots: Int purchaseCost: Money purchasedAt: Time expiresAt: Time status: MasterAccountStatus notes: String }
 
 extend type Query {
-  suppliers: [Supplier!]! @auth
-  masterAccounts(filter: MasterAccountFilter, page: PageInput): [MasterAccount!]! @auth
-  masterAccount(id: UUID!): MasterAccount @auth
+  suppliers: [Supplier!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  masterAccounts(filter: MasterAccountFilter, page: PageInput): [MasterAccount!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  masterAccount(id: UUID!): MasterAccount @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   freeSlots(productId: UUID!): [Slot!]! @auth
 }
 extend type Mutation {
@@ -5957,7 +5964,7 @@ extend type Mutation {
   updateMasterAccount(id: UUID!, input: UpdateMasterAccountInput!): MasterAccount! @auth(roles: [OWNER, ADMIN])
   setMasterAccountCredential(id: UUID!, username: String!, password: String!, extra: JSON): Boolean! @auth(roles: [OWNER, ADMIN])
   revealMasterAccountCredential(id: UUID!): RevealedCredential! @auth(roles: [OWNER, ADMIN])
-  updateSlot(id: UUID!, label: String, pin: String, status: SlotStatus): Slot! @auth
+  updateSlot(id: UUID!, label: String, pin: String, status: SlotStatus): Slot! @auth(roles: [OWNER, ADMIN])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/reminder/reminder.graphql", Input: `enum ReminderTrigger { BEFORE_EXPIRY ON_EXPIRY AFTER_EXPIRY INVOICE_DUE INVOICE_OVERDUE MASTER_EXPIRY }
@@ -5970,14 +5977,14 @@ type Reminder { id: UUID! rule: ReminderRule @goField(forceResolver: true) custo
 input ReminderRuleInput { name: String! trigger: ReminderTrigger! offsetDays: Int = 0 sendHour: Int = 10 channel: ReminderChannel = PREFERRED templateId: UUID productId: UUID isActive: Boolean = true }
 
 extend type Query {
-  reminderRules: [ReminderRule!]! @auth
-  reminders(status: ReminderStatus, customerId: UUID, page: PageInput): [Reminder!]! @auth
+  reminderRules: [ReminderRule!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  reminders(status: ReminderStatus, customerId: UUID, page: PageInput): [Reminder!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
   upsertReminderRule(id: UUID, input: ReminderRuleInput!): ReminderRule! @auth(roles: [OWNER, ADMIN])
   deleteReminderRule(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  sendReminderNow(subscriptionId: UUID!, templateId: UUID, channel: ReminderChannel = PREFERRED): Reminder! @auth
-  cancelReminder(id: UUID!): Boolean! @auth
+  sendReminderNow(subscriptionId: UUID!, templateId: UUID, channel: ReminderChannel = PREFERRED): Reminder! @auth(roles: [OWNER, ADMIN, STAFF])
+  cancelReminder(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/social/social.graphql", Input: `enum SocialPlatform { FACEBOOK INSTAGRAM WHATSAPP TELEGRAM }
@@ -6005,8 +6012,8 @@ input ConnectTelegramInput { botToken: String! }
 input ConnectWhatsAppInput { phoneNumberId: String! businessAccountId: String! accessToken: String! displayName: String! }
 
 extend type Query {
-  socialAccounts: [SocialAccount!]! @auth
-  socialAccount(id: UUID!): SocialAccount @auth
+  socialAccounts: [SocialAccount!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  socialAccount(id: UUID!): SocialAccount @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
   """Returns the Meta OAuth URL; the callback (/webhooks/meta/oauth) stores pages in vault."""
@@ -6015,7 +6022,7 @@ extend type Mutation {
   connectTelegram(input: ConnectTelegramInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
   connectWhatsApp(input: ConnectWhatsAppInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
   disconnectSocialAccount(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
-  syncSocialAccount(id: UUID!): SocialAccount! @auth
+  syncSocialAccount(id: UUID!): SocialAccount! @auth(roles: [OWNER, ADMIN])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/storefront/storefront.graphql", Input: `enum OrderStatus { NEW AWAITING_PAYMENT PAID DELIVERED CANCELLED }
@@ -6071,7 +6078,7 @@ input PlaceOrderInput { slug: String! productId: UUID! planId: UUID! quantity: I
 input OrderFilter { status: OrderStatus source: OrderSource search: String }
 
 extend type Query {
-  storefront: Storefront @auth
+  storefront: Storefront @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   orders(filter: OrderFilter, page: PageInput): [Order!]! @auth
   order(id: UUID!): Order @auth
   publicStorefront(slug: String!): PublicStorefront
@@ -6081,9 +6088,9 @@ extend type Query {
 extend type Mutation {
   upsertStorefront(input: StorefrontInput!): Storefront! @auth(roles: [OWNER, ADMIN])
   placeOrder(input: PlaceOrderInput!): PublicOrder!
-  confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth
-  cancelOrder(id: UUID!, reason: String): Order! @auth
-  createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth
+  confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
+  cancelOrder(id: UUID!, reason: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
+  createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth(roles: [OWNER, ADMIN, STAFF])
   portalRequestRenewal(token: String!, subscriptionId: UUID!, paymentMethod: PaymentMethod, trxId: String): PublicOrder!
 }
 `, BuiltIn: false},
@@ -6136,11 +6143,11 @@ extend type Query {
   expiringSubscriptions(days: Int = 7): [Subscription!]! @auth
 }
 extend type Mutation {
-  createSubscription(input: CreateSubscriptionInput!): Subscription! @auth
-  renewSubscription(id: UUID!, input: RenewSubscriptionInput!): Subscription! @auth
-  markDelivered(id: UUID!, deliveryNote: String): Subscription! @auth
+  createSubscription(input: CreateSubscriptionInput!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  renewSubscription(id: UUID!, input: RenewSubscriptionInput!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER])
+  markDelivered(id: UUID!, deliveryNote: String): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
   cancelSubscription(id: UUID!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
-  reassignSlot(id: UUID!, slotId: UUID!): Subscription! @auth
+  reassignSlot(id: UUID!, slotId: UUID!): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
   extendSubscription(id: UUID!, days: Int!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN])
 }
 `, BuiltIn: false},
@@ -6178,8 +6185,8 @@ extend type Mutation {
   resendInvite(memberId: UUID!): TenantMember! @auth(roles: [OWNER, ADMIN])
   """Generates a new SMS-forwarder bearer token; the full token is returned exactly once."""
   rotateSmsWebhookToken: String! @auth(roles: [OWNER, ADMIN])
-  markNotificationRead(id: UUID!): Boolean! @auth
-  markAllNotificationsRead: Boolean! @auth
+  markNotificationRead(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  markAllNotificationsRead: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/ticket/ticket.graphql", Input: `enum TicketKind { REPLACEMENT COMPLAINT QUESTION REFUND OTHER }
@@ -6214,16 +6221,16 @@ input CreateTicketInput { customerId: UUID! subscriptionId: UUID conversationId:
 input UpdateTicketInput { priority: TicketPriority status: TicketStatus title: String description: String reason: String assignedTo: UUID }
 
 extend type Query {
-  tickets(filter: TicketFilter, page: PageInput): [Ticket!]! @auth
-  ticket(id: UUID!): Ticket @auth
-  ticketStats: TicketStats! @auth
+  tickets(filter: TicketFilter, page: PageInput): [Ticket!]! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ticket(id: UUID!): Ticket @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
+  ticketStats: TicketStats! @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
 }
 extend type Mutation {
-  createTicket(input: CreateTicketInput!): Ticket! @auth
-  updateTicket(id: UUID!, input: UpdateTicketInput!): Ticket! @auth
-  addTicketComment(ticketId: UUID!, body: String!, isInternal: Boolean = true): TicketComment! @auth
+  createTicket(input: CreateTicketInput!): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
+  updateTicket(id: UUID!, input: UpdateTicketInput!): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
+  addTicketComment(ticketId: UUID!, body: String!, isInternal: Boolean = true): TicketComment! @auth(roles: [OWNER, ADMIN, STAFF])
   """Resolve a replacement ticket: moves the subscription to newSlotId (or next free), marks old slot banned/retired."""
-  resolveReplacement(ticketId: UUID!, newSlotId: UUID, markOldSlot: SlotStatus = BANNED, extendDays: Int = 0): Ticket! @auth
+  resolveReplacement(ticketId: UUID!, newSlotId: UUID, markOldSlot: SlotStatus = BANNED, extendDays: Int = 0): Ticket! @auth(roles: [OWNER, ADMIN, STAFF])
 }
 `, BuiltIn: false},
 }
@@ -6871,6 +6878,8 @@ func (ec *executionContext) childFields_PaymentInboxItem(ctx context.Context, fi
 		return ec.fieldContext_PaymentInboxItem_id(ctx, field)
 	case "source":
 		return ec.fieldContext_PaymentInboxItem_source(ctx, field)
+	case "sender":
+		return ec.fieldContext_PaymentInboxItem_sender(ctx, field)
 	case "method":
 		return ec.fieldContext_PaymentInboxItem_method(ctx, field)
 	case "senderNumber":
@@ -14383,11 +14392,16 @@ func (ec *executionContext) _Mutation_ping(ctx context.Context, field graphql.Co
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER", "VIEWER"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -14754,11 +14768,16 @@ func (ec *executionContext) _Mutation_createInvoice(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Invoice
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Invoice
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -14811,11 +14830,16 @@ func (ec *executionContext) _Mutation_sendInvoice(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Invoice
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Invoice
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -14930,11 +14954,16 @@ func (ec *executionContext) _Mutation_recordPayment(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Payment
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Payment
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -14987,11 +15016,16 @@ func (ec *executionContext) _Mutation_verifyPayment(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Payment
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Payment
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15044,11 +15078,16 @@ func (ec *executionContext) _Mutation_rejectPayment(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Payment
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Payment
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15101,11 +15140,16 @@ func (ec *executionContext) _Mutation_matchPaymentInbox(ctx context.Context, fie
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Payment
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Payment
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15158,11 +15202,16 @@ func (ec *executionContext) _Mutation_ignorePaymentInbox(ctx context.Context, fi
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15587,11 +15636,16 @@ func (ec *executionContext) _Mutation_createPost(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Post
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Post
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15644,11 +15698,16 @@ func (ec *executionContext) _Mutation_updatePost(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Post
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Post
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15701,11 +15760,16 @@ func (ec *executionContext) _Mutation_publishPostNow(ctx context.Context, field 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Post
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Post
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15758,11 +15822,16 @@ func (ec *executionContext) _Mutation_deletePost(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15815,11 +15884,16 @@ func (ec *executionContext) _Mutation_generatePriceList(ctx context.Context, fie
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal string
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal string
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15872,11 +15946,16 @@ func (ec *executionContext) _Mutation_createCustomer(ctx context.Context, field 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER"})
+				if err != nil {
+					var zeroVal *model.Customer
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Customer
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -15929,11 +16008,16 @@ func (ec *executionContext) _Mutation_updateCustomer(ctx context.Context, field 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER"})
+				if err != nil {
+					var zeroVal *model.Customer
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Customer
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16048,11 +16132,16 @@ func (ec *executionContext) _Mutation_addCustomerNote(ctx context.Context, field
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER"})
+				if err != nil {
+					var zeroVal *model.CustomerNote
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.CustomerNote
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16167,11 +16256,16 @@ func (ec *executionContext) _Mutation_linkIdentity(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Customer
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Customer
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16224,11 +16318,16 @@ func (ec *executionContext) _Mutation_sendMessage(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Message
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Message
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16281,11 +16380,16 @@ func (ec *executionContext) _Mutation_assignConversation(ctx context.Context, fi
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16338,11 +16442,16 @@ func (ec *executionContext) _Mutation_setConversationStatus(ctx context.Context,
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16395,11 +16504,16 @@ func (ec *executionContext) _Mutation_markConversationRead(ctx context.Context, 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16452,11 +16566,16 @@ func (ec *executionContext) _Mutation_addConversationLabel(ctx context.Context, 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16509,11 +16628,16 @@ func (ec *executionContext) _Mutation_removeConversationLabel(ctx context.Contex
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -16566,11 +16690,16 @@ func (ec *executionContext) _Mutation_linkConversationCustomer(ctx context.Conte
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -17181,11 +17310,16 @@ func (ec *executionContext) _Mutation_updateSlot(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN"})
+				if err != nil {
+					var zeroVal *model.Slot
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Slot
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -17362,11 +17496,16 @@ func (ec *executionContext) _Mutation_sendReminderNow(ctx context.Context, field
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Reminder
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Reminder
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -17419,11 +17558,16 @@ func (ec *executionContext) _Mutation_cancelReminder(ctx context.Context, field 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -17786,11 +17930,16 @@ func (ec *executionContext) _Mutation_syncSocialAccount(ctx context.Context, fie
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN"})
+				if err != nil {
+					var zeroVal *model.SocialAccount
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.SocialAccount
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -17949,11 +18098,16 @@ func (ec *executionContext) _Mutation_confirmOrder(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Order
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Order
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18006,11 +18160,16 @@ func (ec *executionContext) _Mutation_cancelOrder(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Order
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Order
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18063,11 +18222,16 @@ func (ec *executionContext) _Mutation_createPortalLink(ctx context.Context, fiel
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal string
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal string
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18164,11 +18328,16 @@ func (ec *executionContext) _Mutation_createSubscription(ctx context.Context, fi
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Subscription
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18221,11 +18390,16 @@ func (ec *executionContext) _Mutation_renewSubscription(ctx context.Context, fie
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Subscription
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18278,11 +18452,16 @@ func (ec *executionContext) _Mutation_markDelivered(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Subscription
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18397,11 +18576,16 @@ func (ec *executionContext) _Mutation_reassignSlot(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Subscription
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Subscription
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18867,11 +19051,16 @@ func (ec *executionContext) _Mutation_markNotificationRead(ctx context.Context, 
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER", "VIEWER"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18923,11 +19112,16 @@ func (ec *executionContext) _Mutation_markAllNotificationsRead(ctx context.Conte
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER", "VIEWER"})
+				if err != nil {
+					var zeroVal bool
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -18960,11 +19154,16 @@ func (ec *executionContext) _Mutation_createTicket(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Ticket
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Ticket
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -19017,11 +19216,16 @@ func (ec *executionContext) _Mutation_updateTicket(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Ticket
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Ticket
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -19074,11 +19278,16 @@ func (ec *executionContext) _Mutation_addTicketComment(ctx context.Context, fiel
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.TicketComment
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.TicketComment
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -19131,11 +19340,16 @@ func (ec *executionContext) _Mutation_resolveReplacement(ctx context.Context, fi
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF"})
+				if err != nil {
+					var zeroVal *model.Ticket
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Ticket
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -20386,6 +20600,29 @@ func (ec *executionContext) _PaymentInboxItem_source(ctx context.Context, field 
 	)
 }
 func (ec *executionContext) fieldContext_PaymentInboxItem_source(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("PaymentInboxItem", field, false, false, "String")
+}
+
+func (ec *executionContext) _PaymentInboxItem_sender(ctx context.Context, field graphql.CollectedField, obj *model.PaymentInboxItem) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_PaymentInboxItem_sender(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Sender, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_PaymentInboxItem_sender(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("PaymentInboxItem", field, false, false, "String")
 }
 
@@ -22941,11 +23178,16 @@ func (ec *executionContext) _Query_dashboardStats(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.DashboardStats
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.DashboardStats
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -22987,11 +23229,16 @@ func (ec *executionContext) _Query_revenueSeries(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.TimeSeriesPoint
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.TimeSeriesPoint
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23044,11 +23291,16 @@ func (ec *executionContext) _Query_productStats(ctx context.Context, field graph
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.ProductStat
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.ProductStat
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23101,11 +23353,16 @@ func (ec *executionContext) _Query_channelStats(ctx context.Context, field graph
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.ChannelStat
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.ChannelStat
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23158,11 +23415,16 @@ func (ec *executionContext) _Query_atRiskCustomers(ctx context.Context, field gr
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.AtRiskCustomer
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.AtRiskCustomer
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23304,11 +23566,16 @@ func (ec *executionContext) _Query_invoices(ctx context.Context, field graphql.C
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.InvoiceConnection
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.InvoiceConnection
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23361,11 +23628,16 @@ func (ec *executionContext) _Query_invoice(ctx context.Context, field graphql.Co
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.Invoice
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Invoice
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23418,11 +23690,16 @@ func (ec *executionContext) _Query_payments(ctx context.Context, field graphql.C
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.PaymentConnection
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.PaymentConnection
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23475,11 +23752,16 @@ func (ec *executionContext) _Query_paymentInbox(ctx context.Context, field graph
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.PaymentInboxItem
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.PaymentInboxItem
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23532,11 +23814,16 @@ func (ec *executionContext) _Query_ledger(ctx context.Context, field graphql.Col
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.LedgerEntry
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.LedgerEntry
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23703,11 +23990,16 @@ func (ec *executionContext) _Query_posts(ctx context.Context, field graphql.Coll
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.Post
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.Post
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23760,11 +24052,16 @@ func (ec *executionContext) _Query_post(ctx context.Context, field graphql.Colle
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.Post
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Post
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -23988,11 +24285,16 @@ func (ec *executionContext) _Query_conversations(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.ConversationConnection
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.ConversationConnection
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24045,11 +24347,16 @@ func (ec *executionContext) _Query_conversation(ctx context.Context, field graph
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.Conversation
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Conversation
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24101,11 +24408,16 @@ func (ec *executionContext) _Query_inboxCounts(ctx context.Context, field graphq
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.InboxCounts
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.InboxCounts
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24147,11 +24459,16 @@ func (ec *executionContext) _Query_messageTemplates(ctx context.Context, field g
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.MessageTemplate
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.MessageTemplate
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24203,11 +24520,16 @@ func (ec *executionContext) _Query_suppliers(ctx context.Context, field graphql.
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.Supplier
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.Supplier
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24249,11 +24571,16 @@ func (ec *executionContext) _Query_masterAccounts(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.MasterAccount
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.MasterAccount
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24306,11 +24633,16 @@ func (ec *executionContext) _Query_masterAccount(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.MasterAccount
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.MasterAccount
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24419,11 +24751,16 @@ func (ec *executionContext) _Query_reminderRules(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.ReminderRule
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.ReminderRule
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24465,11 +24802,16 @@ func (ec *executionContext) _Query_reminders(ctx context.Context, field graphql.
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.Reminder
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.Reminder
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24521,11 +24863,16 @@ func (ec *executionContext) _Query_socialAccounts(ctx context.Context, field gra
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.SocialAccount
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.SocialAccount
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24567,11 +24914,16 @@ func (ec *executionContext) _Query_socialAccount(ctx context.Context, field grap
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.SocialAccount
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.SocialAccount
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -24623,11 +24975,16 @@ func (ec *executionContext) _Query_storefront(ctx context.Context, field graphql
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.Storefront
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Storefront
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -25250,11 +25607,16 @@ func (ec *executionContext) _Query_tickets(ctx context.Context, field graphql.Co
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal []model.Ticket
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal []model.Ticket
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -25307,11 +25669,16 @@ func (ec *executionContext) _Query_ticket(ctx context.Context, field graphql.Col
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.Ticket
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.Ticket
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -25363,11 +25730,16 @@ func (ec *executionContext) _Query_ticketStats(ctx context.Context, field graphq
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "VIEWER"})
+				if err != nil {
+					var zeroVal *model.TicketStats
+					return zeroVal, err
+				}
 				if ec.Directives.Auth == nil {
 					var zeroVal *model.TicketStats
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, nil)
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
 			}
 
 			next = directive1
@@ -35795,6 +36167,11 @@ func (ec *executionContext) _PaymentInboxItem(ctx context.Context, sel ast.Selec
 		case "source":
 			out.Values[i] = ec._PaymentInboxItem_source(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "sender":
+			out.Values[i] = ec._PaymentInboxItem_sender(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
 				out.Invalids++
 			}
 		case "method":

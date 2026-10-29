@@ -20,6 +20,7 @@ import (
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/money"
 	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/vault"
 )
 
 // Demo credentials created by `api seed`.
@@ -122,7 +123,7 @@ func (c *Container) Seed(ctx context.Context) (SeedResult, error) {
 	} else if err != nil && !errors.Is(err, apperr.ErrUnauthenticated) {
 		return res, err
 	} else {
-		err = db.WithTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
+		err = db.WithPlatformTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
 			var err error
 			res, err = c.seed(ctx)
 			return err
@@ -131,10 +132,40 @@ func (c *Container) Seed(ctx context.Context) (SeedResult, error) {
 			return res, err
 		}
 	}
+	if err := c.pinVaultKey(ctx, res.TenantID); err != nil {
+		return res, err
+	}
 	// Inbox / storefront / tickets / reminders / content demo data: its own all-or-nothing
 	// transaction, applied once (also to a demo tenant seeded before these modules existed).
 	res.Engagement, err = c.seedEngagement(ctx, res.TenantID, res.UserID)
 	return res, err
+}
+
+// pinVaultKey records the fingerprint of the VAULT_KEY the demo secrets were written with
+// (QA BUG-01). A re-run with another key fails loudly instead of leaving undecryptable data;
+// `api serve` compares it at startup (vault.SelfCheck).
+func (c *Container) pinVaultKey(ctx context.Context, tid uuid.UUID) error {
+	fp := c.Vault.Fingerprint()
+	var cur string
+	err := db.WithPlatformTx(ctx, c.Pool, func(ctx context.Context, tx pgx.Tx) error {
+		if err := tx.QueryRow(ctx, `SELECT COALESCE(settings->>$2, '') FROM tenants WHERE id = $1`, tid, vault.SettingKeyFingerprint).Scan(&cur); err != nil {
+			return err
+		}
+		if cur != "" {
+			return nil
+		}
+		_, err := tx.Exec(ctx, `UPDATE tenants SET settings = settings || jsonb_build_object($2::text, $3::text) WHERE id = $1`,
+			tid, vault.SettingKeyFingerprint, fp)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if cur != "" && cur != fp {
+		return fmt.Errorf("seed: VAULT_KEY fingerprint %s differs from the key the demo tenant was seeded with (%s); "+
+			"use the VAULT_KEY from .env.example or re-create the database", fp, cur)
+	}
+	return nil
 }
 
 func (c *Container) seed(ctx context.Context) (SeedResult, error) {
@@ -294,8 +325,9 @@ func (c *Container) seed(ctx context.Context) (SeedResult, error) {
 			seedCustomers[3].phone, now.In(billing.Dhaka).Format("02/01/2006 15:04")),
 		"Money Received.\nAmount: Tk 500.00\nSender: 01899000000\nRef: N/A\nTxnID: 7NGD8XYZ\nBalance: Tk 2,000.00\n" + now.In(billing.Dhaka).Format("02/01/2006 15:04"),
 	}
-	for _, s := range sms {
-		if _, err := c.Billing.IngestSMS(ctx, tid, s, now); err != nil {
+	for i, s := range sms {
+		from := []string{"bKash", "NAGAD"}[i] // official sender ids (H4 allowlist)
+		if _, err := c.Billing.IngestSMS(ctx, tid, from, s, now); err != nil {
 			return res, fmt.Errorf("ingest sms: %w", err)
 		}
 	}

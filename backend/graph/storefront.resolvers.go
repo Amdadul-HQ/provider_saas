@@ -46,6 +46,9 @@ func (r *mutationResolver) ConfirmOrder(ctx context.Context, id uuid.UUID, slotI
 	if err != nil {
 		return nil, err
 	}
+	if err := r.requirePaymentVerifier(ctx, tid); err != nil { // confirming verifies the order's payment
+		return nil, err
+	}
 	o, err := r.StorefrontSvc.ConfirmOrder(ctx, tid, uid, id, slotID, deliveryNote)
 	if err != nil {
 		return nil, err

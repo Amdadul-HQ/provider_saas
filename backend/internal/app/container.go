@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -35,6 +36,7 @@ import (
 	"provider_saas/internal/platform/gql"
 	"provider_saas/internal/platform/httpx"
 	"provider_saas/internal/platform/jobs"
+	"provider_saas/internal/platform/lockout"
 	"provider_saas/internal/platform/vault"
 )
 
@@ -69,6 +71,8 @@ type Container struct {
 	inline *jobs.Worker
 
 	Resolver *graph.Resolver
+
+	closers []func() error
 }
 
 // New connects to Postgres and builds all services.
@@ -95,8 +99,9 @@ func NewWithPool(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*Cont
 		Tokens: pauth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL)}
 
 	// auth <-> tenant: tenant gets a user directory that does not depend on tenant.
-	c.Tenants = tenant.NewService(pool, auth.NewUserDirectory(pool), v)
-	c.Auth = auth.NewService(pool, c.Tokens, cfg.JWTRefreshTTL, c.Tenants)
+	c.Tenants = tenant.NewService(pool, auth.NewUserDirectory(pool), v, cfg.PublicAppURL)
+	idLimiter, ipLimiter := c.loginLimiters()
+	c.Auth = auth.NewService(pool, c.Tokens, cfg.JWTRefreshTTL, c.Tenants, idLimiter, ipLimiter)
 	c.Customers = customer.NewService(pool)
 	c.Catalog = catalog.NewService(pool)
 	c.Inventory = inventory.NewService(pool, c.Catalog, v)
@@ -111,14 +116,15 @@ func NewWithPool(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*Cont
 		GraphVersion: cfg.MetaGraphVersion, PublicAPIURL: cfg.PublicAPIURL, PublicAppURL: cfg.PublicAppURL, Secret: []byte(cfg.JWTSecret)})
 	c.inline = jobs.NewWorker(pool, log)
 	runInline := func(ctx context.Context, id int64) (bool, error) { return c.inline.RunByID(ctx, id) }
-	c.Inbox = inbox.NewService(pool, c.Social, c.Customers, c.Tenants, c.Tenants, c.Queue, runInline)
+	c.Inbox = inbox.NewService(pool, c.Social, c.Customers, c.Tenants, c.Tenants, c.Queue, runInline, v)
 
 	// billing notifies through the inbox and triggers delivery when an invoice is fully paid.
-	c.Billing = billing.NewService(pool, c.Customers, c.Inbox, billing.PaidHookFunc(c.onInvoicePaid))
-	c.Subscriptions = subscription.NewService(pool, c.Customers, c.Catalog, c.Inventory, c.Billing)
+	c.Billing = billing.NewService(pool, c.Customers, c.Inbox, c.Tenants, billing.PaidHookFunc(c.onInvoicePaid))
+	c.Subscriptions = subscription.NewService(pool, c.Customers, c.Catalog, c.Inventory, c.Billing, c.Tenants)
 	c.Analytics = analytics.NewService(pool)
 	c.Storefront = storefront.NewService(pool, storefront.Deps{Customers: c.Customers, Catalog: c.Catalog, Inventory: c.Inventory,
-		Billing: c.Billing, Subscriptions: c.Subscriptions, Messenger: c.Inbox, Notifier: c.Tenants, PublicAppURL: cfg.PublicAppURL})
+		Billing: c.Billing, Subscriptions: c.Subscriptions, Messenger: c.Inbox, Notifier: c.Tenants, Auditor: c.Tenants,
+		PublicAppURL: cfg.PublicAppURL})
 	c.Tickets = ticket.NewService(pool, ticket.Deps{Subscriptions: c.Subscriptions, Slots: c.Inventory, Customers: c.Customers,
 		Catalog: c.Catalog, Members: c.Tenants, Messenger: c.Inbox, Queue: c.Queue})
 	c.Reminders = reminder.NewService(pool, reminder.Deps{Messenger: c.Inbox, Templates: c.Inbox, Portal: c.Storefront,
@@ -150,7 +156,8 @@ func (c *Container) HTTPHandler() http.Handler {
 		CORSOrigins:  c.Cfg.CORSOrigins,
 		Dev:          c.Cfg.IsDev(),
 		RateLimitRPS: c.Cfg.RateLimitRPS, RateBurst: c.Cfg.RateLimitBurst,
-		Mount: c.mountREST,
+		TrustedProxyCIDRs: c.Cfg.TrustedProxyCIDRs,
+		Mount:             c.mountREST,
 	})
 }
 
@@ -163,8 +170,8 @@ func (c *Container) mountREST(r chi.Router) {
 		VerifyToken:  c.Cfg.MetaVerifyToken,
 		PublicAppURL: c.Cfg.PublicAppURL,
 		SMSTenant:    c.Tenants.VerifySMSWebhookToken,
-		SMSIngest: func(ctx context.Context, tid uuid.UUID, raw string, at time.Time) error {
-			_, err := c.Billing.IngestSMS(ctx, tid, raw, at)
+		SMSIngest: func(ctx context.Context, tid uuid.UUID, from, raw string, at time.Time) error {
+			_, err := c.Billing.IngestSMS(ctx, tid, from, raw, at)
 			return err
 		},
 		Log: c.Log,
@@ -213,5 +220,27 @@ func (c *Container) onInvoicePaid(ctx context.Context, tid, invoiceID uuid.UUID)
 	return nil
 }
 
+// loginLimiters returns the login lockout limiters (SECURITY H6): shared through Redis
+// when REDIS_URL is reachable, otherwise bounded in-memory LRUs (per process).
+func (c *Container) loginLimiters() (id, ip lockout.Limiter) {
+	if c.Cfg.RedisURL != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		rid, err1 := lockout.NewRedis(ctx, c.Cfg.RedisURL, lockout.DefaultLogin)
+		rip, err2 := lockout.NewRedis(ctx, c.Cfg.RedisURL, auth.IPPolicy)
+		if err1 == nil && err2 == nil {
+			c.closers = append(c.closers, rid.Close, rip.Close)
+			return rid, rip
+		}
+		c.Log.Warn("login limiter: redis unavailable, using in-memory limiter", "err", errors.Join(err1, err2))
+	}
+	return lockout.NewMemory(lockout.DefaultLogin, 100_000), lockout.NewMemory(auth.IPPolicy, 100_000)
+}
+
 // Close releases resources.
-func (c *Container) Close() { c.Pool.Close() }
+func (c *Container) Close() {
+	for _, f := range c.closers {
+		_ = f()
+	}
+	c.Pool.Close()
+}

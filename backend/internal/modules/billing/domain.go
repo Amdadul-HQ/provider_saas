@@ -105,6 +105,7 @@ type Payment struct {
 type InboxItem struct {
 	ID               uuid.UUID
 	Source           string
+	Sender           *string // SMS sender id reported by the forwarder ("bKash", "16247", ...)
 	Method           *string
 	SenderNumber     *string
 	TrxID            *string
@@ -247,6 +248,60 @@ func (in *PaymentInput) Validate() error {
 		}
 	}
 	return nil
+}
+
+// DefaultSMSSenders are the sender ids whose SMS may auto-verify a payment, per method
+// (SECURITY H4). A tenant can override them with settings.payment_sms_senders
+// ({"bkash": ["bKash","16247"], ...}). Personal 11-digit numbers never qualify.
+var DefaultSMSSenders = map[string][]string{
+	"bkash":  {"bKash", "16247"},
+	"nagad":  {"NAGAD", "16167"},
+	"rocket": {"Rocket", "16216"},
+}
+
+// SettingSMSSenders / SettingAllowOverpayment are tenants.settings keys used by billing.
+const (
+	SettingSMSSenders       = "payment_sms_senders"
+	SettingAllowOverpayment = "allow_overpayment"
+)
+
+// SenderAllowed reports whether an SMS from sender may auto-verify a payment of method.
+func SenderAllowed(method, sender string, settings map[string]any) bool {
+	sender = normSender(sender)
+	if sender == "" {
+		return false
+	}
+	allowed := DefaultSMSSenders[method]
+	if custom, ok := settings[SettingSMSSenders].(map[string]any); ok {
+		if list, ok := custom[method].([]any); ok {
+			allowed = allowed[:0:0]
+			for _, v := range list {
+				if s, ok := v.(string); ok {
+					allowed = append(allowed, s)
+				}
+			}
+		}
+	}
+	for _, a := range allowed {
+		if a = normSender(a); a != "" && a == sender {
+			return true
+		}
+	}
+	return false
+}
+
+func normSender(s string) string {
+	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(s), "+")))
+}
+
+// AllowOverpayment reads the tenant switch (default false; QA BUG-04).
+func AllowOverpayment(settings map[string]any) bool {
+	for _, k := range []string{SettingAllowOverpayment, "allowOverpayment"} {
+		if v, ok := settings[k].(bool); ok {
+			return v
+		}
+	}
+	return false
 }
 
 // IsMobileMoney reports whether method is a mobile financial service with TrxIDs.

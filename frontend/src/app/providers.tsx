@@ -21,9 +21,9 @@ function Bootstrap() {
   return null
 }
 
-export function Providers({ children }: { children: ReactNode }) {
+export function Providers({ children, nonce }: { children: ReactNode; nonce?: string }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem disableTransitionOnChange nonce={nonce}>
       <GraphQLProvider>
         <TooltipProvider delayDuration={300}>
           <Bootstrap />

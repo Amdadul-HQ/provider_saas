@@ -3,6 +3,7 @@ fragment TenantMemberFields on TenantMember {
   role
   commissionBps
   status
+  inviteExpiresAt
   createdAt
   user { id name email phone avatarUrl }
 }
@@ -28,8 +29,17 @@ mutation UpdateTenant($input: UpdateTenantInput!) {
   updateTenant(input: $input) { id name currency timezone locale settings }
 }
 
+# inviteUrl carries the one-time token: only selected right after invite/resend, never in lists
 mutation InviteMember($input: InviteMemberInput!) {
-  inviteMember(input: $input) { ...TenantMemberFields }
+  inviteMember(input: $input) { ...TenantMemberFields inviteUrl }
+}
+
+mutation ResendInvite($memberId: UUID!) {
+  resendInvite(memberId: $memberId) { ...TenantMemberFields inviteUrl }
+}
+
+mutation RotateSmsWebhookToken {
+  rotateSmsWebhookToken
 }
 
 mutation UpdateMemberRole($memberId: UUID!, $role: Role!, $commissionBps: Int) {

@@ -29,6 +29,10 @@ type SendPayload struct {
 	TenantID  uuid.UUID `json:"tenant_id"`
 	MessageID uuid.UUID `json:"message_id"`
 	Tag       string    `json:"tag,omitempty"`
+	// SealedBody is the real text of a message whose stored body is redacted (credential
+	// delivery). Sealed with vault.SealTransient (purpose = message id); the worker removes
+	// it from the job row once the job finishes (jobs.SealedPayloadKey).
+	SealedBody string `json:"sealed_body,omitempty"`
 }
 
 // OutsideWindowTag is the Messenger message tag used for system messages (renewal
@@ -64,6 +68,11 @@ type (
 	}
 	// InlineRunner runs a just-committed job immediately (jobs.Worker.RunByID).
 	InlineRunner func(ctx context.Context, jobID int64) (bool, error)
+	// Sealer is the vault's transient encryption (SECURITY H3).
+	Sealer interface {
+		SealTransient(tenantID uuid.UUID, purpose string, plaintext []byte) (string, error)
+		OpenTransient(tenantID uuid.UUID, purpose, sealed string) ([]byte, error)
+	}
 )
 
 // Service is the inbox module API.
@@ -73,6 +82,10 @@ type Service interface {
 	Send(ctx context.Context, tenantID, userID uuid.UUID, in SendInput) (Message, error)
 	// SendSystem queues a message to a customer on a channel ("" = preferred) on behalf of the business.
 	SendSystem(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) (Message, error)
+	// SendSystemSensitive is SendSystem for a message that contains a secret: messages.body
+	// and the conversation preview get storedBody (redacted); secretBody is sent to the
+	// platform from a vault-sealed job payload and never persisted in plaintext.
+	SendSystemSensitive(ctx context.Context, tenantID, customerID uuid.UUID, channel, storedBody, secretBody string) (Message, error)
 	// Deliver is the inbox.send job: calls the platform and records the result.
 	Deliver(ctx context.Context, p SendPayload, final bool) error
 
@@ -105,12 +118,15 @@ type service struct {
 	members   Members
 	queue     Queue
 	inline    InlineRunner
+	sealer    Sealer
 	now       func() time.Time
 }
 
-// NewService builds the inbox. inline may be nil (jobs then run only in cmd/worker).
-func NewService(pool *pgxpool.Pool, soc Social, customers Customers, notifier Notifier, members Members, queue Queue, inline InlineRunner) Service {
-	return &service{pool: pool, social: soc, customers: customers, notifier: notifier, members: members, queue: queue, inline: inline, now: time.Now}
+// NewService builds the inbox. inline may be nil (jobs then run only in cmd/worker);
+// sealer may be nil only when SendSystemSensitive is never used.
+func NewService(pool *pgxpool.Pool, soc Social, customers Customers, notifier Notifier, members Members, queue Queue, inline InlineRunner, sealer Sealer) Service {
+	return &service{pool: pool, social: soc, customers: customers, notifier: notifier, members: members, queue: queue, inline: inline,
+		sealer: sealer, now: time.Now}
 }
 
 func (s *service) tx(ctx context.Context, tenantID uuid.UUID, fn db.TxFn) error {
@@ -303,7 +319,7 @@ func (s *service) Send(ctx context.Context, tenantID, userID uuid.UUID, in SendI
 		if userID == uuid.Nil {
 			uid = nil
 		}
-		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, kind, body, in.Attachments, uid, "", true)
+		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, kind, body, "", in.Attachments, uid, "", true)
 		return err
 	})
 	if err != nil || !ownTx {
@@ -336,7 +352,10 @@ func (s *service) runInline(ctx context.Context, tenantID uuid.UUID, m Message, 
 	return m
 }
 
-func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, conv Conversation, kind, body string, att []social.Attachment, by *uuid.UUID, tag string, markRead bool) (Message, int64, error) {
+// queueMessage stores the outbound message (body) and queues inbox.send. A non-empty
+// secretBody is what is actually sent: it is sealed into the job payload, bound to the
+// new message id, and never written to messages/conversations.
+func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, conv Conversation, kind, body, secretBody string, att []social.Attachment, by *uuid.UUID, tag string, markRead bool) (Message, int64, error) {
 	now := s.now()
 	m, _, err := s.repo.InsertMessage(ctx, tx, tenantID, Message{ConversationID: conv.ID, Direction: Outbound, Kind: kind, Body: strp(body),
 		Attachments: att, SentBy: by, Status: MsgQueued, SentAt: now})
@@ -346,7 +365,16 @@ func (s *service) queueMessage(ctx context.Context, tx pgx.Tx, tenantID uuid.UUI
 	if err := s.repo.BumpOutbound(ctx, tx, tenantID, conv.ID, now, Preview(kind, m.Body), markRead); err != nil {
 		return m, 0, err
 	}
-	id, err := s.queue.Enqueue(ctx, JobSend, SendPayload{TenantID: tenantID, MessageID: m.ID, Tag: tag}, now, JobSend+":"+m.ID.String())
+	p := SendPayload{TenantID: tenantID, MessageID: m.ID, Tag: tag}
+	if secretBody != "" {
+		if s.sealer == nil {
+			return m, 0, errors.New("inbox: no sealer configured for sensitive messages")
+		}
+		if p.SealedBody, err = s.sealer.SealTransient(tenantID, m.ID.String(), []byte(secretBody)); err != nil {
+			return m, 0, err
+		}
+	}
+	id, err := s.queue.Enqueue(ctx, JobSend, p, now, JobSend+":"+m.ID.String())
 	return m, id, err
 }
 
@@ -367,7 +395,19 @@ func (s *service) SendToCustomer(ctx context.Context, tenantID, customerID uuid.
 	return err
 }
 
-func (s *service) SendSystem(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) (out Message, err error) {
+func (s *service) SendSystem(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) (Message, error) {
+	return s.sendSystem(ctx, tenantID, customerID, channel, body, "")
+}
+
+func (s *service) SendSystemSensitive(ctx context.Context, tenantID, customerID uuid.UUID, channel, storedBody, secretBody string) (Message, error) {
+	secretBody = strings.TrimSpace(secretBody)
+	if secretBody == "" {
+		return Message{}, apperr.ValidationField("body", "message is empty")
+	}
+	return s.sendSystem(ctx, tenantID, customerID, channel, storedBody, secretBody)
+}
+
+func (s *service) sendSystem(ctx context.Context, tenantID, customerID uuid.UUID, channel, body, secretBody string) (out Message, err error) {
 	body = strings.TrimSpace(body)
 	if body == "" {
 		return out, apperr.ValidationField("body", "message is empty")
@@ -397,7 +437,7 @@ func (s *service) SendSystem(ctx context.Context, tenantID, customerID uuid.UUID
 			}
 			tag = OutsideWindowTag
 		}
-		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, "text", body, nil, nil, tag, false)
+		out, jobID, err = s.queueMessage(ctx, tx, tenantID, conv, "text", body, secretBody, nil, nil, tag, false)
 		return err
 	})
 	if err != nil || !ownTx {
@@ -486,12 +526,23 @@ func (s *service) Deliver(ctx context.Context, p SendPayload, final bool) error 
 		if m.Body != nil {
 			body = *m.Body
 		}
-		extID, err = s.social.Send(sctx, acct, conv.ExternalThreadID, body, m.Attachments)
+		if p.SealedBody != "" { // the stored body is redacted; send the sealed original
+			if s.sealer == nil {
+				err = errors.New("inbox: no sealer configured")
+			} else if pt, oerr := s.sealer.OpenTransient(p.TenantID, m.ID.String(), p.SealedBody); oerr != nil {
+				err = fmt.Errorf("%w: sealed message body cannot be opened", apperr.ErrValidation)
+			} else {
+				body = string(pt)
+			}
+		}
+		if err == nil {
+			extID, err = s.social.Send(sctx, acct, conv.ExternalThreadID, body, m.Attachments)
+		}
 	}
 	status, errMsg, ext := MsgSent, (*string)(nil), strp(extID)
 	if err != nil {
 		if !final && !permanent(err) {
-			msg := "retrying: " + err.Error()
+			msg := "retrying: " + social.SafeError(err)
 			_ = s.tx(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {
 				_, e := s.repo.SetMessageResult(ctx, tx, p.TenantID, m.ID, MsgQueued, nil, &msg)
 				return e
@@ -499,7 +550,7 @@ func (s *service) Deliver(ctx context.Context, p SendPayload, final bool) error 
 			return err
 		}
 		status, ext = MsgFailed, nil
-		e := err.Error()
+		e := social.SafeError(err)
 		errMsg = &e
 	}
 	return s.tx(ctx, p.TenantID, func(ctx context.Context, tx pgx.Tx) error {

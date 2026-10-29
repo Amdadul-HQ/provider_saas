@@ -48,7 +48,7 @@ type (
 		Notify(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, kind, title string, body, link *string) error
 	}
 	Messenger interface {
-		SendSystem(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) (inbox.Message, error)
+		SendSystemSensitive(ctx context.Context, tenantID, customerID uuid.UUID, channel, storedBody, secretBody string) (inbox.Message, error)
 	}
 	Orders interface {
 		MarkDeliveredBySubscription(ctx context.Context, tenantID, subscriptionID uuid.UUID) error
@@ -82,9 +82,13 @@ func NewService(d Deps) Service { return &service{d: d, now: time.Now} }
 
 // Rendered is the outcome of rendering a delivery template.
 type Rendered struct {
-	Body string // sent to the customer (may contain credentials)
-	Note string // stored on the subscription: never contains the password
+	Body     string // sent to the customer (may contain credentials); never persisted
+	Redacted string // stored in messages.body / previews: password and PIN masked
+	Note     string // stored on the subscription: never contains the password
 }
+
+// Mask replaces secrets in stored copies of a delivery message (SECURITY H3).
+const Mask = "••••••"
 
 // Vars are the values a delivery template can use.
 type Vars struct {
@@ -96,6 +100,27 @@ type Vars struct {
 // Render fills a delivery template. Supported placeholders: {{customer}} {{product}}
 // {{plan}} {{expiry}} {{credentials}} {{email}} {{username}} {{password}} {{slot}} {{pin}}.
 func Render(tpl string, v Vars) Rendered {
+	masked := v
+	if masked.Password != "" {
+		masked.Password = Mask
+	}
+	if masked.Pin != "" {
+		masked.Pin = Mask
+	}
+	note := v.Product
+	if v.LoginHint != "" {
+		note += " · " + v.LoginHint
+	}
+	if v.SlotLabel != "" {
+		note += " · " + v.SlotLabel
+	}
+	if v.Pin != "" {
+		note += " · PIN ****"
+	}
+	return Rendered{Body: render(tpl, v), Redacted: render(tpl, masked), Note: note}
+}
+
+func render(tpl string, v Vars) string {
 	var cred []string
 	if v.Username != "" {
 		cred = append(cred, "Email/ID: "+v.Username)
@@ -114,17 +139,7 @@ func Render(tpl string, v Vars) Rendered {
 		"credentials": strings.Join(cred, "\n"), "email": v.Username, "username": v.Username, "password": v.Password,
 		"slot": v.SlotLabel, "pin": v.Pin,
 	})
-	note := v.Product
-	if v.LoginHint != "" {
-		note += " · " + v.LoginHint
-	}
-	if v.SlotLabel != "" {
-		note += " · " + v.SlotLabel
-	}
-	if v.Pin != "" {
-		note += " · PIN ****"
-	}
-	return Rendered{Body: strings.TrimSpace(body), Note: note}
+	return strings.TrimSpace(body)
 }
 
 func (s *service) Deliver(ctx context.Context, p Payload) error {
@@ -166,7 +181,7 @@ func (s *service) Deliver(ctx context.Context, p Payload) error {
 		}
 	}
 	r := Render(*product.DeliveryTemplate, v)
-	if _, err := s.d.Messenger.SendSystem(ctx, tid, cust.ID, "", r.Body); err != nil {
+	if _, err := s.d.Messenger.SendSystemSensitive(ctx, tid, cust.ID, "", r.Redacted, r.Body); err != nil {
 		if errors.Is(err, apperr.ErrValidation) { // no reachable channel: tell the seller, do not retry
 			body := err.Error()
 			link := "/subscriptions"

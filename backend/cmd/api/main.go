@@ -42,7 +42,7 @@ func main() {
 	case "serve":
 		err = serve(ctx, cfg, log)
 	case "migrate":
-		err = db.Migrate(ctx, cfg.DatabaseURL, log)
+		err = db.Migrate(ctx, cfg.MigrateDatabaseURL, log)
 	case "seed":
 		err = seed(ctx, cfg, log)
 	default:
@@ -56,7 +56,7 @@ func main() {
 
 func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	if cfg.IsDev() {
-		if err := db.Migrate(ctx, cfg.DatabaseURL, log); err != nil {
+		if err := db.Migrate(ctx, cfg.MigrateDatabaseURL, log); err != nil {
 			return err
 		}
 	}
@@ -65,6 +65,15 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	defer c.Close()
+	warnUnsafeDB(ctx, c, log)
+	// QA BUG-01: a VAULT_KEY that differs from the one the stored secrets were written
+	// with makes every credential reveal and outbound message fail; say so at startup.
+	if err := c.Vault.SelfCheck(ctx); err != nil {
+		log.Warn("vault self-check failed: stored secrets cannot be decrypted with this VAULT_KEY", "err", err,
+			"fingerprint", c.Vault.Fingerprint())
+	} else {
+		log.Info("vault self-check ok", "fingerprint", c.Vault.Fingerprint())
+	}
 	srv := httpx.NewServer(cfg.HTTPAddr, c.HTTPHandler())
 	errc := make(chan error, 1)
 	go func() {
@@ -85,8 +94,22 @@ func serve(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	return srv.Shutdown(sctx)
 }
 
+// warnUnsafeDB logs when the API connects as a role that bypasses row-level security
+// (superuser / BYPASSRLS): tenant isolation then relies on repository filters alone.
+func warnUnsafeDB(ctx context.Context, c *app.Container, log *slog.Logger) {
+	var role string
+	var super, bypass bool
+	if err := c.Pool.QueryRow(ctx, `SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user`).
+		Scan(&role, &super, &bypass); err != nil {
+		return
+	}
+	if super || bypass {
+		log.Warn("DATABASE_URL connects as a role that bypasses row-level security; use psaas_app (docs/database.md)", "role", role)
+	}
+}
+
 func seed(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	if err := db.Migrate(ctx, cfg.DatabaseURL, log); err != nil {
+	if err := db.Migrate(ctx, cfg.MigrateDatabaseURL, log); err != nil {
 		return err
 	}
 	c, err := app.New(ctx, cfg, log)

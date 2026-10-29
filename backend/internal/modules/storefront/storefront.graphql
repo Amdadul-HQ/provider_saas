@@ -51,7 +51,7 @@ input PlaceOrderInput { slug: String! productId: UUID! planId: UUID! quantity: I
 input OrderFilter { status: OrderStatus source: OrderSource search: String }
 
 extend type Query {
-  storefront: Storefront @auth
+  storefront: Storefront @auth(roles: [OWNER, ADMIN, STAFF, VIEWER])
   orders(filter: OrderFilter, page: PageInput): [Order!]! @auth
   order(id: UUID!): Order @auth
   publicStorefront(slug: String!): PublicStorefront
@@ -61,8 +61,8 @@ extend type Query {
 extend type Mutation {
   upsertStorefront(input: StorefrontInput!): Storefront! @auth(roles: [OWNER, ADMIN])
   placeOrder(input: PlaceOrderInput!): PublicOrder!
-  confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth
-  cancelOrder(id: UUID!, reason: String): Order! @auth
-  createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth
+  confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
+  cancelOrder(id: UUID!, reason: String): Order! @auth(roles: [OWNER, ADMIN, STAFF])
+  createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth(roles: [OWNER, ADMIN, STAFF])
   portalRequestRenewal(token: String!, subscriptionId: UUID!, paymentMethod: PaymentMethod, trxId: String): PublicOrder!
 }

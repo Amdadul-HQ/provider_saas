@@ -24,11 +24,16 @@ func scan(r pgx.Row) (Ticket, error) {
 	return t, err
 }
 
+// Insert numbers the ticket per tenant (#1, #2, ... via db.NextNumber; QA BUG-11).
 func (Repository) Insert(ctx context.Context, q db.Querier, tenantID uuid.UUID, in CreateInput, oldSlot, by *uuid.UUID) (Ticket, error) {
+	n, err := db.NextNumber(ctx, q, tenantID, "ticket")
+	if err != nil {
+		return Ticket{}, err
+	}
 	t, err := scan(q.QueryRow(ctx, `INSERT INTO tickets AS t (tenant_id, number, customer_id, subscription_id, conversation_id, kind, priority,
 		title, description, reason, old_slot_id, created_by)
-		VALUES ($1, nextval('ticket_number_seq'), $2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING `+cols,
-		tenantID, in.CustomerID, in.SubscriptionID, in.ConversationID, in.Kind, in.Priority, in.Title, in.Description, in.Reason, oldSlot, by))
+		VALUES ($1, $12, $2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING `+cols,
+		tenantID, in.CustomerID, in.SubscriptionID, in.ConversationID, in.Kind, in.Priority, in.Title, in.Description, in.Reason, oldSlot, by, n))
 	return t, db.MapErr(err, "ticket")
 }
 
@@ -71,7 +76,7 @@ func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f 
 	}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
 		term := strings.TrimPrefix(strings.TrimSpace(*f.Search), "#")
-		p := add("%" + term + "%")
+		p := add(db.Contains(term))
 		conds = append(conds, fmt.Sprintf(`(t.title ILIKE %[1]s OR t.description ILIKE %[1]s OR t.number::text = %[2]s
 			OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = t.tenant_id AND c.id = t.customer_id AND (c.name ILIKE %[1]s OR c.phone ILIKE %[1]s)))`,
 			p, add(term)))

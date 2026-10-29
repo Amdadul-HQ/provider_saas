@@ -113,3 +113,34 @@ func TestParsePaymentSMSDetects(t *testing.T) {
 		t.Fatalf("%+v %v", p, err)
 	}
 }
+
+func TestSenderAllowed(t *testing.T) {
+	custom := map[string]any{SettingSMSSenders: map[string]any{"bkash": []any{"bKash-Merchant"}}}
+	cases := []struct {
+		method, sender string
+		settings       map[string]any
+		want           bool
+	}{
+		{"bkash", "bKash", nil, true},
+		{"bkash", "BKASH", nil, true},
+		{"bkash", "16247", nil, true},
+		{"bkash", "01712345678", nil, false}, // a personal number copying bKash wording
+		{"bkash", "+8801712345678", nil, false},
+		{"bkash", "NAGAD", nil, false}, // wrong provider
+		{"nagad", "NAGAD", nil, true},
+		{"nagad", "16167", nil, true},
+		{"rocket", "16216", nil, true},
+		{"bkash", "", nil, false},
+		{"bkash", "bKash", custom, false}, // tenant override replaces the default list
+		{"bkash", "bkash-merchant", custom, true},
+		{"nagad", "NAGAD", custom, true}, // other methods keep their defaults
+	}
+	for _, c := range cases {
+		if got := SenderAllowed(c.method, c.sender, c.settings); got != c.want {
+			t.Errorf("SenderAllowed(%s, %q) = %v, want %v", c.method, c.sender, got, c.want)
+		}
+	}
+	if AllowOverpayment(nil) || !AllowOverpayment(map[string]any{"allow_overpayment": true}) || !AllowOverpayment(map[string]any{"allowOverpayment": true}) {
+		t.Fatal("AllowOverpayment")
+	}
+}

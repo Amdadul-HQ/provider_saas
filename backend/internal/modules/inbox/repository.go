@@ -116,7 +116,7 @@ func where(f Filter, args *[]any) string {
 		conds = append(conds, add(strings.ToLower(strings.TrimSpace(*f.Label)))+" = ANY(c.labels)")
 	}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add("%" + strings.TrimSpace(*f.Search) + "%")
+		p := add(db.Contains(*f.Search))
 		conds = append(conds, fmt.Sprintf(`(c.last_message_preview ILIKE %[1]s OR c.external_thread_id ILIKE %[1]s
 			OR EXISTS (SELECT 1 FROM customers cu WHERE cu.tenant_id = c.tenant_id AND cu.id = c.customer_id
 			  AND (cu.name ILIKE %[1]s OR cu.phone ILIKE %[1]s))

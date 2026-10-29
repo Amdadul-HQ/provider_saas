@@ -35,7 +35,8 @@ type Options struct {
 func NewServer(es graphql.ExecutableSchema, opts Options) *handler.Server {
 	srv := handler.New(es)
 	srv.AddTransport(transport.Options{})
-	srv.AddTransport(transport.GET{})
+	// POST only (SECURITY L10): GET would put queries and variables (phones, TrxIDs,
+	// tokens) into URLs and access logs. The frontend sets preferGetMethod: false (L-017).
 	srv.AddTransport(transport.POST{})
 	srv.SetQueryCache(lru.New[*ast.QueryDocument](1000))
 	if opts.Dev {
@@ -45,6 +46,7 @@ func NewServer(es graphql.ExecutableSchema, opts Options) *handler.Server {
 	if opts.ComplexityLimit > 0 {
 		srv.Use(extension.FixedComplexityLimit(opts.ComplexityLimit))
 	}
+	srv.Use(DefaultLimits)
 	srv.SetErrorPresenter(ErrorPresenter(opts.Dev))
 	srv.SetRecoverFunc(func(ctx context.Context, p any) error {
 		logger.From(ctx).Error("graphql panic", "panic", fmt.Sprint(p), "stack", string(debug.Stack()))

@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -40,5 +41,30 @@ func TestCipherRoundTrip(t *testing.T) {
 	}
 	if _, err := NewCipher([]byte("short"), 1); err == nil {
 		t.Fatal("short key accepted")
+	}
+}
+
+func TestSealTransientRoundTripAndBinding(t *testing.T) {
+	v, err := New(nil, bytes.Repeat([]byte{7}, 32), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tid, other := uuid.New(), uuid.New()
+	sealed, err := v.SealTransient(tid, "msg-1", []byte("Password: hunter2"))
+	if err != nil || strings.Contains(sealed, "hunter2") {
+		t.Fatalf("sealed=%q err=%v", sealed, err)
+	}
+	pt, err := v.OpenTransient(tid, "msg-1", sealed)
+	if err != nil || string(pt) != "Password: hunter2" {
+		t.Fatalf("open: %q %v", pt, err)
+	}
+	if _, err := v.OpenTransient(other, "msg-1", sealed); err == nil {
+		t.Fatal("must not open for another tenant")
+	}
+	if _, err := v.OpenTransient(tid, "msg-2", sealed); err == nil {
+		t.Fatal("must not open for another purpose")
+	}
+	if Fingerprint([]byte("a")) == Fingerprint([]byte("b")) || len(v.Fingerprint()) != 16 {
+		t.Fatal("fingerprint")
 	}
 }

@@ -5,7 +5,7 @@ import { TrendingUpIcon } from "lucide-react"
 import { EmptyState, ErrorState } from "@/components/shared"
 import { Skeleton } from "@/components/ui/skeleton"
 import { formatDate } from "@/lib/dates"
-import { formatMoney } from "@/lib/money"
+import { formatMoney, formatNumber } from "@/lib/money"
 import { useDigits, useLocale, useT } from "@/i18n"
 import { useRevenueSeries } from "../hooks/use-analytics"
 
@@ -19,10 +19,10 @@ function ChartTooltip({ active, payload }: Partial<TooltipContentProps<number, s
   if (!active || !p) return null
   return (
     <div className="rounded-lg border bg-popover px-3 py-2 text-xs shadow-md">
-      <p className="text-muted-foreground">{formatDate(p.date, locale)}</p>
+      <p className="text-muted-foreground">{formatDate(p.date, locale, digits)}</p>
       <p className="text-sm font-semibold tabular">{formatMoney(p.value, { digits })}</p>
       <p className="text-muted-foreground">
-        {t.dashboard.orders}: {p.count}
+        {t.dashboard.orders}: {formatNumber(p.count, digits)}
       </p>
     </div>
   )
@@ -59,7 +59,7 @@ export function RevenueChart({ days = 30 }: { days?: number }) {
             axisLine={false}
             minTickGap={24}
             tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-            tickFormatter={(d: string) => formatDate(d, locale).replace(/,?\s*\d{4}$/, "")}
+            tickFormatter={(d: string) => formatDate(d, locale, digits).replace(/,?\s*[\d০-৯]{4}$/, "")}
           />
           <YAxis
             width={56}

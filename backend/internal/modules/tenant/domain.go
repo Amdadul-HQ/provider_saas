@@ -44,6 +44,57 @@ type Member struct {
 	Status        string
 	CreatedAt     time.Time
 	User          UserSummary
+	// InviteExpiresAt is set while the membership is an open invitation.
+	InviteExpiresAt *time.Time
+	// InviteURL carries the one-time invite link; it is only set in the response of
+	// inviteMember/resendInvite (the token itself is never stored or shown again).
+	InviteURL string
+}
+
+// InviteInfo is a pending invitation resolved from its token (public preview / accept).
+type InviteInfo struct {
+	MemberID        uuid.UUID
+	TenantID        uuid.UUID
+	TenantName      string
+	UserID          uuid.UUID
+	Role            string
+	InviteeName     string
+	Email           *string // the invitee user's email/phone (callers mask them)
+	Phone           *string
+	UserHasPassword bool
+	ExpiresAt       time.Time
+}
+
+// InviteTTL is how long an invite link stays valid.
+const InviteTTL = 7 * 24 * time.Hour
+
+// MaskEmail turns "rahim@example.com" into "ra***@example.com".
+func MaskEmail(e *string) *string {
+	if e == nil || *e == "" {
+		return nil
+	}
+	local, domain, ok := strings.Cut(*e, "@")
+	if !ok {
+		v := "***"
+		return &v
+	}
+	keep := min(2, len(local))
+	v := local[:keep] + "***@" + domain
+	return &v
+}
+
+// MaskPhone turns "01712345678" into "017*****678".
+func MaskPhone(p *string) *string {
+	if p == nil || *p == "" {
+		return nil
+	}
+	s := *p
+	if len(s) <= 6 {
+		v := "***"
+		return &v
+	}
+	v := s[:3] + strings.Repeat("*", len(s)-6) + s[len(s)-3:]
+	return &v
 }
 
 // Membership is a user's membership seen from the user (with the tenant).

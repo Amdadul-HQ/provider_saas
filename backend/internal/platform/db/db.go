@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -79,13 +80,55 @@ func WithTenantTx(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, f
 	return run(ctx, pool, tenantID, fn)
 }
 
-// WithTx runs fn in a transaction without tenant scope (users, tokens, platform jobs).
-// Reuses an outer transaction from ctx.
-func WithTx(ctx context.Context, pool *pgxpool.Pool, fn TxFn) error {
+// WithPlatformTx runs fn in a transaction without tenant scope. Only platform tables
+// (tenants, users, refresh_tokens, jobs) are visible: every tenant table has a fail-closed
+// RLS policy (migration 00009), so a tenant query that forgot WithTenantTx sees no rows
+// instead of every tenant's rows. Reuses an outer transaction from ctx.
+func WithPlatformTx(ctx context.Context, pool *pgxpool.Pool, fn TxFn) error {
 	if st, ok := ctx.Value(txKey{}).(*txState); ok {
 		return fn(ctx, st.tx)
 	}
 	return run(ctx, pool, uuid.Nil, fn)
+}
+
+// Lookup names a key-scoped RLS policy (migration 00009/00012). Unauthenticated platform
+// paths that must find a tenant row before the tenant is known set exactly one lookup key;
+// the matching policy then exposes only rows with that key (never a whole table).
+type Lookup string
+
+const (
+	LookupUserID     Lookup = "app.lookup_user_id"     // tenant_members of one user (login, switchTenant)
+	LookupSocialID   Lookup = "app.lookup_social_id"   // social_accounts by id (Telegram webhook route)
+	LookupSocialKey  Lookup = "app.lookup_social_key"  // social_accounts by "platform:external_id" (Meta webhooks)
+	LookupSlug       Lookup = "app.lookup_slug"        // storefronts by public slug
+	LookupTokenHash  Lookup = "app.lookup_token_hash"  // portal_tokens by sha256(token)
+	LookupInviteHash Lookup = "app.lookup_invite_hash" // tenant_members by sha256(invite token)
+)
+
+// WithLookup runs fn with one lookup key set (transaction-local). It joins a transaction
+// carried by ctx (the key is cleared again when fn returns) or opens a platform one.
+func WithLookup(ctx context.Context, pool *pgxpool.Pool, key Lookup, value string, fn TxFn) error {
+	set := func(ctx context.Context, tx pgx.Tx, v string) error {
+		if _, err := tx.Exec(ctx, `SELECT set_config($1, $2, true)`, string(key), v); err != nil {
+			return fmt.Errorf("set lookup: %w", err)
+		}
+		return nil
+	}
+	body := func(ctx context.Context, tx pgx.Tx) (err error) {
+		if err := set(ctx, tx, value); err != nil {
+			return err
+		}
+		defer func() {
+			if rerr := set(context.WithoutCancel(ctx), tx, ""); err == nil {
+				err = rerr
+			}
+		}()
+		return fn(ctx, tx)
+	}
+	if st, ok := ctx.Value(txKey{}).(*txState); ok {
+		return body(ctx, st.tx)
+	}
+	return run(ctx, pool, uuid.Nil, body)
 }
 
 func run(ctx context.Context, pool *pgxpool.Pool, tenantID uuid.UUID, fn TxFn) (err error) {
@@ -141,12 +184,27 @@ func TenantFromContext(ctx context.Context) uuid.UUID {
 	return uuid.Nil
 }
 
-// Conn returns the transaction in ctx or the pool.
-func Conn(ctx context.Context, pool *pgxpool.Pool) Querier {
+// PlatformConn returns the transaction in ctx or the pool. Use it only for platform
+// tables (jobs); tenant tables must go through WithTenantTx (RLS hides them otherwise).
+func PlatformConn(ctx context.Context, pool *pgxpool.Pool) Querier {
 	if tx, ok := TxFromContext(ctx); ok {
 		return tx
 	}
 	return pool
+}
+
+// NextNumber returns the next human-facing number of kind ("invoice", "ticket", "order")
+// for a tenant. The counter row stays locked until the caller's transaction ends, so
+// numbers are contiguous per tenant and a rollback leaves no gap (migration 00013).
+func NextNumber(ctx context.Context, q Querier, tenantID uuid.UUID, kind string) (int64, error) {
+	var n int64
+	err := q.QueryRow(ctx, `INSERT INTO tenant_counters AS c (tenant_id, kind, value) VALUES ($1, $2, 1)
+		ON CONFLICT (tenant_id, kind) DO UPDATE SET value = c.value + 1, updated_at = now()
+		RETURNING value`, tenantID, kind).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("next %s number: %w", kind, err)
+	}
+	return n, nil
 }
 
 // Postgres error codes we translate.
@@ -158,6 +216,21 @@ const (
 	codeInvalidText         = "22P02"
 )
 
+// constraintMsgs maps known constraint names to friendly field errors (SECURITY L5:
+// raw constraint names and Postgres messages never reach clients).
+var constraintMsgs = map[string]struct{ field, msg string }{
+	"payments_trx_unique":                  {"trxId", "this TrxID has already been used for another payment"},
+	"social_accounts_external_active_key":  {"externalId", "this account is already connected to another business"},
+	"tenant_members_tenant_id_user_id_key": {"", "user is already a member of this business"},
+	"storefronts_slug_key":                 {"slug", "this storefront address is already taken"},
+	"tenants_slug_key":                     {"slug", "this address is already taken"},
+	"users_email_key":                      {"email", "an account with this email already exists"},
+	"users_phone_key":                      {"phone", "an account with this phone already exists"},
+	"message_templates_tenant_id_key_key":  {"key", "a template with this key already exists"},
+	"slots_master_account_id_slot_no_key":  {"slotNo", "this slot number already exists"},
+	"subscriptions_check":                  {"expiresAt", "expiry must be after the start"},
+}
+
 // MapErr converts pgx/Postgres errors into domain errors. what names the entity for NotFound.
 func MapErr(err error, what string) error {
 	if err == nil {
@@ -167,17 +240,28 @@ func MapErr(err error, what string) error {
 		return apperr.NotFound(what)
 	}
 	var pgErr *pgconn.PgError
-	if errors.As(err, &pgErr) {
-		switch pgErr.Code {
-		case codeUniqueViolation:
-			return &apperr.Error{Kind: apperr.ErrConflict, Msg: what + " already exists (" + pgErr.ConstraintName + ")"}
-		case codeForeignKeyViolation:
-			return &apperr.Error{Kind: apperr.ErrValidation, Msg: "referenced record does not exist or is still in use (" + pgErr.ConstraintName + ")"}
-		case codeCheckViolation, codeNotNullViolation, codeInvalidText:
-			return &apperr.Error{Kind: apperr.ErrValidation, Msg: "invalid " + what + ": " + pgErr.Message}
-		}
+	if !errors.As(err, &pgErr) {
+		return err
 	}
-	return err
+	kind := apperr.ErrValidation
+	switch pgErr.Code {
+	case codeUniqueViolation:
+		kind = apperr.ErrConflict
+	case codeForeignKeyViolation, codeCheckViolation, codeNotNullViolation, codeInvalidText:
+	default:
+		return err
+	}
+	if m, ok := constraintMsgs[pgErr.ConstraintName]; ok {
+		return &apperr.Error{Kind: kind, Msg: m.msg, Field: m.field}
+	}
+	switch pgErr.Code {
+	case codeUniqueViolation:
+		return &apperr.Error{Kind: kind, Msg: what + " already exists"}
+	case codeForeignKeyViolation:
+		return &apperr.Error{Kind: kind, Msg: "referenced record does not exist or is still in use"}
+	default:
+		return &apperr.Error{Kind: kind, Msg: "invalid " + what}
+	}
 }
 
 // IsUniqueViolation reports whether err is a unique violation on the named constraint ("" = any).
@@ -187,4 +271,11 @@ func IsUniqueViolation(err error, constraint string) bool {
 		return constraint == "" || pgErr.ConstraintName == constraint
 	}
 	return false
+}
+
+// Contains builds an ILIKE pattern matching s anywhere, with LIKE wildcards in s escaped
+// (SECURITY I1). Backslash is Postgres' default LIKE escape character.
+func Contains(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + r.Replace(strings.TrimSpace(s)) + "%"
 }

@@ -46,7 +46,7 @@ func (r *masterAccountResolver) Slots(ctx context.Context, obj *model.MasterAcco
 	}
 	out := make([]model.Slot, len(ss))
 	for i, s := range ss {
-		out[i] = *toSlot(s)
+		out[i] = *toSlot(ctx, s)
 	}
 	return out, nil
 }
@@ -148,7 +148,7 @@ func (r *mutationResolver) UpdateSlot(ctx context.Context, id uuid.UUID, label *
 	if err != nil {
 		return nil, err
 	}
-	return toSlot(s), nil
+	return toSlot(ctx, s), nil
 }
 
 // Suppliers is the resolver for the suppliers field.
@@ -222,7 +222,7 @@ func (r *queryResolver) FreeSlots(ctx context.Context, productID uuid.UUID) ([]m
 	}
 	out := make([]model.Slot, len(ss))
 	for i, s := range ss {
-		out[i] = *toSlot(s)
+		out[i] = *toSlot(ctx, s)
 	}
 	return out, nil
 }

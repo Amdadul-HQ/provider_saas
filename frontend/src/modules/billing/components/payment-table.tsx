@@ -79,7 +79,8 @@ export function PaymentTable({ customerId, initialStatus }: { customerId?: strin
       { id: "invoice", header: t.billing.invoice, cell: ({ row }) => row.original.invoice?.number ?? "—" },
       { id: "received", header: t.billing.receivedAt, cell: ({ row }) => <DateText value={row.original.receivedAt} withTime /> },
       { id: "status", header: t.common.status, cell: ({ row }) => <StatusBadge enum="PaymentStatus" value={row.original.status} /> },
-      { id: "actions", header: "", cell: ({ row }) => <PaymentRowActions payment={row.original} /> },
+      // pinned right: at 1024px the table scrolls and verify/reject used to be off-screen (BUG-16)
+      { id: "actions", header: t.common.actions, meta: { sticky: "right" }, cell: ({ row }) => <PaymentRowActions payment={row.original} /> },
     ],
     [t],
   )

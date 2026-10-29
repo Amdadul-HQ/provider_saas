@@ -3,9 +3,10 @@
 import type { CombinedError } from "@urql/core"
 import { RefreshCwIcon, WifiOffIcon, LockIcon, SearchXIcon, TriangleAlertIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { errorKind, serverMessage } from "@/lib/graphql/errors"
+import { describeError, errorKind } from "@/lib/graphql/errors"
 import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
+import { ErrorDetails } from "./error-details"
 
 export function ErrorState({
   error,
@@ -24,16 +25,7 @@ export function ErrorState({
   const kind = errorKind(error) ?? "generic"
   const Icon =
     kind === "network" ? WifiOffIcon : kind === "forbidden" || kind === "unauthenticated" ? LockIcon : kind === "notFound" ? SearchXIcon : TriangleAlertIcon
-  const message =
-    kind === "network"
-      ? t.errors.network
-      : kind === "unauthenticated"
-        ? t.errors.unauthenticated
-        : kind === "forbidden"
-          ? t.errors.forbidden
-          : kind === "notFound"
-            ? t.errors.notFound
-            : (serverMessage(error) ?? t.errors.generic)
+  const message = describeError(t, error)
   return (
     <div
       role="alert"
@@ -50,6 +42,7 @@ export function ErrorState({
         <p className="font-medium">{title ?? t.errors.title}</p>
         <p className="mx-auto max-w-sm text-sm text-muted-foreground">{message}</p>
       </div>
+      <ErrorDetails error={error} className="max-w-sm" />
       {onRetry ? (
         <Button variant="outline" onClick={onRetry}>
           <RefreshCwIcon /> {t.common.retry}

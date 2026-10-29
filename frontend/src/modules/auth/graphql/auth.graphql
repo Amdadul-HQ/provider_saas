@@ -41,3 +41,11 @@ mutation SwitchTenant($tenantId: UUID!) {
 mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
   changePassword(currentPassword: $currentPassword, newPassword: $newPassword)
 }
+
+query Invite($token: String!) {
+  invite(token: $token) { tenantName role inviteeName emailHint phoneHint expiresAt userExists }
+}
+
+mutation AcceptInvite($token: String!, $password: String!, $name: String) {
+  acceptInvite(token: $token, password: $password, name: $name) { accessToken refreshToken user { ...SessionUser } }
+}

@@ -16,6 +16,8 @@ const PUBLIC_OPERATIONS = new Set([
   "PlaceOrder",
   "Portal",
   "PortalRequestRenewal",
+  "Invite",
+  "AcceptInvite",
 ])
 
 function operationName(op: Operation): string | null {
@@ -50,7 +52,9 @@ export function makeClient() {
           // no/expiring access token but we can refresh → refresh before sending
           return getRefreshToken() !== null && accessTokenExpiring()
         },
-        didAuthError(error) {
+        didAuthError(error, operation) {
+          // a failed login/acceptInvite is "wrong password", not an expired session: never refresh + retry it
+          if (isPublic(operation)) return false
           const status = (error.response as { status?: number } | undefined)?.status
           return status === 401 || error.graphQLErrors.some((e) => e.extensions?.code === "UNAUTHENTICATED")
         },

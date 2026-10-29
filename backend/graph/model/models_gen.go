@@ -373,6 +373,7 @@ type PaymentFilter struct {
 type PaymentInboxItem struct {
 	ID               uuid.UUID      `json:"id"`
 	Source           string         `json:"source"`
+	Sender           *string        `json:"sender,omitempty"`
 	Method           *PaymentMethod `json:"method,omitempty"`
 	SenderNumber     *string        `json:"senderNumber,omitempty"`
 	TrxID            *string        `json:"trxId,omitempty"`

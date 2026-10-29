@@ -119,3 +119,30 @@ func pageFirst(p *model.PageInput) *int {
 	}
 	return p.First
 }
+
+// SettingStaffCanVerify (tenants.settings, default true) lets STAFF verify payments (ADR-007).
+const SettingStaffCanVerify = "staff_can_verify_payments"
+
+// requirePaymentVerifier enforces ADR-007 for anything that verifies money or marks it
+// received: OWNER/ADMIN always, STAFF unless settings.staff_can_verify_payments is false,
+// RESELLER/VIEWER never.
+func (r *Resolver) requirePaymentVerifier(ctx context.Context, tenantID uuid.UUID) error {
+	p, err := principal(ctx)
+	if err != nil {
+		return err
+	}
+	switch {
+	case p.IsPlatformAdmin || p.HasRole("owner", "admin"):
+		return nil
+	case p.HasRole("staff"):
+		t, err := r.TenantSvc.Get(ctx, tenantID)
+		if err != nil {
+			return err
+		}
+		if v, ok := t.Settings[SettingStaffCanVerify].(bool); ok && !v {
+			return apperr.Forbidden("staff may not verify payments in this business")
+		}
+		return nil
+	}
+	return apperr.Forbidden("your role cannot verify payments")
+}

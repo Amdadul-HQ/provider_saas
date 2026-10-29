@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,27 @@ func (Repository) UserByIdentifier(ctx context.Context, q db.Querier, email, pho
 
 func (Repository) SetPassword(ctx context.Context, q db.Querier, id uuid.UUID, hash string) error {
 	_, err := q.Exec(ctx, `UPDATE users SET password_hash = $2 WHERE id = $1`, id, hash)
+	return err
+}
+
+func (Repository) SetName(ctx context.Context, q db.Querier, id uuid.UUID, name string) error {
+	_, err := q.Exec(ctx, `UPDATE users SET name = $2 WHERE id = $1`, id, name)
+	return err
+}
+
+// InsertPlatformAudit writes a tenant-less audit row (failed logins, lockouts). RLS only
+// allows inserting such rows; nobody can read them through the API role.
+func (Repository) InsertPlatformAudit(ctx context.Context, q db.Querier, userID *uuid.UUID, action string, meta map[string]any) error {
+	b, err := json.Marshal(meta)
+	if err != nil {
+		return err
+	}
+	var ip *string
+	if v, _ := meta["ip"].(string); v != "" {
+		ip = &v
+	}
+	_, err = q.Exec(ctx, `INSERT INTO audit_logs (tenant_id, user_id, action, entity_type, entity_id, meta, ip)
+		VALUES (NULL, $1, $2, 'user', $1, $3, $4::inet)`, userID, action, b, ip)
 	return err
 }
 

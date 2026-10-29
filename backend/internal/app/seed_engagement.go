@@ -145,8 +145,10 @@ const netflixDeliveryTemplate = "প্রিয় {{customer}}, আপনা�
 func (c *Container) seedEngagement(ctx context.Context, tid, uid uuid.UUID) (EngagementResult, error) {
 	var res EngagementResult
 	var exists bool
-	if err := c.Pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM social_accounts WHERE tenant_id = $1 AND platform = 'facebook' AND external_id = $2)`,
-		tid, DemoPageID).Scan(&exists); err != nil {
+	if err := db.WithTenantTx(ctx, c.Pool, tid, func(ctx context.Context, tx pgx.Tx) error {
+		return tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM social_accounts WHERE tenant_id = $1 AND platform = 'facebook' AND external_id = $2)`,
+			tid, DemoPageID).Scan(&exists)
+	}); err != nil {
 		return res, err
 	}
 	if exists {
@@ -154,7 +156,7 @@ func (c *Container) seedEngagement(ctx context.Context, tid, uid uuid.UUID) (Eng
 		return res, nil
 	}
 	ctx = pauth.WithPrincipal(ctx, pauth.Principal{UserID: uid, TenantID: tid, Role: pauth.RoleOwner})
-	err := db.WithTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
+	err := db.WithPlatformTx(ctx, c.Pool, func(ctx context.Context, _ pgx.Tx) error {
 		return c.seedEngagementTx(ctx, tid, uid, &res)
 	})
 	return res, err
@@ -337,7 +339,7 @@ func (c *Container) seedEngagementTx(ctx context.Context, tid, uid uuid.UUID, re
 	// An SMS for order 5 arrives first, so placing the order auto-verifies its TrxID.
 	sms := fmt.Sprintf("You have received Tk %d.00 from 01911000105. Fee Tk 0.00. Balance Tk 15,000.00. TrxID SEEDORD05X at %s",
 		canvaPlan.Price/100, now.In(billing.Dhaka).Format("02/01/2006 15:04"))
-	if _, err := c.Billing.IngestSMS(ctx, tid, sms, now); err != nil {
+	if _, err := c.Billing.IngestSMS(ctx, tid, "bKash", sms, now); err != nil {
 		return err
 	}
 	type ord struct {

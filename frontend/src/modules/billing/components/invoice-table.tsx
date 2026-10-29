@@ -13,10 +13,13 @@ import { useInvoices } from "../hooks/use-billing"
 export function InvoiceTable({
   customerId,
   onRowClick,
+  rowHref,
   emptyAction,
 }: {
   customerId?: string
   onRowClick?: (invoice: InvoiceListFieldsFragment) => void
+  /** Detail URL per row: rows render as real links (BUG-10). */
+  rowHref?: (invoice: InvoiceListFieldsFragment) => string
   emptyAction?: React.ReactNode
 }) {
   const t = useT()
@@ -58,6 +61,7 @@ export function InvoiceTable({
       totalCount={conn?.totalCount}
       pagination={{ canPrev: pager.canPrev, onPrev: pager.prev, onNext: pager.next }}
       onRowClick={onRowClick}
+      rowHref={rowHref}
       getRowId={(i) => i.id}
       toolbar={
         <>

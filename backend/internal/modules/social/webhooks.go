@@ -301,7 +301,8 @@ type WebhookDeps struct {
 	PublicAppURL string
 	// SMS forwarder: Bearer token -> tenant, then billing.IngestSMS.
 	SMSTenant func(ctx context.Context, token string) (uuid.UUID, error)
-	SMSIngest func(ctx context.Context, tenantID uuid.UUID, raw string, receivedAt time.Time) error
+	// sender is the SMS sender id ("bKash", "16247", "+8801...") reported by the forwarder.
+	SMSIngest func(ctx context.Context, tenantID uuid.UUID, sender, raw string, receivedAt time.Time) error
 	Log       *slog.Logger
 }
 
@@ -384,20 +385,29 @@ func (h *Webhooks) ingest(w http.ResponseWriter, ctx context.Context, msgs []Inb
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ingested": n})
 }
 
+// metaOAuth is the Facebook Login redirect target. It no longer connects anything
+// (SECURITY M2): it only checks the state signature and forwards code+state to the
+// authenticated frontend page, which calls completeMetaConnect as the signed-in user; that
+// mutation consumes the single-use state bound to the user who started the flow.
 func (h *Webhooks) metaOAuth(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	dest := strings.TrimRight(h.d.PublicAppURL, "/") + "/social"
 	if e := q.Get("error"); e != "" {
-		http.Redirect(w, r, dest+"?error="+url.QueryEscape(firstNonEmpty(q.Get("error_reason"), e)), http.StatusFound)
+		reason := "denied"
+		if q.Get("error_reason") == "user_denied" {
+			reason = "user_denied"
+		}
+		http.Redirect(w, r, dest+"?error="+reason, http.StatusFound)
 		return
 	}
-	accts, err := h.d.Social.CompleteMetaCallback(r.Context(), q.Get("code"), q.Get("state"))
-	if err != nil {
-		h.d.Log.Warn("meta oauth callback failed", "err", err)
-		http.Redirect(w, r, dest+"?error="+url.QueryEscape(err.Error()), http.StatusFound)
+	code, state := q.Get("code"), q.Get("state")
+	if code == "" || len(code) > 2048 || h.d.Social.CheckState(state) != nil {
+		h.d.Log.Warn("meta oauth callback: invalid state or code")
+		http.Redirect(w, r, dest+"?error=invalid_state", http.StatusFound)
 		return
 	}
-	http.Redirect(w, r, dest+"?connected="+strconv.Itoa(max(1, len(accts))), http.StatusFound)
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	http.Redirect(w, r, dest+"?"+url.Values{"code": {code}, "state": {state}}.Encode(), http.StatusFound)
 }
 
 func (h *Webhooks) telegram(w http.ResponseWriter, r *http.Request) {
@@ -421,8 +431,12 @@ func (h *Webhooks) telegram(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
 		return
 	}
+	if acct.Status == StatusDisconnected { // SECURITY I2: a disconnected bot no longer ingests
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "ingested": 0})
+		return
+	}
 	if !acct.WebhookVerified {
-		_ = h.d.Social.MarkWebhookVerified(r.Context(), acct.ID)
+		_ = h.d.Social.MarkWebhookVerified(r.Context(), acct.TenantID, acct.ID)
 	}
 	msg, ok, err := ParseTelegramUpdate(body, acct.ExternalID)
 	if err != nil || !ok {
@@ -461,6 +475,9 @@ func (h *Webhooks) sms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	text, at := string(raw), time.Now()
+	// The sender id is required (SECURITY H4): only known short codes / alphanumeric ids
+	// may auto-verify payments. Plain-text bodies pass it as ?from= or X-SMS-From.
+	from := firstNonEmpty(r.URL.Query().Get("from"), r.Header.Get("X-SMS-From"))
 	if strings.Contains(r.Header.Get("Content-Type"), "json") {
 		var b smsBody
 		if err := json.Unmarshal(raw, &b); err != nil {
@@ -468,6 +485,7 @@ func (h *Webhooks) sms(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		text = firstNonEmpty(b.Text, b.Message, b.Body)
+		from = firstNonEmpty(b.From, from)
 		if t, err := time.Parse(time.RFC3339, b.ReceivedAt); err == nil {
 			at = t
 		} else if b.SentStamp > 0 {
@@ -478,7 +496,11 @@ func (h *Webhooks) sms(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "empty sms", http.StatusBadRequest)
 		return
 	}
-	if err := h.d.SMSIngest(r.Context(), tenantID, text, at); err != nil {
+	if strings.TrimSpace(from) == "" {
+		http.Error(w, "from (SMS sender) is required", http.StatusBadRequest)
+		return
+	}
+	if err := h.d.SMSIngest(r.Context(), tenantID, strings.TrimSpace(from), text, at); err != nil {
 		h.d.Log.Error("sms webhook: ingest failed", "tenant", tenantID, "err", err)
 		http.Error(w, "ingest failed", http.StatusInternalServerError)
 		return

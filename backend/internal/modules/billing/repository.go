@@ -35,10 +35,9 @@ func collectInvoices(rows pgx.Rows, err error) ([]Invoice, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Invoice, error) { return scanInvoice(r) })
 }
 
-func (Repository) NextInvoiceSeq(ctx context.Context, q db.Querier) (int64, error) {
-	var n int64
-	err := q.QueryRow(ctx, `SELECT nextval('invoice_number_seq')`).Scan(&n)
-	return n, err
+// NextInvoiceSeq is the tenant's next invoice counter (db.NextNumber; QA BUG-11).
+func (Repository) NextInvoiceSeq(ctx context.Context, q db.Querier, tenantID uuid.UUID) (int64, error) {
+	return db.NextNumber(ctx, q, tenantID, "invoice")
 }
 
 func (Repository) InsertInvoice(ctx context.Context, q db.Querier, tenantID uuid.UUID, number string, in CreateInvoiceInput, subtotal, total int64, status, currency string, createdBy *uuid.UUID) (Invoice, error) {
@@ -71,7 +70,7 @@ func invoiceWhere(f InvoiceFilter, args *[]any) string {
 	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
 	conds := []string{"i.tenant_id = $1"}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add("%" + strings.TrimSpace(*f.Search) + "%")
+		p := add(db.Contains(*f.Search))
 		conds = append(conds, fmt.Sprintf(`(i.number ILIKE %[1]s OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = i.tenant_id
 			AND c.id = i.customer_id AND (c.name ILIKE %[1]s OR c.phone ILIKE %[1]s)))`, p))
 	}
@@ -204,7 +203,7 @@ func paymentWhere(f PaymentFilter, args *[]any) string {
 		conds = append(conds, "p.customer_id = "+add(*f.CustomerID))
 	}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add("%" + strings.TrimSpace(*f.Search) + "%")
+		p := add(db.Contains(*f.Search))
 		conds = append(conds, fmt.Sprintf("(p.trx_id ILIKE %[1]s OR p.sender_number ILIKE %[1]s)", p))
 	}
 	return strings.Join(conds, " AND ")
@@ -231,18 +230,18 @@ func (Repository) CountPayments(ctx context.Context, q db.Querier, tenantID uuid
 
 // ---- payment inbox
 
-const inboxCols = `id, source, method, sender_number, trx_id, amount, raw_text, status, matched_payment_id, received_at`
+const inboxCols = `id, source, sender, method, sender_number, trx_id, amount, raw_text, status, matched_payment_id, received_at`
 
 func scanInbox(r pgx.Row) (InboxItem, error) {
 	var i InboxItem
-	err := r.Scan(&i.ID, &i.Source, &i.Method, &i.SenderNumber, &i.TrxID, &i.Amount, &i.RawText, &i.Status, &i.MatchedPaymentID, &i.ReceivedAt)
+	err := r.Scan(&i.ID, &i.Source, &i.Sender, &i.Method, &i.SenderNumber, &i.TrxID, &i.Amount, &i.RawText, &i.Status, &i.MatchedPaymentID, &i.ReceivedAt)
 	return i, err
 }
 
 func (Repository) InsertInbox(ctx context.Context, q db.Querier, tenantID uuid.UUID, i InboxItem) (InboxItem, error) {
-	return scanInbox(q.QueryRow(ctx, `INSERT INTO payment_inbox (tenant_id, source, method, sender_number, trx_id, amount, raw_text, status, received_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING `+inboxCols,
-		tenantID, i.Source, i.Method, i.SenderNumber, i.TrxID, i.Amount, i.RawText, i.Status, i.ReceivedAt))
+	return scanInbox(q.QueryRow(ctx, `INSERT INTO payment_inbox (tenant_id, source, sender, method, sender_number, trx_id, amount, raw_text, status, received_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+inboxCols,
+		tenantID, i.Source, i.Sender, i.Method, i.SenderNumber, i.TrxID, i.Amount, i.RawText, i.Status, i.ReceivedAt))
 }
 
 func (Repository) GetInbox(ctx context.Context, q db.Querier, tenantID, id uuid.UUID) (InboxItem, error) {
@@ -299,6 +298,13 @@ func (Repository) Ledger(ctx context.Context, q db.Querier, tenantID, customerID
 		return nil, err
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (LedgerEntry, error) { return scanLedger(r) })
+}
+
+// TenantSettings returns tenants.settings (payment_sms_senders, allow_overpayment, ...).
+func (Repository) TenantSettings(ctx context.Context, q db.Querier, tenantID uuid.UUID) (map[string]any, error) {
+	var m map[string]any
+	err := q.QueryRow(ctx, `SELECT settings FROM tenants WHERE id = $1`, tenantID).Scan(&m)
+	return m, err
 }
 
 func (Repository) TenantCurrency(ctx context.Context, q db.Querier, tenantID uuid.UUID) (string, error) {

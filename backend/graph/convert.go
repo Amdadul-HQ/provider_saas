@@ -39,9 +39,19 @@ func toMembership(m tenant.Membership) model.Membership {
 	return model.Membership{ID: m.ID, Tenant: *toTenant(m.Tenant), Role: upper[model.Role](m.Role), CommissionBps: m.CommissionBps, Status: m.Status}
 }
 
-func toMember(m tenant.Member) *model.TenantMember {
-	return &model.TenantMember{ID: m.ID, User: toUserSummary(m.User), Role: upper[model.Role](m.Role),
-		CommissionBps: m.CommissionBps, Status: m.Status, CreatedAt: m.CreatedAt}
+// toMember never exposes another user's platform-admin flag (SECURITY M4); InviteURL is
+// only present in the inviteMember/resendInvite response.
+func toMember(ctx context.Context, m tenant.Member) *model.TenantMember {
+	u := toUserSummary(m.User)
+	if p, ok := principalOK(ctx); !ok || p.UserID != m.UserID {
+		u.IsPlatformAdmin = false
+	}
+	out := &model.TenantMember{ID: m.ID, User: u, Role: upper[model.Role](m.Role), CommissionBps: m.CommissionBps,
+		Status: m.Status, InviteExpiresAt: m.InviteExpiresAt, CreatedAt: m.CreatedAt}
+	if m.InviteURL != "" {
+		out.InviteURL = &m.InviteURL
+	}
+	return out
 }
 
 func toPayload(s auth.Session) *model.AuthPayload {
@@ -87,9 +97,21 @@ func toMaster(m inventory.MasterAccount) *model.MasterAccount {
 		PurchasedAt: m.PurchasedAt, ExpiresAt: m.ExpiresAt, Status: upper[model.MasterAccountStatus](m.Status), Notes: m.Notes, CreatedAt: m.CreatedAt}
 }
 
-func toSlot(s inventory.Slot) *model.Slot {
-	return &model.Slot{ID: s.ID, MasterAccountID: s.MasterAccountID, SlotNo: s.SlotNo, Label: s.Label, Pin: s.Pin,
+// toSlot masks the profile PIN for everyone but OWNER/ADMIN (SECURITY L8, ADR-007).
+func toSlot(ctx context.Context, s inventory.Slot) *model.Slot {
+	pin := s.Pin
+	if pin != nil && *pin != "" && !canSeeSecrets(ctx) {
+		masked := "••••"
+		pin = &masked
+	}
+	return &model.Slot{ID: s.ID, MasterAccountID: s.MasterAccountID, SlotNo: s.SlotNo, Label: s.Label, Pin: pin,
 		Status: upper[model.SlotStatus](s.Status), SubscriptionID: s.SubscriptionID}
+}
+
+// canSeeSecrets: OWNER, ADMIN and platform admins.
+func canSeeSecrets(ctx context.Context) bool {
+	p, ok := principalOK(ctx)
+	return ok && (p.IsPlatformAdmin || p.HasRole("owner", "admin"))
 }
 
 func toSubscription(s subscription.Subscription) *model.Subscription {
@@ -126,7 +148,7 @@ func toPayment(p billing.Payment) *model.Payment {
 }
 
 func toInbox(i billing.InboxItem) model.PaymentInboxItem {
-	return model.PaymentInboxItem{ID: i.ID, Source: i.Source, Method: upperPtr[model.PaymentMethod](i.Method), SenderNumber: i.SenderNumber,
+	return model.PaymentInboxItem{ID: i.ID, Source: i.Source, Sender: i.Sender, Method: upperPtr[model.PaymentMethod](i.Method), SenderNumber: i.SenderNumber,
 		TrxID: i.TrxID, Amount: i.Amount, RawText: i.RawText, Status: i.Status, MatchedPaymentID: i.MatchedPaymentID, ReceivedAt: i.ReceivedAt}
 }
 

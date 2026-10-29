@@ -7,7 +7,7 @@ import { ConfirmDialog, DateText, EmptyState, ErrorState, FilterSelect, ListSkel
 import type { PostFieldsFragment, PostStatus } from "@/gql/graphql"
 import { arrayPageInfo, useCursorPagination } from "@/hooks/use-cursor-pagination"
 import { POST_STATUSES } from "@/lib/enums"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, labelFor } from "@/i18n"
 import { useDeletePost, useGeneratePriceList, usePosts, usePublishPostNow } from "../hooks/use-content"
 
 const PAGE = 20
@@ -44,7 +44,7 @@ function PostCard({ post, onDelete }: { post: PostFieldsFragment; onDelete: () =
       <p className="line-clamp-4 text-sm whitespace-pre-wrap">{post.body}</p>
       <ul className="flex flex-wrap gap-1.5">
         {post.targets.map((tg) => (
-          <li key={tg.id} title={tg.error ?? undefined}>
+          <li key={tg.id} title={labelFor(t, "PostTargetStatus", tg.status)}>
             <ToneBadge tone={tg.status === "published" ? "success" : tg.status === "failed" ? "danger" : "neutral"}>
               <PlatformIcon platform={tg.socialAccount.platform} className="size-4 [&_svg]:size-2.5" /> {tg.socialAccount.name}
             </ToneBadge>

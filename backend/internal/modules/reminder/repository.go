@@ -187,13 +187,21 @@ func (Repository) Due(ctx context.Context, q db.Querier, tenantID uuid.UUID, now
 		ORDER BY r.scheduled_at LIMIT $3 FOR UPDATE SKIP LOCKED`, tenantID, now, limit))
 }
 
-// TenantsWithDue is platform level (fan-out of the dispatcher).
-func (Repository) TenantsWithDue(ctx context.Context, q db.Querier, now time.Time) ([]uuid.UUID, error) {
-	rows, err := q.Query(ctx, `SELECT DISTINCT tenant_id FROM reminders WHERE status = 'scheduled' AND scheduled_at <= $1`, now)
+// ActiveTenants lists active tenants (platform table).
+func (Repository) ActiveTenants(ctx context.Context, q db.Querier) ([]uuid.UUID, error) {
+	rows, err := q.Query(ctx, `SELECT id FROM tenants WHERE status = 'active' ORDER BY created_at`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+}
+
+// HasDue reports whether the tenant has scheduled reminders due by now.
+func (Repository) HasDue(ctx context.Context, q db.Querier, tenantID uuid.UUID, now time.Time) (bool, error) {
+	var ok bool
+	err := q.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM reminders WHERE tenant_id = $1 AND status = 'scheduled' AND scheduled_at <= $2)`,
+		tenantID, now).Scan(&ok)
+	return ok, err
 }
 
 func (Repository) SetResult(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, status string, body, errMsg *string, sentAt *time.Time) error {

@@ -14,6 +14,8 @@ import (
 	"provider_saas/internal/platform/apperr"
 	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/lockout"
+	"provider_saas/internal/platform/logger"
 )
 
 // Tenants is what auth needs from the tenant module.
@@ -21,6 +23,8 @@ type Tenants interface {
 	Provision(ctx context.Context, ownerID uuid.UUID, businessName string) (tenant.Tenant, error)
 	MembershipsForUser(ctx context.Context, userID uuid.UUID) ([]tenant.Membership, error)
 	Membership(ctx context.Context, userID, tenantID uuid.UUID) (tenant.Membership, error)
+	InviteByToken(ctx context.Context, token string) (tenant.InviteInfo, error)
+	ActivateInvite(ctx context.Context, inv tenant.InviteInfo, token string) error
 }
 
 // Service is the auth module API.
@@ -36,6 +40,11 @@ type Service interface {
 	Memberships(ctx context.Context, userID uuid.UUID) ([]tenant.Membership, error)
 	// FindOrCreateUser implements tenant.UserDirectory.
 	FindOrCreateUser(ctx context.Context, email, phone *string, name string) (uuid.UUID, error)
+	// Invite is the public preview of a pending invite (masked contact hints).
+	Invite(ctx context.Context, token string) (InvitePreview, error)
+	// AcceptInvite activates an invitation: a new user sets name + password, an existing
+	// user proves ownership with their password. Returns a session in the invited tenant.
+	AcceptInvite(ctx context.Context, token, password string, name *string, meta ClientMeta) (Session, error)
 }
 
 type service struct {
@@ -44,11 +53,25 @@ type service struct {
 	tokens     *pauth.TokenIssuer
 	refreshTTL time.Duration
 	tenants    Tenants
+	// limiter locks an identifier (and a client IP) after repeated failures (SECURITY H6).
+	limiter   lockout.Limiter
+	ipLimiter lockout.Limiter
 }
 
-func NewService(pool *pgxpool.Pool, tokens *pauth.TokenIssuer, refreshTTL time.Duration, tenants Tenants) Service {
-	return &service{pool: pool, tokens: tokens, refreshTTL: refreshTTL, tenants: tenants}
+// NewService builds the auth service. limiter nil = bounded in-memory login lockout
+// (5 failures / 15 min per identifier); the per-IP limiter allows 30 failures / 15 min.
+func NewService(pool *pgxpool.Pool, tokens *pauth.TokenIssuer, refreshTTL time.Duration, tenants Tenants, limiter, ipLimiter lockout.Limiter) Service {
+	if limiter == nil {
+		limiter = lockout.NewMemory(lockout.DefaultLogin, 100_000)
+	}
+	if ipLimiter == nil {
+		ipLimiter = lockout.NewMemory(IPPolicy, 100_000)
+	}
+	return &service{pool: pool, tokens: tokens, refreshTTL: refreshTTL, tenants: tenants, limiter: limiter, ipLimiter: ipLimiter}
 }
+
+// IPPolicy bounds failed logins per client IP (many identifiers from one address).
+var IPPolicy = lockout.Policy{MaxFailures: 30, Window: 15 * time.Minute, LockFor: 15 * time.Minute}
 
 // NewUserDirectory returns a tenant.UserDirectory without the tenant dependency
 // (breaks the construction cycle auth <-> tenant).
@@ -83,7 +106,7 @@ func (s *service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 		return Session{}, err
 	}
 	var sess Session
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err := s.repo.InsertUser(ctx, tx, in.Name, email, ph, &hash)
 		if err != nil {
 			if db.IsUniqueViolation(err, "") {
@@ -102,6 +125,8 @@ func (s *service) Register(ctx context.Context, in RegisterInput, meta ClientMet
 	return sess, err
 }
 
+var errLocked = apperr.RateLimited("too many failed sign-in attempts; try again in 15 minutes")
+
 func (s *service) Login(ctx context.Context, in LoginInput, meta ClientMeta) (Session, error) {
 	id := strings.TrimSpace(in.Identifier)
 	if id == "" || in.Password == "" {
@@ -111,15 +136,22 @@ func (s *service) Login(ctx context.Context, in LoginInput, meta ClientMeta) (Se
 	if strings.Contains(id, "@") {
 		e := strings.ToLower(id)
 		email = &e
-	} else {
-		p, err := NormalizePhone(&id)
-		if err != nil {
-			return Session{}, errBadCredentials
-		}
+	} else if p, err := NormalizePhone(&id); err == nil {
 		ph = p
+	} else {
+		e := strings.ToLower(id) // unknown format: still counted against its own key
+		email = &e
+	}
+	idKey := "login:" + pauth.HashToken(deref(email)+"|"+deref(ph))
+	ipKey := "ip:" + meta.IP
+	if locked, err := s.isLocked(ctx, idKey, ipKey, meta.IP != ""); err != nil {
+		return Session{}, err
+	} else if locked {
+		return Session{}, errLocked // not audited per attempt (the lock itself was)
 	}
 	var sess Session
-	err := db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	var failedUser *uuid.UUID
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err := s.repo.UserByIdentifier(ctx, tx, email, ph)
 		if errors.Is(err, apperr.ErrNotFound) {
 			_, _ = pauth.VerifyPassword(in.Password, dummyHash) // equalise timing
@@ -128,11 +160,14 @@ func (s *service) Login(ctx context.Context, in LoginInput, meta ClientMeta) (Se
 		if err != nil {
 			return err
 		}
-		if u.PasswordHash == nil {
+		if u.PasswordHash == nil { // invited user who has not accepted yet (L1: same timing)
+			_, _ = pauth.VerifyPassword(in.Password, dummyHash)
+			failedUser = &u.ID
 			return errBadCredentials
 		}
 		ok, err := pauth.VerifyPassword(in.Password, *u.PasswordHash)
 		if err != nil || !ok {
+			failedUser = &u.ID
 			return errBadCredentials
 		}
 		if err := s.repo.TouchLogin(ctx, tx, u.ID); err != nil {
@@ -145,7 +180,62 @@ func (s *service) Login(ctx context.Context, in LoginInput, meta ClientMeta) (Se
 		sess, err = s.issue(ctx, tx, u, m, meta)
 		return err
 	})
+	if errors.Is(err, errBadCredentials) {
+		s.loginFailed(ctx, idKey, ipKey, meta, failedUser)
+		return Session{}, errBadCredentials
+	}
+	if err == nil {
+		_ = s.limiter.Reset(ctx, idKey)
+	}
 	return sess, err
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func (s *service) isLocked(ctx context.Context, idKey, ipKey string, checkIP bool) (bool, error) {
+	if l, _, err := s.limiter.Locked(ctx, idKey); err != nil || l {
+		return l, err
+	}
+	if !checkIP {
+		return false, nil
+	}
+	l, _, err := s.ipLimiter.Locked(ctx, ipKey)
+	return l, err
+}
+
+// loginFailed counts the failure and writes a platform audit row (SECURITY M9). The
+// identifier is stored only as a hash.
+func (s *service) loginFailed(ctx context.Context, idKey, ipKey string, meta ClientMeta, userID *uuid.UUID) {
+	locked, err := s.limiter.Fail(ctx, idKey)
+	if err != nil {
+		logger.From(ctx).Warn("login limiter", "err", err)
+	}
+	if meta.IP != "" {
+		if _, err := s.ipLimiter.Fail(ctx, ipKey); err != nil {
+			logger.From(ctx).Warn("login ip limiter", "err", err)
+		}
+	}
+	m := map[string]any{"identifier_hash": idKey, "ip": meta.IP}
+	s.auditPlatform(ctx, userID, "auth.login_failed", m)
+	if locked {
+		s.auditPlatform(ctx, userID, "auth.login_locked", m)
+	}
+}
+
+// auditPlatform writes a tenant-less audit row in its own transaction (it must survive
+// the rollback of the failed login).
+func (s *service) auditPlatform(ctx context.Context, userID *uuid.UUID, action string, meta map[string]any) {
+	err := db.WithPlatformTx(context.WithoutCancel(ctx), s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		return s.repo.InsertPlatformAudit(ctx, tx, userID, action, meta)
+	})
+	if err != nil {
+		logger.From(ctx).Error("audit "+action, "err", err)
+	}
 }
 
 // dummyHash is verified when the user does not exist so login timing does not leak accounts.
@@ -157,7 +247,7 @@ func (s *service) defaultMembership(ctx context.Context, userID uuid.UUID) (*ten
 		return nil, err
 	}
 	for _, m := range ms {
-		if m.Status != tenant.MemberDisabled && m.Tenant.Status == "active" {
+		if m.Status == tenant.MemberActive && m.Tenant.Status == "active" {
 			return &m, nil
 		}
 	}
@@ -172,7 +262,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, meta ClientM
 	var sess Session
 	var reused bool
 	var reusedUser uuid.UUID
-	err := db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		row, err := s.repo.RefreshByHash(ctx, tx, pauth.HashToken(refreshToken))
 		if err != nil {
 			return apperr.Unauthenticated("invalid refresh token")
@@ -194,7 +284,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, meta ClientM
 		var m *tenant.Membership
 		if tenantID != uuid.Nil {
 			mm, err := s.tenants.Membership(ctx, u.ID, tenantID)
-			if err == nil && mm.Status != tenant.MemberDisabled {
+			if err == nil && mm.Status == tenant.MemberActive && mm.Tenant.Status == "active" {
 				m = &mm
 			}
 		}
@@ -208,7 +298,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, meta ClientM
 	})
 	if reused {
 		// A revoked token was replayed: assume theft and revoke every session of the user.
-		_ = db.WithTx(context.WithoutCancel(ctx), s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		_ = db.WithPlatformTx(context.WithoutCancel(ctx), s.pool, func(ctx context.Context, tx pgx.Tx) error {
 			return s.repo.RevokeAllForUser(ctx, tx, reusedUser)
 		})
 	}
@@ -216,7 +306,7 @@ func (s *service) Refresh(ctx context.Context, refreshToken string, meta ClientM
 }
 
 func (s *service) Logout(ctx context.Context, refreshToken string) error {
-	return db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	return db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		row, err := s.repo.RefreshByHash(ctx, tx, pauth.HashToken(refreshToken))
 		if errors.Is(err, apperr.ErrNotFound) {
 			return nil // idempotent
@@ -233,11 +323,14 @@ func (s *service) SwitchTenant(ctx context.Context, userID, tenantID uuid.UUID, 
 	if err != nil {
 		return Session{}, err
 	}
-	if m.Status == tenant.MemberDisabled {
-		return Session{}, apperr.Forbidden("membership disabled")
+	if m.Status != tenant.MemberActive {
+		return Session{}, apperr.Forbidden("membership is not active")
+	}
+	if m.Tenant.Status != "active" {
+		return Session{}, apperr.Forbidden("this business is suspended")
 	}
 	var sess Session
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err := s.repo.UserByID(ctx, tx, userID)
 		if err != nil {
 			return err
@@ -252,7 +345,7 @@ func (s *service) ChangePassword(ctx context.Context, userID uuid.UUID, current,
 	if err := ValidatePassword(next); err != nil {
 		return err
 	}
-	return db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	return db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err := s.repo.UserByID(ctx, tx, userID)
 		if err != nil {
 			return err
@@ -296,7 +389,7 @@ func (s *service) issue(ctx context.Context, tx pgx.Tx, u User, m *tenant.Member
 }
 
 func (s *service) User(ctx context.Context, id uuid.UUID) (u User, err error) {
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err = s.repo.UserByID(ctx, tx, id)
 		return err
 	})
@@ -305,7 +398,7 @@ func (s *service) User(ctx context.Context, id uuid.UUID) (u User, err error) {
 
 func (s *service) UsersByIDs(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]User, error) {
 	out := make(map[uuid.UUID]User, len(ids))
-	err := db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err := db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		us, err := s.repo.UsersByIDs(ctx, tx, ids)
 		for _, u := range us {
 			out[u.ID] = u
@@ -332,7 +425,7 @@ func (s *service) FindOrCreateUser(ctx context.Context, email, phone *string, na
 		return uuid.Nil, apperr.Validation("email or phone is required")
 	}
 	var id uuid.UUID
-	err = db.WithTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
 		u, err := s.repo.UserByIdentifier(ctx, tx, e, p)
 		if err == nil {
 			id = u.ID
@@ -349,4 +442,87 @@ func (s *service) FindOrCreateUser(ctx context.Context, email, phone *string, na
 		return nil
 	})
 	return id, err
+}
+
+// ---- invites (SPRINT-01-QA BUG-02/BUG-03)
+
+var errInviteLink = apperr.ValidationField("token", "this invite link is invalid or has expired; ask for a new one")
+
+func (s *service) Invite(ctx context.Context, token string) (InvitePreview, error) {
+	inv, err := s.tenants.InviteByToken(ctx, token)
+	if err != nil {
+		return InvitePreview{}, err
+	}
+	return InvitePreview{TenantName: inv.TenantName, Role: inv.Role, InviteeName: inv.InviteeName,
+		EmailHint: tenant.MaskEmail(inv.Email), PhoneHint: tenant.MaskPhone(inv.Phone), ExpiresAt: inv.ExpiresAt,
+		UserExists: inv.UserHasPassword}, nil
+}
+
+func (s *service) AcceptInvite(ctx context.Context, token, password string, name *string, meta ClientMeta) (Session, error) {
+	inv, err := s.tenants.InviteByToken(ctx, token)
+	if errors.Is(err, apperr.ErrNotFound) {
+		return Session{}, errInviteLink
+	}
+	if err != nil {
+		return Session{}, err
+	}
+	key := "accept:" + inv.UserID.String()
+	if l, _, err := s.limiter.Locked(ctx, key); err != nil {
+		return Session{}, err
+	} else if l {
+		return Session{}, errLocked
+	}
+	var sess Session
+	err = db.WithPlatformTx(ctx, s.pool, func(ctx context.Context, tx pgx.Tx) error {
+		u, err := s.repo.UserByID(ctx, tx, inv.UserID)
+		if err != nil {
+			return err
+		}
+		if u.PasswordHash != nil {
+			// Existing account: prove ownership; the profile is not changed.
+			if ok, _ := pauth.VerifyPassword(password, *u.PasswordHash); !ok {
+				return errBadCredentials
+			}
+		} else {
+			if err := ValidatePassword(password); err != nil {
+				return err
+			}
+			hash, err := pauth.HashPassword(password)
+			if err != nil {
+				return err
+			}
+			if err := s.repo.SetPassword(ctx, tx, u.ID, hash); err != nil {
+				return err
+			}
+			if name != nil && strings.TrimSpace(*name) != "" {
+				n := strings.TrimSpace(*name)
+				if len([]rune(n)) > 100 {
+					return apperr.ValidationField("name", "max 100 characters")
+				}
+				if err := s.repo.SetName(ctx, tx, u.ID, n); err != nil {
+					return err
+				}
+				u.Name = n
+			}
+		}
+		if err := s.tenants.ActivateInvite(ctx, inv, token); err != nil {
+			if errors.Is(err, apperr.ErrNotFound) {
+				return errInviteLink
+			}
+			return err
+		}
+		m, err := s.tenants.Membership(ctx, u.ID, inv.TenantID)
+		if err != nil {
+			return err
+		}
+		sess, err = s.issue(ctx, tx, u, &m, meta)
+		return err
+	})
+	if errors.Is(err, errBadCredentials) {
+		if _, ferr := s.limiter.Fail(ctx, key); ferr != nil {
+			logger.From(ctx).Warn("accept limiter", "err", ferr)
+		}
+		s.auditPlatform(ctx, &inv.UserID, "auth.invite_accept_failed", map[string]any{"ip": meta.IP})
+	}
+	return sess, err
 }

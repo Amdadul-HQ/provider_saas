@@ -1,7 +1,9 @@
 "use client"
 
-import type { ReactNode } from "react"
-import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table"
+import type { MouseEvent, ReactNode } from "react"
+import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type RowData } from "@tanstack/react-table"
 import type { CombinedError } from "@urql/core"
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -10,6 +12,16 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { ErrorState } from "./error-state"
+
+declare module "@tanstack/react-table" {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- must mirror the library's generics to merge
+  interface ColumnMeta<TData extends RowData, TValue> {
+    /** Pin the column to the right edge so row actions stay reachable when the table scrolls (BUG-16). */
+    sticky?: "right"
+  }
+}
+
+const STICKY_RIGHT = "sticky right-0 z-10 bg-card shadow-[inset_1px_0_0_var(--color-border)]"
 
 export type CursorPageInfo = { hasNextPage: boolean; endCursor?: string | null }
 
@@ -33,6 +45,14 @@ export type DataTableProps<T> = {
   toolbar?: ReactNode
   empty?: ReactNode
   onRowClick?: (row: T) => void
+  /**
+   * Detail URL for a row (BUG-10). Rows become real links: mobile cards are `<a>`, the desktop
+   * row's `linkColumn` cell is wrapped in an `<a>` (keyboard, open-in-new-tab) and a click anywhere
+   * else on the row navigates too. Prefer this over `onRowClick` for navigation.
+   */
+  rowHref?: (row: T) => string
+  /** Column id whose cell holds the row link (default: first column). Must not contain other controls. */
+  linkColumn?: string
   /** Card renderer used below md (phones). Falls back to a horizontally scrollable table. */
   mobileCard?: (row: T) => ReactNode
   getRowId?: (row: T) => string
@@ -56,13 +76,30 @@ export function DataTable<T>({
   toolbar,
   empty,
   onRowClick,
+  rowHref,
+  linkColumn,
   mobileCard,
   getRowId,
   skeletonRows = 6,
   className,
 }: DataTableProps<T>) {
   const t = useT()
+  const router = useRouter()
   const rows = (data ?? []) as T[]
+  const linkColumnId = linkColumn ?? columns[0]?.id
+  const activateRow = (e: MouseEvent, row: T) => {
+    if (rowHref) {
+      // let real controls (and the cell link itself) handle their own clicks; keep text selection usable
+      if ((e.target as HTMLElement).closest("a,button,input,select,textarea,label,[role=combobox],[role=checkbox],[role=menuitem]")) return
+      if (window.getSelection()?.toString()) return
+      const href = rowHref(row)
+      if (e.metaKey || e.ctrlKey) window.open(href, "_blank", "noopener")
+      else router.push(href)
+      return
+    }
+    onRowClick?.(row)
+  }
+  const clickable = Boolean(rowHref || onRowClick)
   const table = useReactTable({
     data: rows,
     columns,
@@ -95,7 +132,14 @@ export function DataTable<T>({
                   ))
                 : table.getRowModel().rows.map((row) => (
                     <li key={row.id}>
-                      {onRowClick ? (
+                      {rowHref ? (
+                        <Link
+                          href={rowHref(row.original)}
+                          className="block w-full rounded-xl border bg-card p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:bg-muted"
+                        >
+                          {mobileCard(row.original)}
+                        </Link>
+                      ) : onRowClick ? (
                         <button
                           type="button"
                           className="block w-full rounded-xl border bg-card p-3 text-left transition-colors active:bg-muted"
@@ -117,7 +161,13 @@ export function DataTable<T>({
                 {table.getHeaderGroups().map((hg) => (
                   <TableRow key={hg.id}>
                     {hg.headers.map((header) => (
-                      <TableHead key={header.id} className="h-10 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                      <TableHead
+                        key={header.id}
+                        className={cn(
+                          "h-10 text-xs font-medium tracking-wide text-muted-foreground uppercase",
+                          header.column.columnDef.meta?.sticky === "right" && cn(STICKY_RIGHT, "bg-muted"),
+                        )}
+                      >
                         {header.isPlaceholder ? null : flexRender(header.column.columnDef.header, header.getContext())}
                       </TableHead>
                     ))}
@@ -138,12 +188,21 @@ export function DataTable<T>({
                   : table.getRowModel().rows.map((row) => (
                       <TableRow
                         key={row.id}
-                        className={cn(onRowClick && "cursor-pointer")}
-                        onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                        className={cn(clickable && "cursor-pointer")}
+                        onClick={clickable ? (e) => activateRow(e, row.original) : undefined}
                       >
                         {row.getVisibleCells().map((cell) => (
-                          <TableCell key={cell.id} className="py-3">
-                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                          <TableCell key={cell.id} className={cn("py-3", cell.column.columnDef.meta?.sticky === "right" && STICKY_RIGHT)}>
+                            {rowHref && cell.column.id === linkColumnId ? (
+                              <Link
+                                href={rowHref(row.original)}
+                                className="block rounded-sm hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                              >
+                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                              </Link>
+                            ) : (
+                              flexRender(cell.column.columnDef.cell, cell.getContext())
+                            )}
                           </TableCell>
                         ))}
                       </TableRow>

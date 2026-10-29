@@ -2,7 +2,9 @@
  * Money helpers (ADR-004). Amounts travel as integer minor units (paisa).
  * Never use floats for storage; floats only exist transiently in form inputs.
  */
-export type Digits = "latn" | "beng"
+import { intlTag, type Digits } from "./digits"
+
+export type { Digits } from "./digits"
 
 const SYMBOLS: Record<string, string> = { BDT: "৳", USD: "$", INR: "₹", EUR: "€" }
 
@@ -22,9 +24,21 @@ export function toMinor(major: number | string): number {
   return Math.round(n * 100)
 }
 
-export function formatNumber(value: number, digits: Digits = "latn", maxFractionDigits = 0): string {
-  const locale = digits === "beng" ? "bn-BD" : "en-IN" // en-IN gives lakh grouping familiar in BD
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: maxFractionDigits }).format(value)
+/** en-IN gives the lakh grouping (1,00,000) familiar in BD; bn-BD the same grouping in Bengali. */
+function numberLocale(digits: Digits): string {
+  return digits === "beng" ? intlTag("bn-BD", "beng") : intlTag("en-IN", "latn")
+}
+
+/** Counts, quantities and percentages. Always pass the user's digit setting (`useDigits()`). */
+export function formatNumber(value: number | null | undefined, digits: Digits = "latn", maxFractionDigits = 0): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return "—"
+  return new Intl.NumberFormat(numberLocale(digits), { maximumFractionDigits: maxFractionDigits }).format(value)
+}
+
+/** 0.4567 → "46%" */
+export function formatPercent(ratio: number | null | undefined, digits: Digits = "latn"): string {
+  if (ratio === null || ratio === undefined || !Number.isFinite(ratio)) return "—"
+  return `${formatNumber(Math.round(ratio * 100), digits)}%`
 }
 
 /** 35000 → "৳ 350"; 35050 → "৳ 350.50"; -1000 → "-৳ 10" */
@@ -36,7 +50,7 @@ export function formatMoney(
   const value = fromMinor(minor ?? 0)
   const abs = Math.abs(value)
   const sign = value < 0 ? "-" : ""
-  const locale = digits === "beng" ? "bn-BD" : "en-IN"
+  const locale = numberLocale(digits)
   const hasFraction = Math.round(abs * 100) % 100 !== 0
   const body = compact
     ? new Intl.NumberFormat(locale, { notation: "compact", maximumFractionDigits: 1 }).format(abs)

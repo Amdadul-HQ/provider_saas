@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -48,16 +49,16 @@ func (Repository) Find(ctx context.Context, q db.Querier, tenantID uuid.UUID, pl
 	return a, err
 }
 
-// ResolveInbound finds the connected account for a webhook across tenants (platform
-// level, no tenant scope). If several tenants connected the same page, the most
-// recently updated connection wins.
+// ResolveInbound finds the live connection for a webhook (needs db.LookupSocialKey).
+// (platform, external_id) is unique among non-disconnected rows (migration 00011), so
+// there is never a choice between tenants.
 func (Repository) ResolveInbound(ctx context.Context, q db.Querier, platform, externalID string) (Account, error) {
 	a, err := scan(q.QueryRow(ctx, `SELECT `+cols+` FROM social_accounts WHERE platform = $1 AND external_id = $2
-		AND status IN ('connected','token_expired','error') ORDER BY updated_at DESC LIMIT 1`, platform, externalID))
+		AND status IN ('connected','token_expired','error')`, platform, externalID))
 	return a, db.MapErr(err, "social account")
 }
 
-// ByID loads an account without tenant scope (webhook routes carry the account id).
+// ByID loads an account by id before its tenant is known (needs db.LookupSocialID).
 func (Repository) ByID(ctx context.Context, q db.Querier, id uuid.UUID) (Account, error) {
 	a, err := scan(q.QueryRow(ctx, `SELECT `+cols+` FROM social_accounts WHERE id = $1`, id))
 	return a, db.MapErr(err, "social account")
@@ -99,7 +100,25 @@ func (Repository) Disconnect(ctx context.Context, q db.Querier, tenantID, id uui
 	return err
 }
 
-func (Repository) MarkWebhookVerified(ctx context.Context, q db.Querier, id uuid.UUID) error {
-	_, err := q.Exec(ctx, `UPDATE social_accounts SET webhook_verified = true WHERE id = $1 AND NOT webhook_verified`, id)
+func (Repository) MarkWebhookVerified(ctx context.Context, q db.Querier, tenantID, id uuid.UUID) error {
+	_, err := q.Exec(ctx, `UPDATE social_accounts SET webhook_verified = true WHERE tenant_id = $1 AND id = $2 AND NOT webhook_verified`, tenantID, id)
 	return err
+}
+
+// InsertState stores an OAuth state nonce (single use, migration 00014).
+func (Repository) InsertState(ctx context.Context, q db.Querier, tenantID, userID uuid.UUID, nonce, platform string, exp time.Time) error {
+	_, err := q.Exec(ctx, `INSERT INTO oauth_states (nonce, tenant_id, user_id, platform, expires_at) VALUES ($1,$2,$3,$4,$5)`,
+		nonce, tenantID, userID, platform, exp)
+	if err != nil {
+		return err
+	}
+	_, err = q.Exec(ctx, `DELETE FROM oauth_states WHERE tenant_id = $1 AND expires_at < now() - interval '1 day'`, tenantID)
+	return err
+}
+
+// ConsumeState deletes the nonce if it belongs to this tenant+user and has not expired.
+func (Repository) ConsumeState(ctx context.Context, q db.Querier, tenantID, userID uuid.UUID, nonce string, now time.Time) (bool, error) {
+	tag, err := q.Exec(ctx, `DELETE FROM oauth_states WHERE tenant_id = $1 AND user_id = $2 AND nonce = $3 AND expires_at > $4`,
+		tenantID, userID, nonce, now)
+	return tag.RowsAffected() == 1, err
 }

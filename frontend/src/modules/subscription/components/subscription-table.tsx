@@ -99,7 +99,7 @@ export function SubscriptionTable({ customerId, emptyAction }: { customerId?: st
             options={SUBSCRIPTION_STATUSES.map((s) => ({ value: s, label: enumLabel(t, "SubscriptionStatus", s) }))}
           />
           <div className="w-full md:w-52">
-            <ProductSelect value={filter.productId} includeAllOption={`${t.common.product}: ${t.common.all}`} onChange={(p) => update({ productId: p?.id })} />
+            <ProductSelect aria-label={t.common.product} value={filter.productId} includeAllOption={`${t.common.product}: ${t.common.all}`} onChange={(p) => update({ productId: p?.id })} />
           </div>
           <FilterSelect<string>
             label={t.subscriptions.expiringWithin}

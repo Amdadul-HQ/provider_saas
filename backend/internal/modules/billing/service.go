@@ -30,6 +30,11 @@ type Notifier interface {
 	SendToCustomer(ctx context.Context, tenantID, customerID uuid.UUID, channel, body string) error
 }
 
+// Auditor writes audit_logs rows (tenant module); joins the caller's transaction.
+type Auditor interface {
+	Audit(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, action, entityType string, entityID *uuid.UUID, meta map[string]any) error
+}
+
 // PaidHook is called inside the payment transaction when an invoice becomes fully
 // paid (app wires it to enqueue delivery.send for undelivered subscriptions).
 type PaidHook interface {
@@ -60,7 +65,8 @@ type Service interface {
 	Payment(ctx context.Context, tenantID, id uuid.UUID) (Payment, error)
 	Payments(ctx context.Context, tenantID uuid.UUID, f PaymentFilter, page pagination.Page) ([]Payment, bool, int, error)
 
-	IngestSMS(ctx context.Context, tenantID uuid.UUID, raw string, receivedAt time.Time) (InboxItem, error)
+	// IngestSMS stores a forwarded SMS; only SMS from an allowed sender id may auto-verify.
+	IngestSMS(ctx context.Context, tenantID uuid.UUID, sender, raw string, receivedAt time.Time) (InboxItem, error)
 	PaymentInbox(ctx context.Context, tenantID uuid.UUID, status *string, page pagination.Page) ([]InboxItem, error)
 	MatchInbox(ctx context.Context, tenantID, actorID, inboxID, paymentID uuid.UUID) (Payment, error)
 	IgnoreInbox(ctx context.Context, tenantID, inboxID uuid.UUID) error
@@ -80,12 +86,44 @@ type service struct {
 	repo      Repository
 	customers Customers
 	notifier  Notifier
+	auditor   Auditor
 	hooks     []PaidHook
 	now       func() time.Time
 }
 
-func NewService(pool *pgxpool.Pool, customers Customers, notifier Notifier, hooks ...PaidHook) Service {
-	return &service{pool: pool, customers: customers, notifier: notifier, hooks: hooks, now: time.Now}
+// NewService builds billing. auditor may be nil (no audit rows; tests only).
+func NewService(pool *pgxpool.Pool, customers Customers, notifier Notifier, auditor Auditor, hooks ...PaidHook) Service {
+	return &service{pool: pool, customers: customers, notifier: notifier, auditor: auditor, hooks: hooks, now: time.Now}
+}
+
+// audit records a money action (SECURITY M9) inside the caller's transaction.
+func (s *service) audit(ctx context.Context, tenantID, actorID uuid.UUID, action, entity string, id uuid.UUID, meta map[string]any) error {
+	if s.auditor == nil {
+		return nil
+	}
+	return s.auditor.Audit(ctx, tenantID, actor(actorID), action, entity, &id, meta)
+}
+
+// errOverpaid is returned when a payment would push an invoice past its total (QA BUG-04).
+func errOverpaid(amount, due int64, currency string) error {
+	return apperr.ValidationField("amount", fmt.Sprintf("amount %s is more than the remaining due %s; record the rest as a separate advance or enable overpayments",
+		money.Format(amount, currency, true), money.Format(max(due, 0), currency, true)))
+}
+
+// checkNotOverpaid enforces amount <= remaining due unless the tenant allows overpayment.
+func (s *service) checkNotOverpaid(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, inv Invoice, amount int64) error {
+	due := inv.Total - inv.PaidAmount
+	if amount <= due {
+		return nil
+	}
+	settings, err := s.repo.TenantSettings(ctx, tx, tenantID)
+	if err != nil {
+		return err
+	}
+	if AllowOverpayment(settings) {
+		return nil
+	}
+	return errOverpaid(amount, due, inv.Currency)
 }
 
 func (s *service) invoicePaid(ctx context.Context, tenantID, invoiceID uuid.UUID) error {
@@ -125,7 +163,7 @@ func (s *service) CreateInvoice(ctx context.Context, tenantID, actorID uuid.UUID
 		if err != nil {
 			return err
 		}
-		seq, err := s.repo.NextInvoiceSeq(ctx, tx)
+		seq, err := s.repo.NextInvoiceSeq(ctx, tx, tenantID)
 		if err != nil {
 			return err
 		}
@@ -228,6 +266,10 @@ func (s *service) VoidInvoice(ctx context.Context, tenantID, actorID, id uuid.UU
 			if err := s.ledger(ctx, tx, tenantID, inv.CustomerID, Credit, inv.Total, inv.Currency, "invoice", inv.ID, &note, actor(actorID)); err != nil {
 				return err
 			}
+		}
+		if err := s.audit(ctx, tenantID, actorID, "invoice.void", "invoice", id, map[string]any{"number": inv.Number,
+			"total": inv.Total, "reason": deref(reason)}); err != nil {
+			return err
 		}
 		inv, err = s.repo.GetInvoice(ctx, tx, tenantID, id, false)
 		return err
@@ -335,6 +377,9 @@ func (s *service) RecordPayment(ctx context.Context, tenantID, actorID uuid.UUID
 			case customerID != nil && *customerID != inv.CustomerID:
 				return apperr.Validation("invoice belongs to another customer")
 			}
+			if err := s.checkNotOverpaid(ctx, tx, tenantID, inv, in.Amount); err != nil {
+				return err
+			}
 			customerID, cur = &inv.CustomerID, inv.Currency
 		}
 		if customerID == nil {
@@ -378,6 +423,10 @@ func (s *service) RecordPayment(ctx context.Context, tenantID, actorID uuid.UUID
 			}
 		}
 		if p.Status == PaymentVerified {
+			if err := s.audit(ctx, tenantID, actorID, "payment.verify", "payment", p.ID, map[string]any{"amount": p.Amount,
+				"method": p.Method, "trx_id": p.TrxID, "source": source, "invoice_id": p.InvoiceID, "on_record": true}); err != nil {
+				return err
+			}
 			return s.applyVerified(ctx, tx, tenantID, p, actor(actorID))
 		}
 		return nil
@@ -435,6 +484,18 @@ func (s *service) verify(ctx context.Context, tenantID, actorID, id uuid.UUID, s
 		if cur.Status != PaymentPending {
 			return apperr.Validation("payment is already " + cur.Status)
 		}
+		if cur.InvoiceID != nil {
+			inv, err := s.repo.GetInvoice(ctx, tx, tenantID, *cur.InvoiceID, true)
+			if err != nil {
+				return err
+			}
+			if inv.Status == InvoiceVoid {
+				return apperr.Validation("invoice is void")
+			}
+			if err := s.checkNotOverpaid(ctx, tx, tenantID, inv, cur.Amount); err != nil {
+				return err
+			}
+		}
 		now := s.now()
 		if p, err = s.repo.UpdatePaymentStatus(ctx, tx, tenantID, id, PaymentVerified, actor(actorID), &now, &source, nil); err != nil {
 			return err
@@ -451,28 +512,77 @@ func (s *service) verify(ctx context.Context, tenantID, actorID, id uuid.UUID, s
 				return err
 			}
 		}
+		if err := s.audit(ctx, tenantID, actorID, "payment.verify", "payment", p.ID, map[string]any{"amount": p.Amount,
+			"method": p.Method, "trx_id": p.TrxID, "source": source, "invoice_id": p.InvoiceID, "inbox_id": inboxID}); err != nil {
+			return err
+		}
 		return s.applyVerified(ctx, tx, tenantID, p, actor(actorID))
 	})
 	return p, err
 }
 
+// RejectPayment rejects a pending payment, or reverses a verified one (wrongly verified,
+// e.g. a spoofed SMS): the invoice paid amount/status, the ledger (a debit entry) and the
+// customer's due/lifetime value are restored in the same transaction.
 func (s *service) RejectPayment(ctx context.Context, tenantID, actorID, id uuid.UUID, reason *string) (p Payment, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
 		cur, err := s.repo.GetPayment(ctx, tx, tenantID, id, true)
 		if err != nil {
 			return err
 		}
-		if cur.Status != PaymentPending {
-			return apperr.Validation("only pending payments can be rejected")
+		if cur.Status != PaymentPending && cur.Status != PaymentVerified {
+			return apperr.Validation("payment is already " + cur.Status)
 		}
 		note := "rejected"
 		if reason != nil && *reason != "" {
 			note += ": " + *reason
 		}
-		p, err = s.repo.UpdatePaymentStatus(ctx, tx, tenantID, id, PaymentRejected, actor(actorID), nil, nil, &note)
-		return err
+		if p, err = s.repo.UpdatePaymentStatus(ctx, tx, tenantID, id, PaymentRejected, actor(actorID), nil, nil, &note); err != nil {
+			return err
+		}
+		if cur.Status == PaymentVerified {
+			if err := s.reverseVerified(ctx, tx, tenantID, cur, note, actor(actorID)); err != nil {
+				return err
+			}
+		}
+		return s.audit(ctx, tenantID, actorID, "payment.reject", "payment", id, map[string]any{"amount": cur.Amount,
+			"method": cur.Method, "previous_status": cur.Status, "reason": deref(reason), "invoice_id": cur.InvoiceID})
 	})
 	return p, err
+}
+
+// reverseVerified undoes applyVerified for a payment that is being rejected.
+func (s *service) reverseVerified(ctx context.Context, tx pgx.Tx, tenantID uuid.UUID, p Payment, note string, by *uuid.UUID) error {
+	if p.InvoiceID != nil {
+		inv, err := s.repo.GetInvoice(ctx, tx, tenantID, *p.InvoiceID, true)
+		if err != nil {
+			return err
+		}
+		paid := max(0, inv.PaidAmount-p.Amount)
+		status := StatusAfterPayment(inv.Status, paid, inv.Total)
+		var paidAt *time.Time
+		if status == InvoicePaid {
+			paidAt = inv.PaidAt
+		}
+		if err := s.repo.UpdateInvoicePayment(ctx, tx, tenantID, inv.ID, paid, status, paidAt); err != nil {
+			return err
+		}
+	}
+	if p.CustomerID == nil {
+		return nil
+	}
+	if _, err := s.repo.InsertLedger(ctx, tx, tenantID, LedgerEntry{CustomerID: *p.CustomerID, EntryType: Debit, Amount: p.Amount,
+		Currency: p.Currency, RefType: strp("payment"), RefID: &p.ID, Note: &note, CreatedBy: by}); err != nil {
+		return err
+	}
+	return s.customers.AdjustBalance(ctx, tenantID, *p.CustomerID, p.Amount, -p.Amount)
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func (s *service) Payment(ctx context.Context, tenantID, id uuid.UUID) (p Payment, err error) {
@@ -505,13 +615,22 @@ func (s *service) Payments(ctx context.Context, tenantID uuid.UUID, f PaymentFil
 // ---- payment inbox
 
 // IngestSMS stores a forwarded SMS and auto-verifies a pending payment with the same
-// method + TrxID + amount.
-func (s *service) IngestSMS(ctx context.Context, tenantID uuid.UUID, raw string, receivedAt time.Time) (item InboxItem, err error) {
+// method + TrxID + amount, but only when the SMS came from an allowed sender id for that
+// method (SECURITY H4). A parsed payment SMS from any other sender (e.g. a customer's
+// personal number copying bKash wording) is stored as needs_review and never verifies.
+func (s *service) IngestSMS(ctx context.Context, tenantID uuid.UUID, sender, raw string, receivedAt time.Time) (item InboxItem, err error) {
 	if strings.TrimSpace(raw) == "" {
 		return item, apperr.Validation("empty sms")
 	}
+	sender = strings.TrimSpace(sender)
+	if sender == "" {
+		return item, apperr.ValidationField("from", "sender is required")
+	}
+	if len(sender) > 64 {
+		sender = sender[:64]
+	}
 	parsed, perr := ParsePaymentSMS(raw)
-	item = InboxItem{Source: "sms", RawText: raw, Status: "unmatched", ReceivedAt: receivedAt}
+	item = InboxItem{Source: "sms", Sender: &sender, RawText: raw, Status: "unmatched", ReceivedAt: receivedAt}
 	switch {
 	case errors.Is(perr, ErrNotPaymentSMS):
 		item.Status = "ignored"
@@ -528,6 +647,15 @@ func (s *service) IngestSMS(ctx context.Context, tenantID uuid.UUID, raw string,
 		}
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
+		if item.Status == "unmatched" {
+			settings, err := s.repo.TenantSettings(ctx, tx, tenantID)
+			if err != nil {
+				return err
+			}
+			if !SenderAllowed(*item.Method, sender, settings) {
+				item.Status = "needs_review"
+			}
+		}
 		if item, err = s.repo.InsertInbox(ctx, tx, tenantID, item); err != nil {
 			return err
 		}
@@ -542,6 +670,9 @@ func (s *service) IngestSMS(ctx context.Context, tenantID uuid.UUID, raw string,
 			return err
 		}
 		if _, err := s.verify(ctx, tenantID, uuid.Nil, p.ID, SourceSMSMatch, &item.ID); err != nil {
+			if errors.Is(err, apperr.ErrValidation) { // e.g. would overpay: leave it for a human
+				return s.repo.SetInboxStatus(ctx, tx, tenantID, item.ID, "needs_review", nil)
+			}
 			return err
 		}
 		item.Status, item.MatchedPaymentID = "matched", &p.ID
@@ -639,7 +770,11 @@ func (s *service) AddLedgerAdjustment(ctx context.Context, tenantID, actorID, cu
 		if entryType == Credit {
 			delta = -amount
 		}
-		return s.customers.AdjustBalance(ctx, tenantID, customerID, delta, 0)
+		if err := s.customers.AdjustBalance(ctx, tenantID, customerID, delta, 0); err != nil {
+			return err
+		}
+		return s.audit(ctx, tenantID, actorID, "ledger.adjust", "customer", customerID, map[string]any{"entry_type": entryType,
+			"amount": amount, "note": deref(note), "ledger_entry_id": e.ID})
 	})
 	return e, err
 }

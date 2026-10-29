@@ -4,11 +4,12 @@ import Link from "next/link"
 import { ShieldAlertIcon } from "lucide-react"
 import { DateText, EmptyState, ErrorState, ListSkeleton, MoneyText, PlatformIcon } from "@/components/shared"
 import { Progress } from "@/components/ui/progress"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useFormat, useLabel, useT } from "@/i18n"
 import { useAtRiskCustomers, useChannelStats, useProductStats } from "../hooks/use-analytics"
 
 export function AtRiskList({ limit = 8 }: { limit?: number }) {
   const t = useT()
+  const label = useLabel()
   const [{ data, fetching, error }, refetch] = useAtRiskCustomers(limit)
   const items = data?.atRiskCustomers
   if (!items) {
@@ -25,7 +26,7 @@ export function AtRiskList({ limit = 8 }: { limit?: number }) {
               {r.customer.name}
             </Link>
             <p className="truncate text-xs text-muted-foreground">
-              {r.reason}
+              {label("AtRiskReason", r.reason)}
               {r.expiresAt ? (
                 <>
                   {" · "}
@@ -43,6 +44,7 @@ export function AtRiskList({ limit = 8 }: { limit?: number }) {
 
 export function ProductStatsList({ days = 30 }: { days?: number }) {
   const t = useT()
+  const f = useFormat()
   const [{ data, fetching, error }, refetch] = useProductStats(days)
   const rows = data?.productStats
   if (!rows) {
@@ -65,7 +67,7 @@ export function ProductStatsList({ days = 30 }: { days?: number }) {
             </span>
             <span className="flex w-28 items-center gap-1.5">
               <Progress value={Math.round(r.renewalRate * 100)} className="h-1.5" aria-label={t.dashboard.renewalRate} />
-              {Math.round(r.renewalRate * 100)}%
+              {f.percent(r.renewalRate)}
             </span>
           </div>
         </li>
@@ -76,6 +78,7 @@ export function ProductStatsList({ days = 30 }: { days?: number }) {
 
 export function ChannelStatsList({ days = 30 }: { days?: number }) {
   const t = useT()
+  const f = useFormat()
   const [{ data, fetching, error }, refetch] = useChannelStats(days)
   const rows = data?.channelStats
   if (!rows) {
@@ -91,7 +94,7 @@ export function ChannelStatsList({ days = 30 }: { days?: number }) {
             <PlatformIcon platform={r.platform} className="size-5" /> {enumLabel(t, "Platform", r.platform)}
           </p>
           <p className="text-xs text-muted-foreground">
-            {t.dashboard.conversations}: {r.conversations} · {t.nav.customers}: {r.customers} · {t.dashboard.orders}: {r.orders}
+            {t.dashboard.conversations}: {f.number(r.conversations)} · {t.nav.customers}: {f.number(r.customers)} · {t.dashboard.orders}: {f.number(r.orders)}
           </p>
         </li>
       ))}

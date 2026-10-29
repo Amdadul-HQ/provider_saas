@@ -53,3 +53,8 @@ type (
 		Notify(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, kind, title string, body, link *string) error
 	}
 )
+
+// Auditor writes audit_logs rows (tenant module).
+type Auditor interface {
+	Audit(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, action, entityType string, entityID *uuid.UUID, meta map[string]any) error
+}

@@ -65,3 +65,15 @@ func Middleware(issuer *TokenIssuer) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// ResellerScope returns the caller's user id when the caller is a RESELLER (ADR-007):
+// repositories then restrict customers, subscriptions and orders to rows the reseller
+// owns (owner_user_id / sold_by / created_by). Background jobs carry no principal and
+// are never scoped.
+func ResellerScope(ctx context.Context) (uuid.UUID, bool) {
+	p, ok := FromContext(ctx)
+	if !ok || p.IsPlatformAdmin || !strings.EqualFold(p.Role, RoleReseller) {
+		return uuid.Nil, false
+	}
+	return p.UserID, true
+}

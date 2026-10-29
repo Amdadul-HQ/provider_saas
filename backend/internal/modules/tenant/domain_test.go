@@ -19,3 +19,16 @@ func TestSlugify(t *testing.T) {
 		t.Fatal("ValidRole")
 	}
 }
+
+func TestMaskContact(t *testing.T) {
+	e, p := "rahim@example.com", "01712345678"
+	if got := *MaskEmail(&e); got != "ra***@example.com" {
+		t.Fatalf("email %q", got)
+	}
+	if got := *MaskPhone(&p); got != "017*****678" {
+		t.Fatalf("phone %q", got)
+	}
+	if MaskEmail(nil) != nil || MaskPhone(nil) != nil {
+		t.Fatal("nil")
+	}
+}

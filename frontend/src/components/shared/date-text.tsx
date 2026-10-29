@@ -1,7 +1,6 @@
 "use client"
 
-import { formatDate, formatDateTime, formatRelative } from "@/lib/dates"
-import { useLocale, useT } from "@/i18n"
+import { useFormat, useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 
 export function DateText({
@@ -15,11 +14,11 @@ export function DateText({
   relative?: boolean
   className?: string
 }) {
-  const locale = useLocale()
+  const f = useFormat()
   if (!value) return <span className={cn("text-muted-foreground", className)}>—</span>
-  const text = relative ? formatRelative(value, locale) : withTime ? formatDateTime(value, locale) : formatDate(value, locale)
+  const text = relative ? f.relative(value) : withTime ? f.dateTime(value) : f.date(value)
   return (
-    <time dateTime={value} title={formatDateTime(value, locale)} className={cn("whitespace-nowrap", className)}>
+    <time dateTime={value} title={f.dateTime(value)} className={cn("whitespace-nowrap", className)}>
       {text}
     </time>
   )

@@ -7,3 +7,5 @@
 | [ADR-004](ADR-004-money-and-secrets.md) | Money as bigint minor units; secrets in AES-GCM vault | accepted |
 | [ADR-005](ADR-005-module-layout.md) | Module-per-domain in both apps; cross-module via service interfaces | accepted |
 | [ADR-006](ADR-006-jobs.md) | Postgres-backed job queue polled by worker; no external broker in v1 | accepted |
+| [ADR-007](ADR-007-role-matrix.md) | Role matrix: roles on every Mutation, reseller row scoping, viewer read-only | accepted |
+| [ADR-008](ADR-008-rls-app-role.md) | RLS with non-owner app role, FORCE, fail-closed policy, key-scoped lookup policies | accepted |

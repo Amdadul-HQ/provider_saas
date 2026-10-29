@@ -5,19 +5,63 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import type { ColumnDef } from "@tanstack/react-table"
-import { PlusIcon, Trash2Icon } from "lucide-react"
+import { PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldGroup } from "@/components/ui/field"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { ConfirmDialog, DataTable, EmptyState, NumberField, ResponsiveDialog, SelectField, StatusBadge, TextField, DateText } from "@/components/shared"
+import { ConfirmDialog, DataTable, EmptyState, NumberField, OneTimeSecretDialog, ResponsiveDialog, SelectField, StatusBadge, TextField, ToneBadge, type Tone } from "@/components/shared"
 import type { Role, TenantMemberFieldsFragment } from "@/gql/graphql"
 import { ROLES } from "@/lib/enums"
 import { RoleGate, useSession } from "@/lib/auth"
 import { normalizePhone, v } from "@/lib/validation"
-import { enumLabel, useT } from "@/i18n"
-import { useInviteMember, useRemoveMember, useTenantSettings, useUpdateMemberRole } from "../hooks/use-tenant"
+import { enumLabel, useFormat, useLabel, useT } from "@/i18n"
+import { useInviteMember, useRemoveMember, useResendInvite, useTenantSettings, useUpdateMemberRole } from "../hooks/use-tenant"
 
-function InviteMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+/** One-time invite link returned by inviteMember/resendInvite; dropped from state when the dialog closes. */
+type IssuedInvite = { url: string; expiresAt: string | null; name: string }
+
+const MEMBER_TONE: Record<string, Tone> = { active: "success", invited: "warning", disabled: "neutral" }
+
+function MemberStatus({ member }: { member: TenantMemberFieldsFragment }) {
+  const t = useT()
+  const label = useLabel()
+  const f = useFormat()
+  const status = member.status.toLowerCase()
+  const expired = status === "invited" && member.inviteExpiresAt !== null && new Date(member.inviteExpiresAt) < new Date()
+  return (
+    <div className="space-y-0.5">
+      <ToneBadge tone={expired ? "danger" : (MEMBER_TONE[status] ?? "neutral")}>{expired ? t.settings.inviteExpired : label("MemberStatus", member.status)}</ToneBadge>
+      {status === "invited" && member.inviteExpiresAt && !expired ? (
+        <p className="text-xs whitespace-nowrap text-muted-foreground">
+          {t.settings.inviteExpiresAt}: <time dateTime={member.inviteExpiresAt}>{f.date(member.inviteExpiresAt)}</time>
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+function ResendInviteButton({ member, onIssued }: { member: TenantMemberFieldsFragment; onIssued: (i: IssuedInvite) => void }) {
+  const t = useT()
+  const [resend, resending] = useResendInvite()
+  if (member.status.toLowerCase() !== "invited") return null
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={resending}
+      onClick={async (e) => {
+        e.stopPropagation()
+        const res = await resend({ memberId: member.id })
+        const m = res?.resendInvite
+        if (m?.inviteUrl) onIssued({ url: m.inviteUrl, expiresAt: m.inviteExpiresAt, name: m.user.name })
+      }}
+    >
+      <RefreshCwIcon /> {t.settings.resendInvite}
+    </Button>
+  )
+}
+
+function InviteMemberDialog({ open, onOpenChange, onIssued }: { open: boolean; onOpenChange: (o: boolean) => void; onIssued: (i: IssuedInvite) => void }) {
   const t = useT()
   const [invite, saving] = useInviteMember()
   const schema = useMemo(
@@ -48,7 +92,7 @@ function InviteMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         id="invite-member"
         noValidate
         onSubmit={form.handleSubmit(async (values) => {
-          const ok = await invite({
+          const res = await invite({
             input: {
               name: values.name,
               email: values.email || null,
@@ -57,9 +101,11 @@ function InviteMemberDialog({ open, onOpenChange }: { open: boolean; onOpenChang
               commissionBps: Math.round((values.commissionPct ?? 0) * 100),
             },
           })
-          if (ok) {
+          if (res) {
             form.reset()
             onOpenChange(false)
+            const m = res.inviteMember
+            if (m.inviteUrl) onIssued({ url: m.inviteUrl, expiresAt: m.inviteExpiresAt, name: m.user.name })
           }
         })}
       >
@@ -88,7 +134,10 @@ export function MembersPanel() {
   const [removeMember, removing] = useRemoveMember()
   const [inviteOpen, setInviteOpen] = useState(false)
   const [removing_, setRemoving] = useState<TenantMemberFieldsFragment | null>(null)
+  const [issued, setIssued] = useState<IssuedInvite | null>(null)
   const isOwner = hasRole("OWNER")
+  const canInvite = hasRole("OWNER", "ADMIN")
+  const f = useFormat()
 
   const columns = useMemo<ColumnDef<TenantMemberFieldsFragment>[]>(
     () => [
@@ -123,21 +172,25 @@ export function MembersPanel() {
             enumLabel(t, "Role", row.original.role)
           ),
       },
-      { id: "commission", header: t.settings.commission, cell: ({ row }) => `${row.original.commissionBps / 100}%` },
-      { id: "status", header: t.common.status, cell: ({ row }) => row.original.status },
-      { id: "since", header: t.common.createdAt, cell: ({ row }) => <DateText value={row.original.createdAt} /> },
+      { id: "commission", header: t.settings.commission, cell: ({ row }) => `${f.number(row.original.commissionBps / 100, 2)}%` },
+      { id: "status", header: t.common.status, cell: ({ row }) => <MemberStatus member={row.original} /> },
+      { id: "since", header: t.common.createdAt, cell: ({ row }) => <time dateTime={row.original.createdAt}>{f.date(row.original.createdAt)}</time> },
       {
         id: "actions",
         header: "",
-        cell: ({ row }) =>
-          isOwner && row.original.user.id !== user?.id ? (
-            <Button variant="ghost" size="icon-sm" aria-label={t.settings.removeMember} onClick={() => setRemoving(row.original)}>
-              <Trash2Icon />
-            </Button>
-          ) : null,
+        cell: ({ row }) => (
+          <div className="flex items-center justify-end gap-1">
+            {canInvite ? <ResendInviteButton member={row.original} onIssued={setIssued} /> : null}
+            {isOwner && row.original.user.id !== user?.id ? (
+              <Button variant="ghost" size="icon-sm" aria-label={t.settings.removeMember} onClick={() => setRemoving(row.original)}>
+                <Trash2Icon />
+              </Button>
+            ) : null}
+          </div>
+        ),
       },
     ],
-    [t, isOwner, user?.id, updateRole],
+    [t, f, isOwner, canInvite, user?.id, updateRole],
   )
 
   return (
@@ -158,16 +211,29 @@ export function MembersPanel() {
         onRetry={() => refetch({ requestPolicy: "network-only" })}
         empty={<EmptyState title={t.settings.members} />}
         mobileCard={(m) => (
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="truncate font-medium">{m.user.name}</p>
-              <p className="truncate text-xs text-muted-foreground">{m.user.email ?? m.user.phone}</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="truncate font-medium">{m.user.name}</p>
+                <p className="truncate text-xs text-muted-foreground">{m.user.email ?? m.user.phone}</p>
+              </div>
+              <StatusBadge enum="Role" value={m.role} />
             </div>
-            <StatusBadge enum="Role" value={m.role} />
+            <div className="flex items-center justify-between gap-2">
+              <MemberStatus member={m} />
+              {canInvite ? <ResendInviteButton member={m} onIssued={setIssued} /> : null}
+            </div>
           </div>
         )}
       />
-      <InviteMemberDialog open={inviteOpen} onOpenChange={setInviteOpen} />
+      <InviteMemberDialog open={inviteOpen} onOpenChange={setInviteOpen} onIssued={setIssued} />
+      <OneTimeSecretDialog
+        value={issued?.url ?? null}
+        onClose={() => setIssued(null)}
+        title={issued ? `${t.settings.inviteLinkTitle} · ${issued.name}` : t.settings.inviteLinkTitle}
+        warning={t.settings.inviteLinkHint}
+        meta={issued?.expiresAt ? `${t.settings.inviteExpiresAt}: ${f.dateTime(issued.expiresAt)}` : undefined}
+      />
       <ConfirmDialog
         open={removing_ !== null}
         onOpenChange={(o) => !o && setRemoving(null)}

@@ -96,7 +96,7 @@ export default function CustomerDetailPage() {
           <SubscriptionTable customerId={customer.id} />
         </TabsContent>
         <TabsContent value="invoices" className="pt-3">
-          <InvoiceTable customerId={customer.id} onRowClick={(i) => router.push(`/invoices/${i.id}`)} />
+          <InvoiceTable customerId={customer.id} rowHref={(i) => `/invoices/${i.id}`} />
         </TabsContent>
         <TabsContent value="ledger" className="pt-3">
           <LedgerTable customerId={customer.id} />

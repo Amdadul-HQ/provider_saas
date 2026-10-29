@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
+	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
 )
@@ -43,21 +44,24 @@ func (Repository) Insert(ctx context.Context, q db.Querier, tenantID uuid.UUID, 
 }
 
 func (Repository) Get(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, lock bool) (Subscription, error) {
-	sql := `SELECT ` + cols + ` FROM subscriptions s WHERE s.tenant_id = $1 AND s.id = $2`
+	args := []any{tenantID, id}
+	sql := `SELECT ` + cols + ` FROM subscriptions s WHERE s.tenant_id = $1 AND s.id = $2` + ownerScope(ctx, &args)
 	if lock {
-		sql += ` FOR UPDATE`
+		sql += ` FOR UPDATE OF s`
 	}
-	out, err := scan(q.QueryRow(ctx, sql, tenantID, id))
+	out, err := scan(q.QueryRow(ctx, sql, args...))
 	return out, db.MapErr(err, "subscription")
 }
 
 func (Repository) GetByIDs(ctx context.Context, q db.Querier, tenantID uuid.UUID, ids []uuid.UUID) ([]Subscription, error) {
-	return collect(q.Query(ctx, `SELECT `+cols+` FROM subscriptions s WHERE s.tenant_id = $1 AND s.id = ANY($2)`, tenantID, ids))
+	args := []any{tenantID, ids}
+	return collect(q.Query(ctx, `SELECT `+cols+` FROM subscriptions s WHERE s.tenant_id = $1 AND s.id = ANY($2)`+ownerScope(ctx, &args), args...))
 }
 
 func (Repository) ByCustomers(ctx context.Context, q db.Querier, tenantID uuid.UUID, ids []uuid.UUID) ([]Subscription, error) {
-	return collect(q.Query(ctx, `SELECT `+cols+` FROM subscriptions s WHERE s.tenant_id = $1 AND s.customer_id = ANY($2)
-		ORDER BY s.expires_at DESC`, tenantID, ids))
+	args := []any{tenantID, ids}
+	return collect(q.Query(ctx, `SELECT `+cols+` FROM subscriptions s WHERE s.tenant_id = $1 AND s.customer_id = ANY($2)`+
+		ownerScope(ctx, &args)+` ORDER BY s.expires_at DESC`, args...))
 }
 
 // Update persists the mutable fields.
@@ -68,11 +72,23 @@ func (Repository) Update(ctx context.Context, q db.Querier, tenantID uuid.UUID, 
 	return out, db.MapErr(err, "subscription")
 }
 
-func where(f Filter, args *[]any) string {
+// ownerScope restricts a RESELLER caller to subscriptions they sold or whose customer they
+// own (ADR-007).
+func ownerScope(ctx context.Context, args *[]any) string {
+	if uid, ok := pauth.ResellerScope(ctx); ok {
+		*args = append(*args, uid)
+		n := len(*args)
+		return fmt.Sprintf(` AND (s.sold_by = $%[1]d OR EXISTS (SELECT 1 FROM customers oc WHERE oc.tenant_id = s.tenant_id
+			AND oc.id = s.customer_id AND oc.owner_user_id = $%[1]d))`, n)
+	}
+	return ""
+}
+
+func where(ctx context.Context, f Filter, args *[]any) string {
 	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
 	conds := []string{"s.tenant_id = $1"}
 	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add("%" + strings.TrimSpace(*f.Search) + "%")
+		p := add(db.Contains(*f.Search))
 		conds = append(conds, fmt.Sprintf(`(EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = s.tenant_id AND c.id = s.customer_id
 			AND (c.name ILIKE %[1]s OR c.phone ILIKE %[1]s)) OR EXISTS (SELECT 1 FROM products p WHERE p.tenant_id = s.tenant_id
 			AND p.id = s.product_id AND p.name ILIKE %[1]s) OR s.notes ILIKE %[1]s)`, p))
@@ -92,12 +108,12 @@ func where(f Filter, args *[]any) string {
 	if f.ExpiredWithinDays != nil {
 		conds = append(conds, "s.status = 'expired' AND s.expires_at >= now() - make_interval(days => "+add(*f.ExpiredWithinDays)+")")
 	}
-	return strings.Join(conds, " AND ")
+	return strings.Join(conds, " AND ") + ownerScope(ctx, args)
 }
 
 func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Subscription, error) {
 	args := []any{tenantID}
-	w := where(f, &args)
+	w := where(ctx, f, &args)
 	if page.After != nil {
 		args = append(args, page.After.CreatedAt, page.After.ID)
 		w += fmt.Sprintf(" AND (s.created_at, s.id) < ($%d, $%d)", len(args)-1, len(args))
@@ -110,13 +126,14 @@ func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f 
 func (Repository) Count(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter) (int, error) {
 	args := []any{tenantID}
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM subscriptions s WHERE `+where(f, &args), args...).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM subscriptions s WHERE `+where(ctx, f, &args), args...).Scan(&n)
 	return n, err
 }
 
 func (Repository) Expiring(ctx context.Context, q db.Querier, tenantID uuid.UUID, days int) ([]Subscription, error) {
+	args := []any{tenantID, days}
 	return collect(q.Query(ctx, `SELECT `+cols+` FROM subscriptions s WHERE s.tenant_id = $1 AND s.status IN ('active','expiring')
-		AND s.expires_at <= now() + make_interval(days => $2) ORDER BY s.expires_at`, tenantID, days))
+		AND s.expires_at <= now() + make_interval(days => $2)`+ownerScope(ctx, &args)+` ORDER BY s.expires_at`, args...))
 }
 
 func countBy(ctx context.Context, q db.Querier, col string, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]int, error) {
@@ -196,12 +213,4 @@ func (Repository) LiveSuccessor(ctx context.Context, q db.Querier, tenantID, id 
 func (Repository) SetSlot(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, slotID *uuid.UUID) error {
 	_, err := q.Exec(ctx, `UPDATE subscriptions SET slot_id = $3 WHERE tenant_id = $1 AND id = $2`, tenantID, id, slotID)
 	return err
-}
-
-func (Repository) TenantsWithLiveSubscriptions(ctx context.Context, q db.Querier) ([]uuid.UUID, error) {
-	rows, err := q.Query(ctx, `SELECT DISTINCT tenant_id FROM subscriptions WHERE status IN ('pending','active','expiring')`)
-	if err != nil {
-		return nil, err
-	}
-	return pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
 }

@@ -19,4 +19,4 @@ type PageInfo { hasNextPage: Boolean! endCursor: String }
 input PageInput { first: Int = 25, after: String }
 
 type Query { health: String! }
-type Mutation { ping: Boolean! @auth }
+type Mutation { ping: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER]) }

@@ -2,11 +2,17 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
+      # POSTGRES_USER owns the tables and runs migrations (MIGRATE_DATABASE_URL).
+      # The API connects as psaas_app (DATABASE_URL), created by the init script below:
+      # NOSUPERUSER NOBYPASSRLS, so row-level security applies (SECURITY H1).
       POSTGRES_USER: psaas
       POSTGRES_PASSWORD: psaas
       POSTGRES_DB: psaas
     ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Runs once, on first initialisation of the volume (docker compose down -v to redo).
+      - ./backend/scripts/dev-db-role.sql:/docker-entrypoint-initdb.d/10-psaas-app-role.sql:ro
     healthcheck: { test: ["CMD-SHELL", "pg_isready -U psaas"], interval: 5s, retries: 10 }
   redis:
     image: redis:7-alpine

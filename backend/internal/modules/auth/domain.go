@@ -47,6 +47,17 @@ type LoginInput struct {
 	Password   string
 }
 
+// InvitePreview is the public view of a pending invite (contact details masked).
+type InvitePreview struct {
+	TenantName  string
+	Role        string
+	InviteeName string
+	EmailHint   *string
+	PhoneHint   *string
+	ExpiresAt   time.Time
+	UserExists  bool // the invitee already has a password: accept with it
+}
+
 // ClientMeta is stored with refresh tokens.
 type ClientMeta struct {
 	UserAgent string

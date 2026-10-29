@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"provider_saas/internal/modules/content"
 	"provider_saas/internal/modules/delivery"
 	"provider_saas/internal/modules/inbox"
@@ -30,6 +32,9 @@ func (c *Container) RegisterJobs(w *jobs.Worker) {
 		if err := j.Decode(&p); err != nil {
 			return err
 		}
+		if err := sameTenant(j, p.TenantID); err != nil {
+			return err
+		}
 		return c.Inbox.Deliver(ctx, p, j.Attempts >= j.MaxAttempts)
 	})
 	w.Register(JobPostPublish, func(ctx context.Context, j jobs.Job) error {
@@ -44,10 +49,23 @@ func (c *Container) RegisterJobs(w *jobs.Worker) {
 		if err := j.Decode(&p); err != nil {
 			return err
 		}
+		if err := sameTenant(j, p.TenantID); err != nil {
+			return err
+		}
 		return c.Delivery.Deliver(ctx, p)
 	})
 	w.Register(JobReminderPlan, c.reminderPlan)
 	w.Register(JobReminderDispatch, c.reminderDispatch)
+}
+
+// sameTenant rejects a job whose payload names another tenant than the job row: every
+// handler opens its tenant transaction from the payload, so the two must agree (the
+// worker itself only touches the platform table jobs; ADR-002 addendum).
+func sameTenant(j jobs.Job, payloadTenant uuid.UUID) error {
+	if j.TenantID == nil || *j.TenantID != payloadTenant {
+		return fmt.Errorf("job %d: payload tenant does not match job tenant", j.ID)
+	}
+	return nil
 }
 
 // expireCheck flips subscription statuses (active -> expiring (<=3d) -> expired), frees

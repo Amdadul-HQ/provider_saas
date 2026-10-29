@@ -10,6 +10,7 @@ var (
 	ErrForbidden       = errors.New("forbidden")
 	ErrConflict        = errors.New("conflict")
 	ErrUnauthenticated = errors.New("unauthenticated")
+	ErrRateLimited     = errors.New("rate limited")
 )
 
 // Error is a domain error with a user-facing message. errors.Is(err, ErrX) works.
@@ -30,6 +31,7 @@ func ValidationField(field, msg string) error {
 func Conflict(msg string) error        { return &Error{Kind: ErrConflict, Msg: msg} }
 func Forbidden(msg string) error       { return &Error{Kind: ErrForbidden, Msg: msg} }
 func Unauthenticated(msg string) error { return &Error{Kind: ErrUnauthenticated, Msg: msg} }
+func RateLimited(msg string) error     { return &Error{Kind: ErrRateLimited, Msg: msg} }
 
 // Code returns the GraphQL extensions.code for err ("" when err is not a domain error).
 func Code(err error) string {
@@ -46,6 +48,8 @@ func Code(err error) string {
 		return "CONFLICT"
 	case errors.Is(err, ErrUnauthenticated):
 		return "UNAUTHENTICATED"
+	case errors.Is(err, ErrRateLimited):
+		return "RATE_LIMITED"
 	}
 	return ""
 }

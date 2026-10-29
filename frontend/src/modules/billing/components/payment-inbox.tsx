@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { DateText, EmptyState, ErrorState, ListSkeleton, MoneyText, ResponsiveDialog, ToneBadge } from "@/components/shared"
 import type { PaymentInboxQuery } from "@/gql/graphql"
-import { enumLabel, useT } from "@/i18n"
+import { enumLabel, useT, labelFor } from "@/i18n"
 import { cn } from "@/lib/utils"
 import { useIgnorePaymentInbox, useMatchPaymentInbox, usePaymentInbox, usePayments } from "../hooks/use-billing"
 
@@ -50,7 +50,7 @@ function MatchDialog({ item, onOpenChange }: { item: InboxItem | null; onOpenCha
       ) : candidates.length === 0 ? (
         <p className="py-4 text-center text-sm text-muted-foreground">{t.billing.noCandidates}</p>
       ) : (
-        <ul role="radiogroup" className="space-y-2">
+        <ul role="radiogroup" aria-label={t.billing.matchTitle} className="space-y-2">
           {candidates.map((p) => (
             <li key={p.id}>
               <button
@@ -107,7 +107,7 @@ export function PaymentInbox() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 space-y-0.5">
                     <p className="text-sm font-medium">
-                      {item.method ? enumLabel(t, "PaymentMethod", item.method) : item.source}
+                      {item.method ? enumLabel(t, "PaymentMethod", item.method) : labelFor(t, "PaymentInboxSource", item.source)}
                       {item.trxId ? <span className="ml-1 font-mono text-xs">· {item.trxId}</span> : null}
                     </p>
                     <p className="text-xs text-muted-foreground">
@@ -118,7 +118,7 @@ export function PaymentInbox() {
                 </div>
                 <p className="mt-2 line-clamp-2 font-mono text-xs text-muted-foreground">{item.rawText}</p>
                 <div className="mt-2 flex items-center justify-between gap-2">
-                  <ToneBadge tone={done ? "success" : "warning"}>{item.status}</ToneBadge>
+                  <ToneBadge tone={done ? "success" : "warning"}>{labelFor(t, "PaymentInboxStatus", item.status)}</ToneBadge>
                   {!done ? (
                     <div className="flex gap-2">
                       <Button size="sm" variant="ghost" onClick={() => void ignore({ inboxId: item.id })}>

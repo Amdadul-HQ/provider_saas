@@ -209,7 +209,7 @@ func (r *Resolver) slotByID(ctx context.Context, id *uuid.UUID) (*model.Slot, er
 	if err != nil || s == nil {
 		return nil, err
 	}
-	return toSlot(*s), nil
+	return toSlot(ctx, *s), nil
 }
 
 func (r *Resolver) subscriptionByID(ctx context.Context, id *uuid.UUID) (*model.Subscription, error) {

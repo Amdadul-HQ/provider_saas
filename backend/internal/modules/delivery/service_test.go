@@ -25,3 +25,16 @@ func TestRenderNeverStoresPassword(t *testing.T) {
 		t.Fatalf("placeholders: %q", got)
 	}
 }
+
+func TestRenderRedactedMasksPasswordAndPin(t *testing.T) {
+	r := Render("{{credentials}} | {{password}} | {{pin}}", Vars{Username: "nf@x.com", Password: "S3cret-Pass", Pin: "4321", SlotLabel: "P3"})
+	if strings.Contains(r.Redacted, "S3cret") || strings.Contains(r.Redacted, "4321") {
+		t.Fatalf("redacted leaks: %q", r.Redacted)
+	}
+	if !strings.Contains(r.Redacted, "Password: "+Mask) || !strings.Contains(r.Redacted, "PIN: "+Mask) {
+		t.Fatalf("redacted = %q", r.Redacted)
+	}
+	if !strings.Contains(r.Body, "S3cret-Pass") {
+		t.Fatalf("body must carry the real password: %q", r.Body)
+	}
+}
