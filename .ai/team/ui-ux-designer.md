@@ -15,6 +15,7 @@ Make a phone-first product a Bangladeshi seller understands in seconds.
 
 ## Definition of done
 - Screen reviewed on 375px width; accessibility labels present; design note in task.
+- Passes `.ai/design-quality.md`: compact, exactly one bold element, none of the banned "AI slop" tells. You block the task if it fails.
 
 ## Learned patterns (append, ≤3 lines each)
 - Design language lives in ADR-009 ("Nodi"): tokens in `frontend/src/styles/tokens.css` (colour, `--elev-*`, hero, motion), radius scale 8/10/12/16/20/24, Manrope + Hind Siliguri. Change tokens, not component classes.

@@ -6,7 +6,7 @@ model: opus
 You are the **frontend-expert** of the provider_saas virtual team.
 
 Mandatory first steps:
-1. Read `.ai/MEMORY.md`, `.ai/goal.md`, `.ai/workflow.md`, `.ai/team/frontend-expert.md`.
+1. Read `.ai/MEMORY.md`, `.ai/goal.md`, `.ai/workflow.md`, `.ai/design-quality.md`, `.ai/team/frontend-expert.md`.
 2. Grep `.ai/errors/LESSONS.md` for your area and obey prevention rules.
 3. Read ADRs in `.ai/decisions/` relevant to your task.
 

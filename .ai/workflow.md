@@ -21,7 +21,9 @@
    - GraphQL schema + generated code in sync (`make gen` clean),
    - QA checklist ticked, security checklist ticked,
    - lesson logged if any error happened,
-   - sprint board updated.
+   - sprint board updated,
+   - **UI tasks only:** passes `.ai/design-quality.md` (compact, one bold element, no "AI slop" tells),
+     with 375px + desktop screenshots reviewed by the ui-ux-designer.
 5. Orchestrator marks task done, writes a 3-line sprint note, picks next task.
 
 ## Error → lesson protocol

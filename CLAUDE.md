@@ -10,6 +10,7 @@ The project is run by a virtual engineering team whose shared brain lives in `.a
 2. Read `.ai/errors/LESSONS.md`. Never repeat a recorded mistake.
 3. Read `.ai/decisions/ADR-INDEX.md` so you do not re-decide settled questions.
 4. Pick your role from `.ai/team/` (or be the Orchestrator if you are the top-level session).
+5. For any UI work read `.ai/design-quality.md`: compact, eye-catching, no "AI slop" (no ALL-CAPS eyebrows, gradient text, card-kit sameness, stock copy, fake social proof).
 
 Rules:
 - **Every error you hit** (build failure, failing test, wrong assumption, security miss) is logged in `.ai/errors/LESSONS.md` with root cause + fix + prevention rule. Use `scripts/ai/log-lesson.sh`.

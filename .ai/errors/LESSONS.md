@@ -272,3 +272,27 @@ Grep this file for your area before starting a task.
 - Root cause: html { @apply font-sans } referenced var(--font-manrope)/var(--font-bengali), but next/font defines those variables on <body> (className), so on <html> the var() is undefined and the whole font-family declaration is invalid at computed-value time; latent since Sprint 1 (Inter/Noto had the same structure)
 - Fix: Moved font-sans from html to body in globals.css
 - Prevention rule: Apply font utilities on the element that owns the next/font variables (body) or below; after a font change verify getComputedStyle(document.body).fontFamily in the browser
+
+## L-046 · 2026-10-29 · frontend/i18n
+- What broke: Login page crashed: Cannot read properties of undefined (reading 'name') in SampleInbox
+- Root cause: localizeDigits walked dictionary nodes with Object.entries, turning arrays (t.auth.demo) into index-keyed objects with no length
+- Fix: localizeDigits maps arrays with Array.isArray → node.map; regression test in i18n/labels.test.ts
+- Prevention rule: Dictionary arrays are allowed; any recursive dictionary transform must preserve arrays and be covered by a test
+
+## L-047 · 2026-10-29 · frontend/css
+- What broke: Sample-today bars never appeared (animate-[grow_...] did nothing)
+- Root cause: Tailwind v4 only emits @keyframes declared inside @theme when an --animate-* theme token references them; an arbitrary animate-[name_...] value does not count
+- Fix: Added --animate-grow token and used animate-grow
+- Prevention rule: Every keyframe in @theme gets a matching --animate-* token; use the token utility, not an arbitrary animation value
+
+## L-048 · 2026-10-29 · frontend/layout
+- What broke: Landing hero CTA and body text ran past the right edge at 375px (hidden by the hero's overflow-hidden, so scrollWidth looked fine)
+- Root cause: Repeat of L-018: the hero grid had no explicit mobile track, so the implicit auto track sized to the 448px notification column
+- Fix: grid-cols-1 + lg:grid-cols-[minmax(0,..)_minmax(0,..)] and min-w-0 on grid children
+- Prevention rule: scrollWidth==innerWidth is not enough inside overflow-hidden sections: also check that no element's right edge exceeds innerWidth
+
+## L-049 · 2026-10-29 · tooling/preview
+- What broke: Screenshots showed half-faded pages and frozen notification stacks
+- Root cause: The browser pane was hidden, so the page ran as a background tab: rAF/intervals pause and CSS/motion animations freeze mid-way
+- Fix: Call tabs_context to see pane visibility; before a screenshot run document.getAnimations().forEach(a=>a.finish()) and measure layout with getBoundingClientRect
+- Prevention rule: Judge layout from measurements, not from screenshots of a hidden pane; never 'fix' an animation bug seen only in a hidden pane

@@ -131,6 +131,8 @@ function localizeFn(fn: (...args: never[]) => unknown, digits: Digits) {
 export function localizeDigits<T>(node: T, digits: Digits, path = ""): T {
   if (typeof node === "string") return (KEEP_DIGITS.has(path) ? node : toDigits(node, digits)) as T
   if (typeof node === "function") return localizeFn(node as (...args: never[]) => unknown, digits) as T
+  // arrays stay arrays (Object.entries would turn them into index-keyed objects with no length)
+  if (Array.isArray(node)) return node.map((v, i) => localizeDigits(v, digits, path ? `${path}.${i}` : String(i))) as T
   if (node && typeof node === "object") {
     const out: Record<string, unknown> = {}
     for (const [k, v] of Object.entries(node)) out[k] = localizeDigits(v, digits, path ? `${path}.${k}` : k)

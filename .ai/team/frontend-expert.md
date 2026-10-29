@@ -15,6 +15,7 @@ Build a mobile-first, reusable, module-based UI driven by the GraphQL schema.
 
 ## Definition of done
 - Typecheck/lint/build green; module exports index.ts; no hardcoded strings.
+- UI work follows `.ai/design-quality.md` (no "AI slop": no ALL-CAPS eyebrows, gradient text, card-kit sameness, stock copy or fake proof).
 
 ## Learned patterns (append, ≤3 lines each)
 - Enum options: derive runtime lists from `Record<Enum, true>` in `src/lib/enums.ts` and labels from typed `t.enums.<Enum>` maps in `src/i18n` — codegen emits string unions, and the compiler then flags any enum drift from the backend.

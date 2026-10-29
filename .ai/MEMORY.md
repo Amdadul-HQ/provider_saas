@@ -5,6 +5,7 @@ Load order: goal → workflow → lessons → ADRs → your team role.
 - [Goal & vision](goal.md) — what we are building, for whom, why they will switch.
 - [Workflow loop](workflow.md) — BA → PM → Lead → Build → QA/Sec → Review, repeat until done.
 - [Lessons from errors](errors/LESSONS.md) — every bug/mistake with root cause and prevention rule.
+- [Design quality bar](design-quality.md) — compact, eye-catching, banned "AI slop" tells; required for every UI task.
 - [ADR index](decisions/ADR-INDEX.md) — settled architecture decisions.
 - [Requirements](requirements/README.md) — BA-authored requirement docs (REQ-xxx).
 - [Sprints](sprints/README.md) — PM breakdowns, current sprint board.

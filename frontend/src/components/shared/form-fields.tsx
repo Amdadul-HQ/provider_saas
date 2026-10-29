@@ -8,7 +8,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { Switch } from "@/components/ui/switch"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon } from "lucide-react"
 import { currencySymbol, fromMinor, toMinor } from "@/lib/money"
+import { passwordChecks, passwordScore } from "@/lib/password"
+import { useT } from "@/i18n"
 import { cn } from "@/lib/utils"
 
 type BaseProps<T extends FieldValues> = {
@@ -330,6 +333,130 @@ export function CheckboxField<T extends FieldValues>({ control, name, label, des
           </div>
         </Field>
       )}
+    />
+  )
+}
+
+/**
+ * Password input with show/hide toggle and a Caps Lock warning. `showStrength` adds a 3-step meter
+ * and a live rule checklist (sign-up, new password). Strength is guidance only; the schema decides.
+ */
+export function PasswordField<T extends FieldValues>({
+  control,
+  name,
+  label,
+  description,
+  required,
+  className,
+  disabled,
+  autoComplete = "current-password",
+  showStrength = false,
+}: BaseProps<T> & { autoComplete?: string; showStrength?: boolean }) {
+  const id = fieldId(name)
+  const t = useT()
+  const [visible, setVisible] = useState(false)
+  const [caps, setCaps] = useState(false)
+  const onKey = (e: React.KeyboardEvent<HTMLInputElement>) => setCaps(e.getModifierState?.("CapsLock") ?? false)
+  return (
+    <Controller
+      control={control}
+      name={name}
+      render={({ field, fieldState }) => {
+        const value = (field.value as string | null | undefined) ?? ""
+        const score = passwordScore(value)
+        const checks = passwordChecks(value)
+        return (
+          <Field data-invalid={fieldState.invalid || undefined} className={className}>
+            <Label htmlFor={id} label={label} required={required} />
+            <div className="relative">
+              <Input
+                id={id}
+                type={visible ? "text" : "password"}
+                autoComplete={autoComplete}
+                disabled={disabled}
+                aria-invalid={fieldState.invalid}
+                aria-describedby={showStrength ? `${id}-strength` : undefined}
+                className="pr-11"
+                onKeyDown={onKey}
+                onKeyUp={onKey}
+                {...field}
+                onBlur={() => {
+                  setCaps(false)
+                  field.onBlur()
+                }}
+                value={value}
+              />
+              <button
+                type="button"
+                onClick={() => setVisible((v) => !v)}
+                aria-label={visible ? t.auth.hidePassword : t.auth.showPassword}
+                aria-pressed={visible}
+                disabled={disabled}
+                className="absolute top-1/2 right-1.5 flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              >
+                <span key={String(visible)} className="animate-pop">
+                  {visible ? <EyeOffIcon className="size-4" aria-hidden /> : <EyeIcon className="size-4" aria-hidden />}
+                </span>
+              </button>
+            </div>
+            {caps ? (
+              <p className="animate-pop flex items-center gap-1.5 text-xs font-medium text-warning-foreground dark:text-warning" role="status">
+                <TriangleAlertIcon className="size-3.5" aria-hidden /> {t.auth.capsLock}
+              </p>
+            ) : null}
+            {showStrength && value ? (
+              <div id={`${id}-strength`} className="animate-pop space-y-2" aria-live="polite">
+                <div className="flex items-center gap-2">
+                  <div className="grid flex-1 grid-cols-3 gap-1" aria-hidden>
+                    {[1, 2, 3].map((n) => (
+                      <span
+                        key={n}
+                        className={cn(
+                          "h-1.5 rounded-full bg-muted transition-colors duration-(--dur)",
+                          score >= n && (score === 1 ? "bg-destructive" : score === 2 ? "bg-warning" : "bg-success"),
+                        )}
+                      />
+                    ))}
+                  </div>
+                  <span
+                    className={cn(
+                      "min-w-16 text-right text-xs font-medium",
+                      score === 1 ? "text-destructive" : score === 2 ? "text-warning-foreground dark:text-warning" : "text-success",
+                    )}
+                  >
+                    <span className="sr-only">{t.auth.strengthLabel}: </span>
+                    {score === 1 ? t.auth.strength.weak : score === 2 ? t.auth.strength.fair : t.auth.strength.strong}
+                  </span>
+                </div>
+                <ul className="grid gap-1 text-xs sm:grid-cols-2">
+                  {(
+                    [
+                      [checks.length, t.auth.ruleLength],
+                      [checks.letterDigit, t.auth.ruleLetterDigit],
+                      [checks.extra, t.auth.ruleExtra],
+                    ] as const
+                  ).map(([ok, text]) => (
+                    <li key={text} className={cn("flex items-center gap-1.5 transition-colors duration-(--dur)", ok ? "text-success" : "text-muted-foreground")}>
+                      <span
+                        className={cn(
+                          "flex size-4 shrink-0 items-center justify-center rounded-full transition-[background-color,transform] duration-(--dur) ease-(--ease-spring)",
+                          ok ? "scale-100 bg-success text-success-foreground" : "scale-90 bg-muted",
+                        )}
+                        aria-hidden
+                      >
+                        {ok ? <CheckIcon className="size-2.5" strokeWidth={3} /> : null}
+                      </span>
+                      {text}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            {description ? <FieldDescription>{description}</FieldDescription> : null}
+            <FieldError errors={[fieldState.error]} />
+          </Field>
+        )
+      }}
     />
   )
 }

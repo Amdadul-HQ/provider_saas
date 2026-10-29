@@ -57,3 +57,13 @@ describe("digit-localised dictionary (BUG-08)", () => {
     expect(beng.auth.identifierPlaceholder).toContain("01XXXXXXXXX")
   })
 })
+
+describe("localizeDigits", () => {
+  it("keeps arrays as arrays", async () => {
+    const { localizeDigits } = await import("./index")
+    const out = localizeDigits({ list: [{ a: "1" }, { a: "2" }] }, "beng")
+    expect(Array.isArray(out.list)).toBe(true)
+    expect(out.list).toHaveLength(2)
+    expect(out.list[1].a).toBe("২")
+  })
+})
