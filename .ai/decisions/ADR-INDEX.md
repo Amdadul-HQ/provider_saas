@@ -10,3 +10,4 @@
 | [ADR-007](ADR-007-role-matrix.md) | Role matrix: roles on every Mutation, reseller row scoping, viewer read-only | accepted |
 | [ADR-008](ADR-008-rls-app-role.md) | RLS with non-owner app role, FORCE, fail-closed policy, key-scoped lookup policies | accepted |
 | [ADR-009](ADR-009-design-language.md) | UI design language v2 "Nodi": tokens, Manrope + Hind Siliguri, Today hero, floating dock, motion rules | accepted |
+| [ADR-010](ADR-010-list-query-builder.md) | List queries: one pagination.Page (opaque or row-id cursor) + platform/sqlb builder for filters, search and keyset paging | accepted |

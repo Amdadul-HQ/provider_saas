@@ -89,11 +89,11 @@ func (r *queryResolver) Reminders(ctx context.Context, status *model.ReminderSta
 	if err != nil {
 		return nil, err
 	}
-	after, first, err := afterID(page)
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
-	rs, err := r.ReminderSvc.List(ctx, tid, reminder.Filter{Status: lowerPtr(status), CustomerID: customerID}, after, first)
+	rs, err := r.ReminderSvc.List(ctx, tid, reminder.Filter{Status: lowerPtr(status), CustomerID: customerID}, pg)
 	if err != nil {
 		return nil, err
 	}

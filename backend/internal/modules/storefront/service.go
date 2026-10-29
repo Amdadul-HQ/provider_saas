@@ -36,7 +36,7 @@ type Service interface {
 	Portal(ctx context.Context, token string) (PortalView, error)
 	PortalRequestRenewal(ctx context.Context, token string, subscriptionID uuid.UUID, method, trxID *string) (PublicOrder, error)
 
-	Orders(ctx context.Context, tenantID uuid.UUID, f OrderFilter, after *uuid.UUID, limit int) ([]Order, error)
+	Orders(ctx context.Context, tenantID uuid.UUID, f OrderFilter, page pagination.Page) ([]Order, error)
 	Order(ctx context.Context, tenantID, id uuid.UUID) (Order, error)
 	ConfirmOrder(ctx context.Context, tenantID, actorID, id uuid.UUID, slotID *uuid.UUID, note *string) (Order, error)
 	CancelOrder(ctx context.Context, tenantID, actorID, id uuid.UUID, reason *string) (Order, error)
@@ -357,10 +357,7 @@ func (s *service) PublicOrder(ctx context.Context, slug string, number int, ph s
 	return out, err
 }
 
-func (s *service) Orders(ctx context.Context, tenantID uuid.UUID, f OrderFilter, after *uuid.UUID, limit int) (out []Order, err error) {
-	if limit <= 0 || limit > pagination.MaxFirst {
-		limit = pagination.DefaultFirst
-	}
+func (s *service) Orders(ctx context.Context, tenantID uuid.UUID, f OrderFilter, page pagination.Page) (out []Order, err error) {
 	for _, p := range []**string{&f.Status, &f.Source} {
 		if *p != nil {
 			v := strings.ToLower(**p)
@@ -368,7 +365,8 @@ func (s *service) Orders(ctx context.Context, tenantID uuid.UUID, f OrderFilter,
 		}
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.ListOrders(ctx, tx, tenantID, f, after, limit)
+		rows, err := s.repo.ListOrders(ctx, tx, tenantID, f, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

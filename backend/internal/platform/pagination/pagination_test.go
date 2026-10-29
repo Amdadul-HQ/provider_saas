@@ -38,3 +38,22 @@ func TestNewPage(t *testing.T) {
 		t.Fatal("Trim")
 	}
 }
+
+func TestNewPageAcceptsBothCursorForms(t *testing.T) {
+	ts := time.Date(2026, 10, 29, 10, 15, 0, 0, time.UTC)
+	id := uuid.New()
+	opaque := Encode(ts, id)
+	p, err := New(nil, &opaque)
+	if err != nil || p.After == nil || p.AfterID != nil || p.After.ID != id {
+		t.Fatalf("opaque cursor: %+v %v", p, err)
+	}
+	raw := id.String()
+	p, err = New(nil, &raw)
+	if err != nil || p.AfterID == nil || *p.AfterID != id || p.After != nil {
+		t.Fatalf("row id cursor: %+v %v", p, err)
+	}
+	bad := "not-a-cursor"
+	if _, err := New(nil, &bad); err == nil {
+		t.Fatal("bad cursor accepted")
+	}
+}

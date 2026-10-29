@@ -134,11 +134,11 @@ func (r *queryResolver) Notifications(ctx context.Context, unreadOnly *bool, pag
 	if err != nil {
 		return nil, err
 	}
-	pg, err := pageOf(&model.PageInput{First: pageFirst(page)})
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
-	ns, err := r.TenantSvc.Notifications(ctx, tid, uid, deref(unreadOnly, false), pg.First)
+	ns, err := r.TenantSvc.Notifications(ctx, tid, uid, deref(unreadOnly, false), pg)
 	if err != nil {
 		return nil, err
 	}
@@ -161,8 +161,7 @@ func (r *queryResolver) AuditLogs(ctx context.Context, page *model.PageInput) ([
 			return nil, apperr.ValidationField("page.after", "must be an audit log id")
 		}
 	}
-	pg, _ := pageOf(&model.PageInput{First: pageFirst(page)})
-	logs, err := r.TenantSvc.AuditLogs(ctx, tid, before, pg.First)
+	logs, err := r.TenantSvc.AuditLogs(ctx, tid, before, firstOf(page))
 	if err != nil {
 		return nil, err
 	}

@@ -295,7 +295,7 @@ func TestPlaceOrderThenConfirmCreatesSubscriptionOnFreeSlot(t *testing.T) {
 	if _, err := testC.Storefront.PublicOrder(context.Background(), sf.Slug, po.Number, "01999999999"); !errors.Is(err, apperr.ErrNotFound) {
 		t.Fatalf("lookup with wrong phone: %v", err)
 	}
-	orders, err := testC.Storefront.Orders(f.ctx, f.tid, storefront.OrderFilter{}, nil, 10)
+	orders, err := testC.Storefront.Orders(f.ctx, f.tid, storefront.OrderFilter{}, pagination.Page{First: 10})
 	if err != nil || len(orders) != 1 || orders[0].PaymentID == nil || orders[0].CustomerID == nil {
 		t.Fatalf("orders = %+v %v", orders, err)
 	}
@@ -434,7 +434,7 @@ func TestDeliveryJobRendersCredentialsAndMasksNote(t *testing.T) {
 	if after.DeliveredAt == nil || after.DeliveryNote == nil || strings.Contains(*after.DeliveryNote, "s3cret-pass") {
 		t.Fatalf("delivered = %+v note=%v", after, deref(after.DeliveryNote))
 	}
-	msgs, _ := testC.Inbox.Messages(f.ctx, f.tid, in.ConversationID, nil, 10)
+	msgs, _ := testC.Inbox.Messages(f.ctx, f.tid, in.ConversationID, pagination.Page{First: 10})
 	last := msgs[len(msgs)-1]
 	// SECURITY H3: the stored copy is redacted; the platform received the real text.
 	if last.Direction != inbox.Outbound || last.Body == nil || !strings.Contains(*last.Body, "Password: "+delivery.Mask) ||
@@ -497,7 +497,7 @@ func TestReminderPlanAndDispatch(t *testing.T) {
 	if again, _ := testC.Reminders.Plan(f.ctx, f.tid, planAt); again != 0 {
 		t.Fatalf("planner not idempotent: %d", again)
 	}
-	rems, _ := testC.Reminders.List(f.ctx, f.tid, reminder.Filter{CustomerID: &in.CustomerID}, nil, 10)
+	rems, _ := testC.Reminders.List(f.ctx, f.tid, reminder.Filter{CustomerID: &in.CustomerID}, pagination.Page{First: 10})
 	var mine *reminder.Reminder
 	for i := range rems {
 		if rems[i].RuleID != nil && *rems[i].RuleID == rule.ID {
@@ -511,7 +511,7 @@ func TestReminderPlanAndDispatch(t *testing.T) {
 	if err != nil || sent < 1 {
 		t.Fatalf("dispatch sent=%d failed=%d err=%v", sent, failed, err)
 	}
-	rems, _ = testC.Reminders.List(f.ctx, f.tid, reminder.Filter{Status: strp(reminder.StatusSent)}, nil, 10)
+	rems, _ = testC.Reminders.List(f.ctx, f.tid, reminder.Filter{Status: strp(reminder.StatusSent)}, pagination.Page{First: 10})
 	if len(rems) == 0 || rems[0].RenderedBody == nil || !strings.Contains(*rems[0].RenderedBody, "Reminder Buyer") || !strings.Contains(*rems[0].RenderedBody, "/p/") {
 		t.Fatalf("sent reminder = %+v", rems)
 	}

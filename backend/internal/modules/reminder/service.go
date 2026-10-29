@@ -62,7 +62,7 @@ type Service interface {
 	RulesByIDs(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]Rule, error)
 	UpsertRule(ctx context.Context, tenantID uuid.UUID, id *uuid.UUID, in RuleInput) (Rule, error)
 	DeleteRule(ctx context.Context, tenantID, id uuid.UUID) error
-	List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Reminder, error)
+	List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Reminder, error)
 	SendNow(ctx context.Context, tenantID, subscriptionID uuid.UUID, templateID *uuid.UUID, channel string) (Reminder, error)
 	Cancel(ctx context.Context, tenantID, id uuid.UUID) error
 
@@ -141,16 +141,14 @@ func (s *service) DeleteRule(ctx context.Context, tenantID, id uuid.UUID) error 
 	})
 }
 
-func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) (out []Reminder, err error) {
-	if limit <= 0 || limit > pagination.MaxFirst {
-		limit = pagination.DefaultFirst
-	}
+func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) (out []Reminder, err error) {
 	if f.Status != nil {
 		v := strings.ToLower(*f.Status)
 		f.Status = &v
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.List(ctx, tx, tenantID, f, after, limit)
+		rows, err := s.repo.List(ctx, tx, tenantID, f, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

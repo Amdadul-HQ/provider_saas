@@ -10,6 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 // Repository is the SQL layer. Every tenant-scoped query filters by tenant_id and runs
@@ -191,10 +193,13 @@ func (Repository) MembershipsForUser(ctx context.Context, q db.Querier, userID u
 	})
 }
 
-func (Repository) ListNotifications(ctx context.Context, q db.Querier, tenantID, userID uuid.UUID, unreadOnly bool, limit int) ([]Notification, error) {
-	rows, err := q.Query(ctx, `SELECT id, kind, title, body, link, read_at, created_at FROM notifications
-		WHERE tenant_id = $1 AND (user_id = $2 OR user_id IS NULL) AND ($3 = false OR read_at IS NULL)
-		ORDER BY created_at DESC LIMIT $4`, tenantID, userID, unreadOnly, limit)
+var notificationKeyset = sqlb.Keyset{Sort: "created_at", ID: "id", From: "notifications"}
+
+// ListNotifications returns the user's own and tenant-wide notifications, newest first.
+func (Repository) ListNotifications(ctx context.Context, q db.Querier, tenantID, userID uuid.UUID, unreadOnly bool, page pagination.Page) ([]Notification, error) {
+	w := sqlb.New("tenant_id", tenantID).Where("(user_id = ? OR user_id IS NULL)", userID)
+	w.WhereIf(unreadOnly, "read_at IS NULL")
+	rows, err := q.Query(ctx, `SELECT id, kind, title, body, link, read_at, created_at FROM notifications`+w.Page(page, notificationKeyset), w.Args()...)
 	if err != nil {
 		return nil, err
 	}
@@ -218,9 +223,10 @@ func (Repository) InsertNotification(ctx context.Context, q db.Querier, tenantID
 	return err
 }
 
+// ListAuditLogs pages by the bigint id (not a UUID keyset, ADR-010): beforeID 0 = newest.
 func (Repository) ListAuditLogs(ctx context.Context, q db.Querier, tenantID uuid.UUID, beforeID int64, limit int) ([]AuditLog, error) {
-	rows, err := q.Query(ctx, `SELECT id, user_id, action, entity_type, entity_id, meta, created_at FROM audit_logs
-		WHERE tenant_id = $1 AND ($2 = 0 OR id < $2) ORDER BY id DESC LIMIT $3`, tenantID, beforeID, limit)
+	w := sqlb.New("tenant_id", tenantID).WhereIf(beforeID > 0, "id < ?", beforeID)
+	rows, err := q.Query(ctx, `SELECT id, user_id, action, entity_type, entity_id, meta, created_at FROM audit_logs`+w.Limit("id DESC", limit), w.Args()...)
 	if err != nil {
 		return nil, err
 	}

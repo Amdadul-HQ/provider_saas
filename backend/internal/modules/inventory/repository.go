@@ -3,7 +3,6 @@ package inventory
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +10,7 @@ import (
 
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -103,28 +103,16 @@ func collectMasters(rows pgx.Rows, err error) ([]MasterAccount, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (MasterAccount, error) { return scanMaster(r) })
 }
 
+var masterKeyset = sqlb.Keyset{Sort: "created_at", ID: "id", From: "master_accounts"}
+
 func (Repository) ListMasters(ctx context.Context, q db.Querier, tenantID uuid.UUID, f MasterFilter, page pagination.Page) ([]MasterAccount, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"tenant_id = $1"}
-	if f.ProductID != nil {
-		conds = append(conds, "product_id = "+add(*f.ProductID))
-	}
-	if f.SupplierID != nil {
-		conds = append(conds, "supplier_id = "+add(*f.SupplierID))
-	}
-	if f.Status != nil {
-		conds = append(conds, "status = "+add(*f.Status))
-	}
-	if f.ExpiringWithinDays != nil {
-		conds = append(conds, "status IN ('active','expiring') AND expires_at <= now() + make_interval(days => "+add(*f.ExpiringWithinDays)+")")
-	}
-	if page.After != nil {
-		conds = append(conds, fmt.Sprintf("(created_at, id) < (%s, %s)", add(page.After.CreatedAt), add(page.After.ID)))
-	}
-	lim := add(page.First)
-	return collectMasters(q.Query(ctx, `SELECT `+masterCols+` FROM master_accounts WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY created_at DESC, id DESC LIMIT `+lim, args...))
+	w := sqlb.New("tenant_id", tenantID)
+	sqlb.Eq(w, "product_id", f.ProductID)
+	sqlb.Eq(w, "supplier_id", f.SupplierID)
+	sqlb.Eq(w, "status", f.Status)
+	w.WhereIf(f.ExpiringWithinDays != nil,
+		"status IN ('active','expiring') AND expires_at <= now() + make_interval(days => ?)", f.ExpiringWithinDays)
+	return collectMasters(q.Query(ctx, `SELECT `+masterCols+` FROM master_accounts`+w.Page(page, masterKeyset), w.Args()...))
 }
 
 func (Repository) GetMaster(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, lock bool) (MasterAccount, error) {

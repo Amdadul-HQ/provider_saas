@@ -2,8 +2,6 @@ package billing
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -11,6 +9,7 @@ import (
 
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 // Repository: every query filters by tenant_id; the service runs them in db.WithTenantTx.
@@ -66,42 +65,29 @@ func (Repository) InvoicesByIDs(ctx context.Context, q db.Querier, tenantID uuid
 	return collectInvoices(q.Query(ctx, `SELECT `+invoiceCols+` FROM invoices i WHERE i.tenant_id = $1 AND i.id = ANY($2)`, tenantID, ids))
 }
 
-func invoiceWhere(f InvoiceFilter, args *[]any) string {
-	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
-	conds := []string{"i.tenant_id = $1"}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add(db.Contains(*f.Search))
-		conds = append(conds, fmt.Sprintf(`(i.number ILIKE %[1]s OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = i.tenant_id
-			AND c.id = i.customer_id AND (c.name ILIKE %[1]s OR c.phone ILIKE %[1]s)))`, p))
-	}
-	if f.Status != nil {
-		conds = append(conds, "i.status = "+add(*f.Status))
-	}
-	if f.CustomerID != nil {
-		conds = append(conds, "i.customer_id = "+add(*f.CustomerID))
-	}
-	if f.OverdueOnly {
-		conds = append(conds, "i.status NOT IN ('paid','void') AND i.due_at < now() AND i.total > i.paid_amount")
-	}
-	return strings.Join(conds, " AND ")
+var invoiceKeyset = sqlb.Keyset{Sort: "i.created_at", ID: "i.id", From: "invoices i"}
+
+// invoiceFilter is shared by ListInvoices and CountInvoices.
+func invoiceFilter(tenantID uuid.UUID, f InvoiceFilter) *sqlb.Query {
+	q := sqlb.New("i.tenant_id", tenantID)
+	q.Search(f.Search,
+		sqlb.Like("i.number"),
+		sqlb.Related("customers c", "c.tenant_id = i.tenant_id AND c.id = i.customer_id", sqlb.Like("c.name", "c.phone")))
+	sqlb.Eq(q, "i.status", f.Status)
+	sqlb.Eq(q, "i.customer_id", f.CustomerID)
+	q.WhereIf(f.OverdueOnly, "i.status NOT IN ('paid','void') AND i.due_at < now() AND i.total > i.paid_amount")
+	return q
 }
 
 func (Repository) ListInvoices(ctx context.Context, q db.Querier, tenantID uuid.UUID, f InvoiceFilter, page pagination.Page) ([]Invoice, error) {
-	args := []any{tenantID}
-	w := invoiceWhere(f, &args)
-	if page.After != nil {
-		args = append(args, page.After.CreatedAt, page.After.ID)
-		w += fmt.Sprintf(" AND (i.created_at, i.id) < ($%d, $%d)", len(args)-1, len(args))
-	}
-	args = append(args, page.First+1)
-	return collectInvoices(q.Query(ctx, `SELECT `+invoiceCols+` FROM invoices i WHERE `+w+
-		fmt.Sprintf(` ORDER BY i.created_at DESC, i.id DESC LIMIT $%d`, len(args)), args...))
+	w := invoiceFilter(tenantID, f)
+	return collectInvoices(q.Query(ctx, `SELECT `+invoiceCols+` FROM invoices i`+w.Page(page, invoiceKeyset), w.Args()...))
 }
 
 func (Repository) CountInvoices(ctx context.Context, q db.Querier, tenantID uuid.UUID, f InvoiceFilter) (int, error) {
-	args := []any{tenantID}
+	w := invoiceFilter(tenantID, f)
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM invoices i WHERE `+invoiceWhere(f, &args), args...).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM invoices i`+w.WhereSQL(), w.Args()...).Scan(&n)
 	return n, err
 }
 
@@ -190,41 +176,27 @@ func (Repository) PendingPaymentByTrx(ctx context.Context, q db.Querier, tenantI
 		AND p.status = 'pending' LIMIT 1 FOR UPDATE`, tenantID, method, trx))
 }
 
-func paymentWhere(f PaymentFilter, args *[]any) string {
-	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
-	conds := []string{"p.tenant_id = $1"}
-	if f.Status != nil {
-		conds = append(conds, "p.status = "+add(*f.Status))
-	}
-	if f.Method != nil {
-		conds = append(conds, "p.method = "+add(*f.Method))
-	}
-	if f.CustomerID != nil {
-		conds = append(conds, "p.customer_id = "+add(*f.CustomerID))
-	}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add(db.Contains(*f.Search))
-		conds = append(conds, fmt.Sprintf("(p.trx_id ILIKE %[1]s OR p.sender_number ILIKE %[1]s)", p))
-	}
-	return strings.Join(conds, " AND ")
+var paymentKeyset = sqlb.Keyset{Sort: "p.created_at", ID: "p.id", From: "payments p"}
+
+// paymentFilter is shared by ListPayments and CountPayments.
+func paymentFilter(tenantID uuid.UUID, f PaymentFilter) *sqlb.Query {
+	q := sqlb.New("p.tenant_id", tenantID)
+	sqlb.Eq(q, "p.status", f.Status)
+	sqlb.Eq(q, "p.method", f.Method)
+	sqlb.Eq(q, "p.customer_id", f.CustomerID)
+	q.Search(f.Search, sqlb.Like("p.trx_id", "p.sender_number"))
+	return q
 }
 
 func (Repository) ListPayments(ctx context.Context, q db.Querier, tenantID uuid.UUID, f PaymentFilter, page pagination.Page) ([]Payment, error) {
-	args := []any{tenantID}
-	w := paymentWhere(f, &args)
-	if page.After != nil {
-		args = append(args, page.After.CreatedAt, page.After.ID)
-		w += fmt.Sprintf(" AND (p.created_at, p.id) < ($%d, $%d)", len(args)-1, len(args))
-	}
-	args = append(args, page.First+1)
-	return collectPayments(q.Query(ctx, `SELECT `+paymentCols+` FROM payments p WHERE `+w+
-		fmt.Sprintf(` ORDER BY p.created_at DESC, p.id DESC LIMIT $%d`, len(args)), args...))
+	w := paymentFilter(tenantID, f)
+	return collectPayments(q.Query(ctx, `SELECT `+paymentCols+` FROM payments p`+w.Page(page, paymentKeyset), w.Args()...))
 }
 
 func (Repository) CountPayments(ctx context.Context, q db.Querier, tenantID uuid.UUID, f PaymentFilter) (int, error) {
-	args := []any{tenantID}
+	w := paymentFilter(tenantID, f)
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM payments p WHERE `+paymentWhere(f, &args), args...).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM payments p`+w.WhereSQL(), w.Args()...).Scan(&n)
 	return n, err
 }
 
@@ -260,15 +232,12 @@ func (Repository) SetInboxStatus(ctx context.Context, q db.Querier, tenantID, id
 	return err
 }
 
+var inboxKeyset = sqlb.Keyset{Sort: "created_at", ID: "id", From: "payment_inbox"}
+
 func (Repository) ListInbox(ctx context.Context, q db.Querier, tenantID uuid.UUID, status *string, page pagination.Page) ([]InboxItem, error) {
-	args := []any{tenantID, status}
-	w := "tenant_id = $1 AND ($2::text IS NULL OR status = $2)"
-	if page.After != nil {
-		args = append(args, page.After.CreatedAt, page.After.ID)
-		w += " AND (created_at, id) < ($3, $4)"
-	}
-	args = append(args, page.First)
-	rows, err := q.Query(ctx, `SELECT `+inboxCols+` FROM payment_inbox WHERE `+w+fmt.Sprintf(` ORDER BY created_at DESC, id DESC LIMIT $%d`, len(args)), args...)
+	w := sqlb.New("tenant_id", tenantID)
+	sqlb.Eq(w, "status", status)
+	rows, err := q.Query(ctx, `SELECT `+inboxCols+` FROM payment_inbox`+w.Page(page, inboxKeyset), w.Args()...)
 	if err != nil {
 		return nil, err
 	}

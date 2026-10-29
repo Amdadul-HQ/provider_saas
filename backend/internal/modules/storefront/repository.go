@@ -3,8 +3,6 @@ package storefront
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +10,8 @@ import (
 
 	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -63,13 +63,14 @@ func (Repository) Update(ctx context.Context, q db.Querier, tenantID uuid.UUID, 
 
 // ---- orders
 
-// ownerScope restricts a RESELLER caller to orders they created (ADR-007).
-func ownerScope(ctx context.Context, args *[]any) string {
+// scopedOrders starts an order query: tenant, plus RESELLER callers see only orders they
+// created (ADR-007).
+func scopedOrders(ctx context.Context, tenantID uuid.UUID) *sqlb.Query {
+	q := sqlb.New("o.tenant_id", tenantID)
 	if uid, ok := pauth.ResellerScope(ctx); ok {
-		*args = append(*args, uid)
-		return fmt.Sprintf(" AND o.created_by = $%d", len(*args))
+		q.Where("o.created_by = ?", uid)
 	}
-	return ""
+	return q
 }
 
 const orderCols = `o.id, o.tenant_id, o.number, o.customer_id, o.conversation_id, o.product_id, o.plan_id, o.quantity, o.amount, o.currency,
@@ -105,12 +106,12 @@ func (Repository) InsertOrder(ctx context.Context, q db.Querier, tenantID uuid.U
 }
 
 func (Repository) GetOrder(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, lock bool) (Order, error) {
-	args := []any{tenantID, id}
-	sql := `SELECT ` + orderCols + ` FROM orders o WHERE o.tenant_id = $1 AND o.id = $2` + ownerScope(ctx, &args)
+	w := scopedOrders(ctx, tenantID).Where("o.id = ?", id)
+	sql := `SELECT ` + orderCols + ` FROM orders o` + w.WhereSQL()
 	if lock {
 		sql += ` FOR UPDATE`
 	}
-	o, err := scanOrder(q.QueryRow(ctx, sql, args...))
+	o, err := scanOrder(q.QueryRow(ctx, sql, w.Args()...))
 	return o, db.MapErr(err, "order")
 }
 
@@ -133,31 +134,17 @@ func (Repository) MarkDeliveredBySubscription(ctx context.Context, q db.Querier,
 	return err
 }
 
-func (Repository) ListOrders(ctx context.Context, q db.Querier, tenantID uuid.UUID, f OrderFilter, after *uuid.UUID, limit int) ([]Order, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"o.tenant_id = $1"}
-	if f.Status != nil {
-		conds = append(conds, "o.status = "+add(*f.Status))
-	}
-	if f.Source != nil {
-		conds = append(conds, "o.source = "+add(*f.Source))
-	}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		term := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(*f.Search), "#"))
-		p := add(db.Contains(term))
-		conds = append(conds, fmt.Sprintf(`(o.number::text = %s OR o.customer_name ILIKE %s OR o.customer_phone ILIKE %s
-			OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = o.tenant_id AND c.id = o.customer_id AND c.name ILIKE %s))`,
-			add(term), p, p, p))
-	}
-	if after != nil {
-		conds = append(conds, "(o.created_at, o.id) < (SELECT created_at, id FROM orders WHERE tenant_id = $1 AND id = "+add(*after)+")")
-	}
-	if uid, ok := pauth.ResellerScope(ctx); ok { // ADR-007: resellers see only orders they created
-		conds = append(conds, "o.created_by = "+add(uid))
-	}
-	return collectOrders(q.Query(ctx, `SELECT `+orderCols+` FROM orders o WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY o.created_at DESC, o.id DESC LIMIT `+add(limit), args...))
+var orderKeyset = sqlb.Keyset{Sort: "o.created_at", ID: "o.id", From: "orders o"}
+
+func (Repository) ListOrders(ctx context.Context, q db.Querier, tenantID uuid.UUID, f OrderFilter, page pagination.Page) ([]Order, error) {
+	w := scopedOrders(ctx, tenantID)
+	sqlb.Eq(w, "o.status", f.Status)
+	sqlb.Eq(w, "o.source", f.Source)
+	w.Search(sqlb.NumberTerm(f.Search),
+		sqlb.Exact("o.number::text"),
+		sqlb.Like("o.customer_name", "o.customer_phone"),
+		sqlb.Related("customers c", "c.tenant_id = o.tenant_id AND c.id = o.customer_id", sqlb.Like("c.name")))
+	return collectOrders(q.Query(ctx, `SELECT `+orderCols+` FROM orders o`+w.Page(page, orderKeyset), w.Args()...))
 }
 
 // ---- portal tokens

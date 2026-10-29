@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -95,7 +96,7 @@ type Service interface {
 
 	Conversations(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Conversation, bool, int, error)
 	Conversation(ctx context.Context, tenantID, id uuid.UUID) (Conversation, error)
-	Messages(ctx context.Context, tenantID, conversationID uuid.UUID, before *uuid.UUID, limit int) ([]Message, error)
+	Messages(ctx context.Context, tenantID, conversationID uuid.UUID, page pagination.Page) ([]Message, error)
 	Counts(ctx context.Context, tenantID, userID uuid.UUID) (Counts, error)
 	OpenCountsByAccount(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]int, error)
 	Assign(ctx context.Context, tenantID, id uuid.UUID, userID *uuid.UUID) (Conversation, error)
@@ -613,14 +614,15 @@ func (s *service) Conversation(ctx context.Context, tenantID, id uuid.UUID) (c C
 	return c, err
 }
 
-func (s *service) Messages(ctx context.Context, tenantID, conversationID uuid.UUID, before *uuid.UUID, limit int) (out []Message, err error) {
-	if limit <= 0 || limit > 200 {
-		limit = 50
-	}
+// Messages returns one page of a conversation in chat order (oldest first). page.After /
+// AfterID is the oldest message already shown; the page holds the messages before it.
+func (s *service) Messages(ctx context.Context, tenantID, conversationID uuid.UUID, page pagination.Page) (out []Message, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.Messages(ctx, tx, tenantID, conversationID, before, limit)
+		rows, err := s.repo.Messages(ctx, tx, tenantID, conversationID, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
+	slices.Reverse(out)
 	return out, err
 }
 

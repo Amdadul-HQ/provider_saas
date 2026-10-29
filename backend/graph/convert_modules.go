@@ -20,26 +20,6 @@ import (
 	"provider_saas/internal/platform/pagination"
 )
 
-// afterID implements the plain-list paging contract (tickets, posts, orders, reminders):
-// page.after is the id of the last row of the previous page; a full page means "maybe more".
-func afterID(p *model.PageInput) (*uuid.UUID, int, error) {
-	first := pagination.DefaultFirst
-	if p == nil {
-		return nil, first, nil
-	}
-	if p.First != nil && *p.First > 0 {
-		first = min(*p.First, pagination.MaxFirst)
-	}
-	if p.After == nil || *p.After == "" {
-		return nil, first, nil
-	}
-	id, err := uuid.Parse(*p.After)
-	if err != nil {
-		return nil, first, apperr.ValidationField("page.after", "must be the id of the last row")
-	}
-	return &id, first, nil
-}
-
 // attachmentsOf decodes a JSON attachments/media argument (array or single object).
 func attachmentsOf(v any, field string) ([]social.Attachment, error) {
 	if v == nil {

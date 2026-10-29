@@ -332,3 +332,9 @@ Grep this file for your area before starting a task.
 - Root cause: Read 'all routes' as every route in the app; the user meant only routes inside the dashboard
 - Fix: Reverted the marketing, auth, storefront and portal files; kept the changes to the dashboard shell and dashboard pages
 - Prevention rule: Layout or style requests about 'pages/routes' apply to the logged-in dashboard unless the user names the landing, auth or public pages; leave marketing and public pages untouched otherwise
+
+## L-056 · 2026-10-29 · backend/pagination
+- What broke: Inventory page 2 failed with 'invalid cursor': masterAccounts decoded page.after as an opaque cursor while the frontend array list sends the last row id
+- Root cause: Three paging styles (opaque cursor, after uuid + limit, limit only) and three resolver helpers (pageOf, afterID, pageFirst) let a resolver pick the wrong contract
+- Fix: ADR-010: pagination.Page accepts both cursor forms, every resolver uses pageOf, every list repository uses platform/sqlb (Page/Search/Eq); added TestListPagingAndSearch that walks pages with both cursors
+- Prevention rule: New list queries must use sqlb + pagination.Page; never hand-count $n or add a per-module cursor format; an integration test must walk to page 2

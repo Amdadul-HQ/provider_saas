@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"provider_saas/internal/modules/social"
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -89,60 +89,40 @@ func (Repository) LatestForCustomer(ctx context.Context, q db.Querier, tenantID,
 	return c, err
 }
 
-func where(f Filter, args *[]any) string {
-	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
-	conds := []string{"c.tenant_id = $1"}
+var convKeyset = sqlb.Keyset{Sort: "COALESCE(c.last_message_at, c.created_at)", ID: "c.id", From: "conversations c"}
+
+// filter is shared by List and Count so the two can never disagree.
+func filter(tenantID uuid.UUID, f Filter) *sqlb.Query {
+	q := sqlb.New("c.tenant_id", tenantID)
 	if f.Status != nil {
-		conds = append(conds, "c.status = "+add(*f.Status))
+		q.Where("c.status = ?", *f.Status)
 	} else {
-		conds = append(conds, "c.status <> 'spam'")
+		q.Where("c.status <> 'spam'")
 	}
-	if f.Platform != nil {
-		conds = append(conds, "c.platform = "+add(*f.Platform))
-	}
-	if f.SocialAccountID != nil {
-		conds = append(conds, "c.social_account_id = "+add(*f.SocialAccountID))
-	}
-	if f.CustomerID != nil {
-		conds = append(conds, "c.customer_id = "+add(*f.CustomerID))
-	}
-	if f.AssignedTo != nil {
-		conds = append(conds, "c.assigned_to = "+add(*f.AssignedTo))
-	}
-	if f.Unassigned != nil && *f.Unassigned {
-		conds = append(conds, "c.assigned_to IS NULL")
-	}
+	sqlb.Eq(q, "c.platform", f.Platform)
+	sqlb.Eq(q, "c.social_account_id", f.SocialAccountID)
+	sqlb.Eq(q, "c.customer_id", f.CustomerID)
+	sqlb.Eq(q, "c.assigned_to", f.AssignedTo)
+	q.WhereIf(f.Unassigned != nil && *f.Unassigned, "c.assigned_to IS NULL")
 	if f.Label != nil && strings.TrimSpace(*f.Label) != "" {
-		conds = append(conds, add(strings.ToLower(strings.TrimSpace(*f.Label)))+" = ANY(c.labels)")
+		q.Where("? = ANY(c.labels)", strings.ToLower(strings.TrimSpace(*f.Label)))
 	}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add(db.Contains(*f.Search))
-		conds = append(conds, fmt.Sprintf(`(c.last_message_preview ILIKE %[1]s OR c.external_thread_id ILIKE %[1]s
-			OR EXISTS (SELECT 1 FROM customers cu WHERE cu.tenant_id = c.tenant_id AND cu.id = c.customer_id
-			  AND (cu.name ILIKE %[1]s OR cu.phone ILIKE %[1]s))
-			OR EXISTS (SELECT 1 FROM customer_identities ci WHERE ci.tenant_id = c.tenant_id AND ci.id = c.identity_id AND ci.handle ILIKE %[1]s))`, p))
-	}
-	return strings.Join(conds, " AND ")
+	q.Search(f.Search,
+		sqlb.Like("c.last_message_preview", "c.external_thread_id"),
+		sqlb.Related("customers cu", "cu.tenant_id = c.tenant_id AND cu.id = c.customer_id", sqlb.Like("cu.name", "cu.phone")),
+		sqlb.Related("customer_identities ci", "ci.tenant_id = c.tenant_id AND ci.id = c.identity_id", sqlb.Like("ci.handle")))
+	return q
 }
 
-const activity = "COALESCE(c.last_message_at, c.created_at)"
-
 func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Conversation, error) {
-	args := []any{tenantID}
-	w := where(f, &args)
-	if page.After != nil {
-		args = append(args, page.After.CreatedAt, page.After.ID)
-		w += fmt.Sprintf(" AND (%s, c.id) < ($%d, $%d)", activity, len(args)-1, len(args))
-	}
-	args = append(args, page.First+1)
-	return collectConvs(q.Query(ctx, `SELECT `+convCols+` FROM conversations c WHERE `+w+
-		fmt.Sprintf(` ORDER BY %s DESC, c.id DESC LIMIT $%d`, activity, len(args)), args...))
+	w := filter(tenantID, f)
+	return collectConvs(q.Query(ctx, `SELECT `+convCols+` FROM conversations c`+w.Page(page, convKeyset), w.Args()...))
 }
 
 func (Repository) Count(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter) (int, error) {
-	args := []any{tenantID}
+	w := filter(tenantID, f)
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM conversations c WHERE `+where(f, &args), args...).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM conversations c`+w.WhereSQL(), w.Args()...).Scan(&n)
 	return n, err
 }
 
@@ -211,19 +191,13 @@ func (Repository) SetMessageResult(ctx context.Context, q db.Querier, tenantID, 
 
 // Messages returns the newest page of a conversation (before the message `before`, if given),
 // in ascending time order.
-func (Repository) Messages(ctx context.Context, q db.Querier, tenantID, convID uuid.UUID, before *uuid.UUID, limit int) ([]Message, error) {
-	args := []any{tenantID, convID, limit}
-	w := ""
-	if before != nil {
-		args = append(args, *before)
-		w = ` AND (m.sent_at, m.id) < (SELECT sent_at, id FROM messages WHERE tenant_id = $1 AND id = $4)`
-	}
-	rows, err := collectMsgs(q.Query(ctx, `SELECT `+msgCols+` FROM messages m WHERE m.tenant_id = $1 AND m.conversation_id = $2`+w+`
-		ORDER BY m.sent_at DESC, m.id DESC LIMIT $3`, args...))
-	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
-		rows[i], rows[j] = rows[j], rows[i]
-	}
-	return rows, err
+var msgKeyset = sqlb.Keyset{Sort: "m.sent_at", ID: "m.id", From: "messages m"}
+
+// Messages returns up to page.First+1 messages of a conversation, newest first; the service
+// trims the page and flips it to chat order.
+func (Repository) Messages(ctx context.Context, q db.Querier, tenantID, convID uuid.UUID, page pagination.Page) ([]Message, error) {
+	w := sqlb.New("m.tenant_id", tenantID).Where("m.conversation_id = ?", convID)
+	return collectMsgs(q.Query(ctx, `SELECT `+msgCols+` FROM messages m`+w.Page(page, msgKeyset), w.Args()...))
 }
 
 // BumpInbound updates counters after an inbound message; a closed conversation reopens.

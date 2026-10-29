@@ -76,7 +76,7 @@ func (r *queryResolver) Tickets(ctx context.Context, filter *model.TicketFilter,
 	if err != nil {
 		return nil, err
 	}
-	after, first, err := afterID(page)
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +85,7 @@ func (r *queryResolver) Tickets(ctx context.Context, filter *model.TicketFilter,
 		f = ticket.Filter{Status: lowerPtr(filter.Status), Kind: lowerPtr(filter.Kind), Priority: lowerPtr(filter.Priority),
 			CustomerID: filter.CustomerID, AssignedTo: filter.AssignedTo, Search: filter.Search}
 	}
-	ts, err := r.TicketSvc.List(ctx, tid, f, after, first)
+	ts, err := r.TicketSvc.List(ctx, tid, f, pg)
 	if err != nil {
 		return nil, err
 	}

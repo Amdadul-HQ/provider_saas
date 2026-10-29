@@ -111,12 +111,11 @@ func (r *queryResolver) Products(ctx context.Context, filter *model.ProductFilte
 	if err != nil {
 		return nil, err
 	}
-	pg, _ := pageOf(&model.PageInput{First: pageFirst(page)})
 	var f catalog.Filter
 	if filter != nil {
 		f = catalog.Filter{Search: filter.Search, Category: filter.Category, IsActive: filter.IsActive}
 	}
-	ps, err := r.CatalogSvc.List(ctx, tid, f, pg.First)
+	ps, err := r.CatalogSvc.List(ctx, tid, f, firstOf(page))
 	if err != nil {
 		return nil, err
 	}

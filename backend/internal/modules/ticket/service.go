@@ -24,7 +24,7 @@ type Service interface {
 	Create(ctx context.Context, tenantID, actorID uuid.UUID, in CreateInput) (Ticket, error)
 	Update(ctx context.Context, tenantID, actorID, id uuid.UUID, in UpdateInput) (Ticket, error)
 	Get(ctx context.Context, tenantID, id uuid.UUID) (Ticket, error)
-	List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Ticket, error)
+	List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Ticket, error)
 	Stats(ctx context.Context, tenantID uuid.UUID) (Stats, error)
 	AddComment(ctx context.Context, tenantID, actorID, ticketID uuid.UUID, body string, internal bool) (Comment, error)
 	CommentsByTickets(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]Comment, error)
@@ -149,10 +149,7 @@ func (s *service) Get(ctx context.Context, tenantID, id uuid.UUID) (t Ticket, er
 	return t, err
 }
 
-func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) (out []Ticket, err error) {
-	if limit <= 0 || limit > pagination.MaxFirst {
-		limit = pagination.DefaultFirst
-	}
+func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) (out []Ticket, err error) {
 	for _, p := range []**string{&f.Status, &f.Kind, &f.Priority} {
 		if *p != nil {
 			v := strings.ToLower(**p)
@@ -160,7 +157,8 @@ func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, after 
 		}
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.List(ctx, tx, tenantID, f, after, limit)
+		rows, err := s.repo.List(ctx, tx, tenantID, f, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

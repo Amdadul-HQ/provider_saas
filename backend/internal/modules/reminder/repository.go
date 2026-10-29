@@ -2,14 +2,14 @@ package reminder
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 // Repository owns reminder_rules and reminders. The planner/dispatcher also READ
@@ -164,21 +164,13 @@ func (Repository) Get(ctx context.Context, q db.Querier, tenantID, id uuid.UUID)
 	return r, db.MapErr(err, "reminder")
 }
 
-func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Reminder, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"r.tenant_id = $1"}
-	if f.Status != nil {
-		conds = append(conds, "r.status = "+add(*f.Status))
-	}
-	if f.CustomerID != nil {
-		conds = append(conds, "r.customer_id = "+add(*f.CustomerID))
-	}
-	if after != nil {
-		conds = append(conds, "(r.scheduled_at, r.id) < (SELECT scheduled_at, id FROM reminders WHERE tenant_id = $1 AND id = "+add(*after)+")")
-	}
-	return collect(q.Query(ctx, `SELECT `+cols+` FROM reminders r WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY r.scheduled_at DESC, r.id DESC LIMIT `+add(limit), args...))
+var keyset = sqlb.Keyset{Sort: "r.scheduled_at", ID: "r.id", From: "reminders r"}
+
+func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Reminder, error) {
+	w := sqlb.New("r.tenant_id", tenantID)
+	sqlb.Eq(w, "r.status", f.Status)
+	sqlb.Eq(w, "r.customer_id", f.CustomerID)
+	return collect(q.Query(ctx, `SELECT `+cols+` FROM reminders r`+w.Page(page, keyset), w.Args()...))
 }
 
 // Due claims scheduled reminders whose time has come (SKIP LOCKED: safe with many workers).

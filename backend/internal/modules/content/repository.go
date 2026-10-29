@@ -3,8 +3,6 @@ package content
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +10,8 @@ import (
 
 	"provider_saas/internal/modules/social"
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -67,18 +67,12 @@ func (Repository) Delete(ctx context.Context, q db.Querier, tenantID, id uuid.UU
 	return err
 }
 
-func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Post, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"p.tenant_id = $1"}
-	if f.Status != nil {
-		conds = append(conds, "p.status = "+add(*f.Status))
-	}
-	if after != nil {
-		conds = append(conds, "(p.created_at, p.id) < (SELECT created_at, id FROM posts WHERE tenant_id = $1 AND id = "+add(*after)+")")
-	}
-	rows, err := q.Query(ctx, `SELECT `+cols+` FROM posts p WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY p.created_at DESC, p.id DESC LIMIT `+add(limit), args...)
+var keyset = sqlb.Keyset{Sort: "p.created_at", ID: "p.id", From: "posts p"}
+
+func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Post, error) {
+	w := sqlb.New("p.tenant_id", tenantID)
+	sqlb.Eq(w, "p.status", f.Status)
+	rows, err := q.Query(ctx, `SELECT `+cols+` FROM posts p`+w.Page(page, keyset), w.Args()...)
 	if err != nil {
 		return nil, err
 	}

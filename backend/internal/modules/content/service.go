@@ -61,7 +61,7 @@ type Service interface {
 	PublishNow(ctx context.Context, tenantID, id uuid.UUID) (Post, error)
 	Delete(ctx context.Context, tenantID, id uuid.UUID) error
 	Get(ctx context.Context, tenantID, id uuid.UUID) (Post, error)
-	List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Post, error)
+	List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Post, error)
 	TargetsByPosts(ctx context.Context, tenantID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID][]Target, error)
 	// Publish is the post.publish job.
 	Publish(ctx context.Context, p PublishPayload) error
@@ -239,16 +239,14 @@ func (s *service) Get(ctx context.Context, tenantID, id uuid.UUID) (p Post, err 
 	return p, err
 }
 
-func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) (out []Post, err error) {
-	if limit <= 0 || limit > pagination.MaxFirst {
-		limit = pagination.DefaultFirst
-	}
+func (s *service) List(ctx context.Context, tenantID uuid.UUID, f Filter, page pagination.Page) (out []Post, err error) {
 	if f.Status != nil {
 		v := strings.ToLower(*f.Status)
 		f.Status = &v
 	}
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.List(ctx, tx, tenantID, f, after, limit)
+		rows, err := s.repo.List(ctx, tx, tenantID, f, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

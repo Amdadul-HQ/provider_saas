@@ -59,14 +59,14 @@ func (r *conversationResolver) Messages(ctx context.Context, obj *model.Conversa
 	if err != nil {
 		return nil, err
 	}
-	before, first, err := afterID(page)
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
 	if page == nil || page.First == nil {
-		first = 50
+		pg.First = 50 // a chat opens with more history than a list page
 	}
-	ms, err := r.InboxSvc.Messages(ctx, tid, obj.ID, before, first)
+	ms, err := r.InboxSvc.Messages(ctx, tid, obj.ID, pg)
 	if err != nil {
 		return nil, err
 	}

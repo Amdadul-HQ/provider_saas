@@ -146,7 +146,8 @@ func (s *service) AccountCountsBySupplier(ctx context.Context, tenantID uuid.UUI
 
 func (s *service) MasterAccounts(ctx context.Context, tenantID uuid.UUID, f MasterFilter, page pagination.Page) (out []MasterAccount, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.ListMasters(ctx, tx, tenantID, f, page)
+		rows, err := s.repo.ListMasters(ctx, tx, tenantID, f, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

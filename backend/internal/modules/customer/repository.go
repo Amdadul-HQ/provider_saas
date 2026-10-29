@@ -3,7 +3,6 @@ package customer
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -12,6 +11,7 @@ import (
 	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
 	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 // Repository: every query is filtered by tenant_id and runs inside db.WithTenantTx.
@@ -34,81 +34,63 @@ func collect(rows pgx.Rows, err error) ([]Customer, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Customer, error) { return scan(r) })
 }
 
-// ownerScope restricts a RESELLER caller to customers they own (ADR-007).
-func ownerScope(ctx context.Context, args *[]any) string {
+// scoped starts a customer query: tenant, plus RESELLER callers see only customers they
+// own (ADR-007).
+func scoped(ctx context.Context, tenantID uuid.UUID) *sqlb.Query {
+	q := sqlb.New("c.tenant_id", tenantID)
 	if uid, ok := pauth.ResellerScope(ctx); ok {
-		*args = append(*args, uid)
-		return fmt.Sprintf(" AND c.owner_user_id = $%d", len(*args))
+		q.Where("c.owner_user_id = ?", uid)
 	}
-	return ""
+	return q
 }
 
-// where builds the filter clause; args[0] must be tenant id.
-func where(ctx context.Context, f Filter, args *[]any) string {
-	add := func(v any) string { *args = append(*args, v); return fmt.Sprintf("$%d", len(*args)) }
-	conds := []string{"c.tenant_id = $1", "c.deleted_at IS NULL"}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add(db.Contains(*f.Search))
-		conds = append(conds, fmt.Sprintf("(c.name ILIKE %[1]s OR c.phone ILIKE %[1]s OR c.email::text ILIKE %[1]s OR c.whatsapp ILIKE %[1]s OR c.telegram ILIKE %[1]s)", p))
-	}
-	if f.Status != nil {
-		conds = append(conds, "c.status = "+add(*f.Status))
-	}
-	if f.Source != nil {
-		conds = append(conds, "c.source = "+add(*f.Source))
-	}
-	if len(f.Tags) > 0 {
-		conds = append(conds, "c.tags @> "+add(f.Tags)+"::text[]")
-	}
+var keyset = sqlb.Keyset{Sort: "c.created_at", ID: "c.id", From: "customers c"}
+
+// filter is shared by List and Count so the two can never disagree.
+func filter(ctx context.Context, tenantID uuid.UUID, f Filter) *sqlb.Query {
+	q := scoped(ctx, tenantID).Where("c.deleted_at IS NULL")
+	q.Search(f.Search, sqlb.Like("c.name", "c.phone", "c.email::text", "c.whatsapp", "c.telegram"))
+	sqlb.Eq(q, "c.status", f.Status)
+	sqlb.Eq(q, "c.source", f.Source)
+	q.WhereIf(len(f.Tags) > 0, "c.tags @> ?::text[]", f.Tags)
 	if f.HasDue != nil {
 		if *f.HasDue {
-			conds = append(conds, "c.due_balance > 0")
+			q.Where("c.due_balance > 0")
 		} else {
-			conds = append(conds, "c.due_balance <= 0")
+			q.Where("c.due_balance <= 0")
 		}
 	}
-	if f.ExpiringWithinDays != nil {
-		p := add(*f.ExpiringWithinDays)
-		conds = append(conds, fmt.Sprintf(`EXISTS (SELECT 1 FROM subscriptions s WHERE s.tenant_id = c.tenant_id AND s.customer_id = c.id
-			AND s.status IN ('active','expiring') AND s.expires_at <= now() + make_interval(days => %s))`, p))
-	}
-	return strings.Join(conds, " AND ") + ownerScope(ctx, args)
+	q.WhereIf(f.ExpiringWithinDays != nil, `EXISTS (SELECT 1 FROM subscriptions s WHERE s.tenant_id = c.tenant_id AND s.customer_id = c.id
+			AND s.status IN ('active','expiring') AND s.expires_at <= now() + make_interval(days => ?))`, f.ExpiringWithinDays)
+	return q
 }
 
 func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Customer, error) {
-	args := []any{tenantID}
-	w := where(ctx, f, &args)
-	if page.After != nil {
-		args = append(args, page.After.CreatedAt, page.After.ID)
-		w += fmt.Sprintf(" AND (c.created_at, c.id) < ($%d, $%d)", len(args)-1, len(args))
-	}
-	args = append(args, page.First+1)
-	return collect(q.Query(ctx, `SELECT `+cols+` FROM customers c WHERE `+w+
-		fmt.Sprintf(` ORDER BY c.created_at DESC, c.id DESC LIMIT $%d`, len(args)), args...))
+	w := filter(ctx, tenantID, f)
+	return collect(q.Query(ctx, `SELECT `+cols+` FROM customers c`+w.Page(page, keyset), w.Args()...))
 }
 
 func (Repository) Count(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter) (int, error) {
-	args := []any{tenantID}
-	w := where(ctx, f, &args)
+	w := filter(ctx, tenantID, f)
 	var n int
-	err := q.QueryRow(ctx, `SELECT count(*) FROM customers c WHERE `+w, args...).Scan(&n)
+	err := q.QueryRow(ctx, `SELECT count(*) FROM customers c`+w.WhereSQL(), w.Args()...).Scan(&n)
 	return n, err
 }
 
 func (Repository) Get(ctx context.Context, q db.Querier, tenantID, id uuid.UUID, lock bool) (Customer, error) {
-	args := []any{tenantID, id}
-	sql := `SELECT ` + cols + ` FROM customers c WHERE c.tenant_id = $1 AND c.id = $2 AND c.deleted_at IS NULL` + ownerScope(ctx, &args)
+	w := scoped(ctx, tenantID).Where("c.id = ?", id).Where("c.deleted_at IS NULL")
+	sql := `SELECT ` + cols + ` FROM customers c` + w.WhereSQL()
 	if lock {
 		sql += ` FOR UPDATE`
 	}
-	c, err := scan(q.QueryRow(ctx, sql, args...))
+	c, err := scan(q.QueryRow(ctx, sql, w.Args()...))
 	return c, db.MapErr(err, "customer")
 }
 
 func (Repository) GetByIDs(ctx context.Context, q db.Querier, tenantID uuid.UUID, ids []uuid.UUID) ([]Customer, error) {
 	// Soft-deleted customers are still returned so historical subscriptions/invoices resolve.
-	args := []any{tenantID, ids}
-	return collect(q.Query(ctx, `SELECT `+cols+` FROM customers c WHERE c.tenant_id = $1 AND c.id = ANY($2)`+ownerScope(ctx, &args), args...))
+	w := scoped(ctx, tenantID).Where("c.id = ANY(?)", ids)
+	return collect(q.Query(ctx, `SELECT `+cols+` FROM customers c`+w.WhereSQL(), w.Args()...))
 }
 
 func (Repository) Insert(ctx context.Context, q db.Querier, tenantID uuid.UUID, owner *uuid.UUID, in CreateInput) (Customer, error) {

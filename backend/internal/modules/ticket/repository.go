@@ -2,14 +2,14 @@ package ticket
 
 import (
 	"context"
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -55,37 +55,20 @@ func (Repository) Save(ctx context.Context, q db.Querier, tenantID uuid.UUID, t 
 	return out, db.MapErr(err, "ticket")
 }
 
-func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, after *uuid.UUID, limit int) ([]Ticket, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"t.tenant_id = $1"}
-	if f.Status != nil {
-		conds = append(conds, "t.status = "+add(*f.Status))
-	}
-	if f.Kind != nil {
-		conds = append(conds, "t.kind = "+add(*f.Kind))
-	}
-	if f.Priority != nil {
-		conds = append(conds, "t.priority = "+add(*f.Priority))
-	}
-	if f.CustomerID != nil {
-		conds = append(conds, "t.customer_id = "+add(*f.CustomerID))
-	}
-	if f.AssignedTo != nil {
-		conds = append(conds, "t.assigned_to = "+add(*f.AssignedTo))
-	}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		term := strings.TrimPrefix(strings.TrimSpace(*f.Search), "#")
-		p := add(db.Contains(term))
-		conds = append(conds, fmt.Sprintf(`(t.title ILIKE %[1]s OR t.description ILIKE %[1]s OR t.number::text = %[2]s
-			OR EXISTS (SELECT 1 FROM customers c WHERE c.tenant_id = t.tenant_id AND c.id = t.customer_id AND (c.name ILIKE %[1]s OR c.phone ILIKE %[1]s)))`,
-			p, add(term)))
-	}
-	if after != nil {
-		conds = append(conds, "(t.created_at, t.id) < (SELECT created_at, id FROM tickets WHERE tenant_id = $1 AND id = "+add(*after)+")")
-	}
-	rows, err := q.Query(ctx, `SELECT `+cols+` FROM tickets t WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY t.created_at DESC, t.id DESC LIMIT `+add(limit), args...)
+var keyset = sqlb.Keyset{Sort: "t.created_at", ID: "t.id", From: "tickets t"}
+
+func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, page pagination.Page) ([]Ticket, error) {
+	w := sqlb.New("t.tenant_id", tenantID)
+	sqlb.Eq(w, "t.status", f.Status)
+	sqlb.Eq(w, "t.kind", f.Kind)
+	sqlb.Eq(w, "t.priority", f.Priority)
+	sqlb.Eq(w, "t.customer_id", f.CustomerID)
+	sqlb.Eq(w, "t.assigned_to", f.AssignedTo)
+	w.Search(sqlb.NumberTerm(f.Search),
+		sqlb.Like("t.title", "t.description"),
+		sqlb.Exact("t.number::text"),
+		sqlb.Related("customers c", "c.tenant_id = t.tenant_id AND c.id = t.customer_id", sqlb.Like("c.name", "c.phone")))
+	rows, err := q.Query(ctx, `SELECT `+cols+` FROM tickets t`+w.Page(page, keyset), w.Args()...)
 	if err != nil {
 		return nil, err
 	}

@@ -683,7 +683,8 @@ func (s *service) IngestSMS(ctx context.Context, tenantID uuid.UUID, sender, raw
 
 func (s *service) PaymentInbox(ctx context.Context, tenantID uuid.UUID, status *string, page pagination.Page) (out []InboxItem, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.ListInbox(ctx, tx, tenantID, status, page)
+		rows, err := s.repo.ListInbox(ctx, tx, tenantID, status, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

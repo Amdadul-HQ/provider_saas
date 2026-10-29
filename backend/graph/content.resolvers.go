@@ -112,11 +112,11 @@ func (r *queryResolver) Posts(ctx context.Context, status *model.PostStatus, pag
 	if err != nil {
 		return nil, err
 	}
-	after, first, err := afterID(page)
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
-	ps, err := r.ContentSvc.List(ctx, tid, content.Filter{Status: lowerPtr(status)}, after, first)
+	ps, err := r.ContentSvc.List(ctx, tid, content.Filter{Status: lowerPtr(status)}, pg)
 	if err != nil {
 		return nil, err
 	}

@@ -38,6 +38,8 @@ func tenantOf(ctx context.Context) (tenantID, userID uuid.UUID, err error) {
 	return p.TenantID, p.UserID, nil
 }
 
+// pageOf is the one way a resolver reads a PageInput: first is clamped and after may be a
+// Connection endCursor or the last row id of an array list (ADR-010).
 func pageOf(p *model.PageInput) (pagination.Page, error) {
 	var first *int
 	var after *string
@@ -113,7 +115,14 @@ func clientMeta(ctx context.Context) modauth.ClientMeta {
 
 func principalOK(ctx context.Context) (pauth.Principal, bool) { return pauth.FromContext(ctx) }
 
-func pageFirst(p *model.PageInput) *int {
+// firstOf normalises only the page size, for lists that are not keyset-paged (products by
+// sort order, audit logs by bigint id). Everything else uses pageOf (ADR-010).
+func firstOf(p *model.PageInput) int {
+	pg, _ := pagination.New(pageSizeOf(p), nil)
+	return pg.First
+}
+
+func pageSizeOf(p *model.PageInput) *int {
 	if p == nil {
 		return nil
 	}

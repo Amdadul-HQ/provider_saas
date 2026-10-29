@@ -157,7 +157,7 @@ func (r *queryResolver) Orders(ctx context.Context, filter *model.OrderFilter, p
 	if err != nil {
 		return nil, err
 	}
-	after, first, err := afterID(page)
+	pg, err := pageOf(page)
 	if err != nil {
 		return nil, err
 	}
@@ -165,7 +165,7 @@ func (r *queryResolver) Orders(ctx context.Context, filter *model.OrderFilter, p
 	if filter != nil {
 		f = storefront.OrderFilter{Status: lowerPtr(filter.Status), Source: lowerPtr(filter.Source), Search: filter.Search}
 	}
-	os, err := r.StorefrontSvc.Orders(ctx, tid, f, after, first)
+	os, err := r.StorefrontSvc.Orders(ctx, tid, f, pg)
 	if err != nil {
 		return nil, err
 	}

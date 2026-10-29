@@ -16,6 +16,7 @@ import (
 	"provider_saas/internal/platform/apperr"
 	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/pagination"
 )
 
 // UserDirectory is implemented by the auth module (wired in app.Container).
@@ -46,7 +47,7 @@ type Service interface {
 	RemoveMember(ctx context.Context, tenantID, actorID, memberID uuid.UUID) error
 	MembershipsForUser(ctx context.Context, userID uuid.UUID) ([]Membership, error)
 	Membership(ctx context.Context, userID, tenantID uuid.UUID) (Membership, error)
-	Notifications(ctx context.Context, tenantID, userID uuid.UUID, unreadOnly bool, limit int) ([]Notification, error)
+	Notifications(ctx context.Context, tenantID, userID uuid.UUID, unreadOnly bool, page pagination.Page) ([]Notification, error)
 	MarkNotificationRead(ctx context.Context, tenantID, userID uuid.UUID, id *uuid.UUID) error
 	Notify(ctx context.Context, tenantID uuid.UUID, userID *uuid.UUID, kind, title string, body, link *string) error
 	AuditLogs(ctx context.Context, tenantID uuid.UUID, beforeID int64, limit int) ([]AuditLog, error)
@@ -379,9 +380,10 @@ func (s *service) Membership(ctx context.Context, userID, tenantID uuid.UUID) (M
 	return Membership{}, apperr.Forbidden("not a member of this business")
 }
 
-func (s *service) Notifications(ctx context.Context, tenantID, userID uuid.UUID, unreadOnly bool, limit int) (out []Notification, err error) {
+func (s *service) Notifications(ctx context.Context, tenantID, userID uuid.UUID, unreadOnly bool, page pagination.Page) (out []Notification, err error) {
 	err = s.tx(ctx, tenantID, func(ctx context.Context, tx pgx.Tx) error {
-		out, err = s.repo.ListNotifications(ctx, tx, tenantID, userID, unreadOnly, limit)
+		rows, err := s.repo.ListNotifications(ctx, tx, tenantID, userID, unreadOnly, page)
+		out, _ = pagination.Trim(rows, page.First)
 		return err
 	})
 	return out, err

@@ -2,13 +2,13 @@ package catalog
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"provider_saas/internal/platform/db"
+	"provider_saas/internal/platform/sqlb"
 )
 
 type Repository struct{}
@@ -44,23 +44,15 @@ func collectPlans(rows pgx.Rows, err error) ([]Plan, error) {
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (Plan, error) { return scanPlan(r) })
 }
 
+// List is ordered by the seller's sort order, not by time, so it takes a plain limit.
 func (Repository) List(ctx context.Context, q db.Querier, tenantID uuid.UUID, f Filter, limit int) ([]Product, error) {
-	args := []any{tenantID}
-	add := func(v any) string { args = append(args, v); return fmt.Sprintf("$%d", len(args)) }
-	conds := []string{"tenant_id = $1", "deleted_at IS NULL"}
-	if f.Search != nil && strings.TrimSpace(*f.Search) != "" {
-		p := add(db.Contains(*f.Search))
-		conds = append(conds, fmt.Sprintf("(name ILIKE %[1]s OR description ILIKE %[1]s)", p))
-	}
+	w := sqlb.New("tenant_id", tenantID).Where("deleted_at IS NULL")
+	w.Search(f.Search, sqlb.Like("name", "description"))
 	if f.Category != nil {
-		conds = append(conds, "category = "+add(strings.ToLower(*f.Category)))
+		w.Where("category = ?", strings.ToLower(*f.Category))
 	}
-	if f.IsActive != nil {
-		conds = append(conds, "is_active = "+add(*f.IsActive))
-	}
-	lim := add(limit)
-	return collectProducts(q.Query(ctx, `SELECT `+productCols+` FROM products WHERE `+strings.Join(conds, " AND ")+
-		` ORDER BY sort_order, name LIMIT `+lim, args...))
+	sqlb.Eq(w, "is_active", f.IsActive)
+	return collectProducts(q.Query(ctx, `SELECT `+productCols+` FROM products`+w.Limit("sort_order, name", limit), w.Args()...))
 }
 
 func (Repository) Get(ctx context.Context, q db.Querier, tenantID, id uuid.UUID) (Product, error) {
