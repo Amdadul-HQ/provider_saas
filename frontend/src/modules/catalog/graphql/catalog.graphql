@@ -1,0 +1,56 @@
+fragment PlanFields on ProductPlan {
+  id
+  productId
+  name
+  durationDays
+  price
+  cost
+  currency
+  isActive
+  sortOrder
+}
+
+fragment ProductFields on Product {
+  id
+  name
+  category
+  description
+  imageUrl
+  deliveryType
+  warrantyDays
+  deliveryTemplate
+  isActive
+  sortOrder
+  freeSlotCount
+  activeSubscriptionCount
+  createdAt
+  plans { ...PlanFields }
+}
+
+query Products($filter: ProductFilter, $page: PageInput) {
+  products(filter: $filter, page: $page) { ...ProductFields }
+}
+
+query Product($id: UUID!) {
+  product(id: $id) { ...ProductFields }
+}
+
+mutation CreateProduct($input: CreateProductInput!) {
+  createProduct(input: $input) { ...ProductFields }
+}
+
+mutation UpdateProduct($id: UUID!, $input: UpdateProductInput!) {
+  updateProduct(id: $id, input: $input) { ...ProductFields }
+}
+
+mutation DeleteProduct($id: UUID!) {
+  deleteProduct(id: $id)
+}
+
+mutation UpsertProductPlan($productId: UUID!, $id: UUID, $input: ProductPlanInput!) {
+  upsertProductPlan(productId: $productId, id: $id, input: $input) { ...PlanFields }
+}
+
+mutation DeleteProductPlan($id: UUID!) {
+  deleteProductPlan(id: $id)
+}

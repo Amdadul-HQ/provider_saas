@@ -1,0 +1,117 @@
+fragment StorefrontFields on Storefront {
+  id
+  slug
+  displayName
+  tagline
+  logoUrl
+  coverUrl
+  theme
+  whatsapp
+  messengerUrl
+  telegram
+  paymentInstructions
+  paymentNumbers
+  isPublished
+  publicUrl
+}
+
+fragment PublicStorefrontFields on PublicStorefront {
+  slug
+  displayName
+  tagline
+  logoUrl
+  coverUrl
+  theme
+  whatsapp
+  messengerUrl
+  telegram
+  paymentInstructions
+  paymentNumbers
+  products {
+    id
+    name
+    category
+    description
+    imageUrl
+    inStock
+    plans { id name durationDays price currency }
+  }
+}
+
+fragment PublicOrderFields on PublicOrder {
+  number
+  status
+  amount
+  currency
+  productName
+  paymentInstructions
+  paymentNumbers
+}
+
+fragment OrderFields on Order {
+  id
+  number
+  quantity
+  amount
+  currency
+  source
+  status
+  subscriptionId
+  customerName
+  customerPhone
+  customerNote
+  createdAt
+  customer { id name }
+  product { id name }
+  plan { id name }
+  payment { id method trxId status amount }
+}
+
+query Storefront {
+  storefront { ...StorefrontFields }
+}
+
+mutation UpsertStorefront($input: StorefrontInput!) {
+  upsertStorefront(input: $input) { ...StorefrontFields }
+}
+
+query Orders($filter: OrderFilter, $page: PageInput) {
+  orders(filter: $filter, page: $page) { ...OrderFields }
+}
+
+mutation ConfirmOrder($id: UUID!, $slotId: UUID, $deliveryNote: String) {
+  confirmOrder(id: $id, slotId: $slotId, deliveryNote: $deliveryNote) { ...OrderFields }
+}
+
+mutation CancelOrder($id: UUID!, $reason: String) {
+  cancelOrder(id: $id, reason: $reason) { ...OrderFields }
+}
+
+mutation CreatePortalLink($customerId: UUID!, $sendVia: Platform) {
+  createPortalLink(customerId: $customerId, sendVia: $sendVia)
+}
+
+query PublicStorefront($slug: String!) {
+  publicStorefront(slug: $slug) { ...PublicStorefrontFields }
+}
+
+query PublicOrder($slug: String!, $number: Int!, $phone: String!) {
+  publicOrder(slug: $slug, number: $number, phone: $phone) { ...PublicOrderFields }
+}
+
+mutation PlaceOrder($input: PlaceOrderInput!) {
+  placeOrder(input: $input) { ...PublicOrderFields }
+}
+
+query Portal($token: String!) {
+  portal(token: $token) {
+    customer { name phone dueBalance }
+    subscriptions { id productName planName startsAt expiresAt daysLeft status deliveryNote }
+    invoices { id number total paidAmount status issuedAt dueAt }
+    storefront { ...PublicStorefrontFields }
+  }
+}
+
+mutation PortalRequestRenewal($token: String!, $subscriptionId: UUID!, $paymentMethod: PaymentMethod, $trxId: String) {
+  portalRequestRenewal(token: $token, subscriptionId: $subscriptionId, paymentMethod: $paymentMethod, trxId: $trxId) { ...PublicOrderFields }
+}

@@ -1,0 +1,97 @@
+fragment ConversationListFields on Conversation {
+  id
+  platform
+  status
+  unreadCount
+  lastMessageAt
+  lastMessagePreview
+  lastInboundAt
+  canReply
+  labels
+  externalThreadId
+  socialAccount { id name platform }
+  customer { id name phone dueBalance activeSubscriptionCount }
+  identity { id handle avatarUrl platform }
+  assignedTo { id name }
+}
+
+fragment MessageFields on Message {
+  id
+  conversationId
+  direction
+  kind
+  body
+  attachments
+  status
+  error
+  sentAt
+  sentBy { id name }
+}
+
+fragment MessageTemplateFields on MessageTemplate {
+  id
+  key
+  name
+  body
+  category
+  isActive
+}
+
+query Conversations($filter: ConversationFilter, $page: PageInput) {
+  conversations(filter: $filter, page: $page) {
+    totalCount
+    pageInfo { hasNextPage endCursor }
+    edges { cursor node { ...ConversationListFields } }
+  }
+}
+
+query Conversation($id: UUID!, $page: PageInput) {
+  conversation(id: $id) {
+    ...ConversationListFields
+    messages(page: $page) { ...MessageFields }
+  }
+}
+
+query InboxCounts {
+  inboxCounts { open unassigned mine unread }
+}
+
+query MessageTemplates($category: TemplateCategory) {
+  messageTemplates(category: $category) { ...MessageTemplateFields }
+}
+
+mutation SendMessage($input: SendMessageInput!) {
+  sendMessage(input: $input) { ...MessageFields }
+}
+
+mutation AssignConversation($id: UUID!, $userId: UUID) {
+  assignConversation(id: $id, userId: $userId) { ...ConversationListFields }
+}
+
+mutation SetConversationStatus($id: UUID!, $status: ConversationStatus!) {
+  setConversationStatus(id: $id, status: $status) { ...ConversationListFields }
+}
+
+mutation MarkConversationRead($id: UUID!) {
+  markConversationRead(id: $id) { id unreadCount }
+}
+
+mutation AddConversationLabel($id: UUID!, $label: String!) {
+  addConversationLabel(id: $id, label: $label) { id labels }
+}
+
+mutation RemoveConversationLabel($id: UUID!, $label: String!) {
+  removeConversationLabel(id: $id, label: $label) { id labels }
+}
+
+mutation LinkConversationCustomer($id: UUID!, $customerId: UUID!) {
+  linkConversationCustomer(id: $id, customerId: $customerId) { ...ConversationListFields }
+}
+
+mutation UpsertMessageTemplate($id: UUID, $input: MessageTemplateInput!) {
+  upsertMessageTemplate(id: $id, input: $input) { ...MessageTemplateFields }
+}
+
+mutation DeleteMessageTemplate($id: UUID!) {
+  deleteMessageTemplate(id: $id)
+}

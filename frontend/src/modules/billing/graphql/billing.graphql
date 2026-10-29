@@ -1,0 +1,125 @@
+fragment PaymentFields on Payment {
+  id
+  method
+  trxId
+  senderNumber
+  amount
+  currency
+  status
+  verifiedAt
+  verificationSource
+  notes
+  receivedAt
+  createdAt
+  customer { id name phone }
+  invoice { id number }
+  verifiedBy { id name }
+}
+
+fragment InvoiceListFields on Invoice {
+  id
+  number
+  status
+  subtotal
+  discount
+  total
+  paidAmount
+  dueAmount
+  currency
+  issuedAt
+  dueAt
+  paidAt
+  createdAt
+  customer { id name phone }
+}
+
+fragment LedgerEntryFields on LedgerEntry {
+  id
+  entryType
+  amount
+  refType
+  refId
+  note
+  createdAt
+  createdBy { id name }
+}
+
+query Invoices($filter: InvoiceFilter, $page: PageInput) {
+  invoices(filter: $filter, page: $page) {
+    totalCount
+    pageInfo { hasNextPage endCursor }
+    edges { cursor node { ...InvoiceListFields } }
+  }
+}
+
+query Invoice($id: UUID!) {
+  invoice(id: $id) {
+    ...InvoiceListFields
+    notes
+    items { id subscriptionId description quantity unitPrice total }
+    payments { ...PaymentFields }
+  }
+}
+
+query Payments($filter: PaymentFilter, $page: PageInput) {
+  payments(filter: $filter, page: $page) {
+    totalCount
+    pageInfo { hasNextPage endCursor }
+    edges { cursor node { ...PaymentFields } }
+  }
+}
+
+query PaymentInbox($status: String, $page: PageInput) {
+  paymentInbox(status: $status, page: $page) {
+    id
+    source
+    method
+    senderNumber
+    trxId
+    amount
+    rawText
+    status
+    matchedPaymentId
+    receivedAt
+  }
+}
+
+query Ledger($customerId: UUID!) {
+  ledger(customerId: $customerId) { ...LedgerEntryFields }
+}
+
+mutation CreateInvoice($input: CreateInvoiceInput!) {
+  createInvoice(input: $input) { ...InvoiceListFields }
+}
+
+mutation SendInvoice($id: UUID!, $channel: Platform) {
+  sendInvoice(id: $id, channel: $channel) { ...InvoiceListFields }
+}
+
+mutation VoidInvoice($id: UUID!, $reason: String) {
+  voidInvoice(id: $id, reason: $reason) { ...InvoiceListFields }
+}
+
+mutation RecordPayment($invoiceId: UUID, $customerId: UUID, $input: PaymentInput!) {
+  recordPayment(invoiceId: $invoiceId, customerId: $customerId, input: $input) { ...PaymentFields }
+}
+
+mutation VerifyPayment($id: UUID!) {
+  verifyPayment(id: $id) { ...PaymentFields }
+}
+
+mutation RejectPayment($id: UUID!, $reason: String) {
+  rejectPayment(id: $id, reason: $reason) { ...PaymentFields }
+}
+
+mutation MatchPaymentInbox($inboxId: UUID!, $paymentId: UUID!) {
+  matchPaymentInbox(inboxId: $inboxId, paymentId: $paymentId) { ...PaymentFields }
+}
+
+mutation IgnorePaymentInbox($inboxId: UUID!) {
+  ignorePaymentInbox(inboxId: $inboxId)
+}
+
+mutation AddLedgerAdjustment($customerId: UUID!, $entryType: LedgerEntryType!, $amount: Money!, $note: String) {
+  addLedgerAdjustment(customerId: $customerId, entryType: $entryType, amount: $amount, note: $note) { ...LedgerEntryFields }
+}

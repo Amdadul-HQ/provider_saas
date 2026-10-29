@@ -1,0 +1,44 @@
+fragment SocialAccountFields on SocialAccount {
+  id
+  platform
+  externalId
+  name
+  username
+  avatarUrl
+  tokenExpiresAt
+  scopes
+  webhookVerified
+  status
+  lastError
+  lastSyncedAt
+  openConversationCount
+  createdAt
+}
+
+query SocialAccounts {
+  socialAccounts { ...SocialAccountFields }
+}
+
+mutation StartMetaConnect($platform: SocialPlatform!) {
+  startMetaConnect(platform: $platform) { url state }
+}
+
+mutation CompleteMetaConnect($code: String!, $state: String!) {
+  completeMetaConnect(code: $code, state: $state) { ...SocialAccountFields }
+}
+
+mutation ConnectTelegram($input: ConnectTelegramInput!) {
+  connectTelegram(input: $input) { ...SocialAccountFields }
+}
+
+mutation ConnectWhatsApp($input: ConnectWhatsAppInput!) {
+  connectWhatsApp(input: $input) { ...SocialAccountFields }
+}
+
+mutation DisconnectSocialAccount($id: UUID!) {
+  disconnectSocialAccount(id: $id)
+}
+
+mutation SyncSocialAccount($id: UUID!) {
+  syncSocialAccount(id: $id) { ...SocialAccountFields }
+}

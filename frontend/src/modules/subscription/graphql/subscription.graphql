@@ -1,0 +1,63 @@
+fragment SubscriptionListFields on Subscription {
+  id
+  startsAt
+  expiresAt
+  daysLeft
+  price
+  cost
+  currency
+  status
+  autoRenew
+  deliveredAt
+  deliveryNote
+  notes
+  createdAt
+  customer { id name phone }
+  product { id name deliveryType }
+  plan { id name durationDays }
+  slot { id slotNo label masterAccountId }
+}
+
+query Subscriptions($filter: SubscriptionFilter, $page: PageInput) {
+  subscriptions(filter: $filter, page: $page) {
+    totalCount
+    pageInfo { hasNextPage endCursor }
+    edges { cursor node { ...SubscriptionListFields } }
+  }
+}
+
+query Subscription($id: UUID!) {
+  subscription(id: $id) {
+    ...SubscriptionListFields
+    renewedFromId
+    soldBy { id name }
+  }
+}
+
+query ExpiringSubscriptions($days: Int) {
+  expiringSubscriptions(days: $days) { ...SubscriptionListFields }
+}
+
+mutation CreateSubscription($input: CreateSubscriptionInput!) {
+  createSubscription(input: $input) { ...SubscriptionListFields }
+}
+
+mutation RenewSubscription($id: UUID!, $input: RenewSubscriptionInput!) {
+  renewSubscription(id: $id, input: $input) { ...SubscriptionListFields }
+}
+
+mutation MarkDelivered($id: UUID!, $deliveryNote: String) {
+  markDelivered(id: $id, deliveryNote: $deliveryNote) { ...SubscriptionListFields }
+}
+
+mutation CancelSubscription($id: UUID!, $reason: String) {
+  cancelSubscription(id: $id, reason: $reason) { ...SubscriptionListFields }
+}
+
+mutation ReassignSlot($id: UUID!, $slotId: UUID!) {
+  reassignSlot(id: $id, slotId: $slotId) { ...SubscriptionListFields }
+}
+
+mutation ExtendSubscription($id: UUID!, $days: Int!, $reason: String) {
+  extendSubscription(id: $id, days: $days, reason: $reason) { ...SubscriptionListFields }
+}

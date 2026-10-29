@@ -104,3 +104,9 @@ Grep this file for your area before starting a task.
 - Root cause: @urql/core >=4 defaults preferGetMethod to 'within-url-limit'; gqlgen only serves GET when transport.GET is added, and GET puts variables (phones, TrxIDs) in access logs
 - Fix: Set preferGetMethod: false in makeClient so every operation is a POST
 - Prevention rule: Always set preferGetMethod explicitly in the urql client and keep it consistent with the backend's enabled transports
+
+## L-018 · 2026-10-29 · frontend
+- What broke: Inbox thread overflowed horizontally at 375px (header controls, bubbles and send button clipped)
+- Root cause: Inbox wrapper grid had no explicit mobile column, so the implicit auto track sized to the header's min-content
+- Fix: grid-cols-1 + minmax(0,1fr) tracks and min-w-0 on panes; status select narrower on mobile
+- Prevention rule: Every multi-pane grid declares explicit minmax(0,1fr) tracks and min-w-0 children; verify scrollWidth==375 in the browser

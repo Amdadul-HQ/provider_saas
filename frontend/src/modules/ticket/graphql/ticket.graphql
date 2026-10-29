@@ -1,0 +1,51 @@
+fragment TicketListFields on Ticket {
+  id
+  number
+  kind
+  priority
+  status
+  title
+  resolvedAt
+  createdAt
+  updatedAt
+  customer { id name phone }
+  subscription { id product { id name } }
+  assignedTo { id name }
+}
+
+query Tickets($filter: TicketFilter, $page: PageInput) {
+  tickets(filter: $filter, page: $page) { ...TicketListFields }
+}
+
+query Ticket($id: UUID!) {
+  ticket(id: $id) {
+    ...TicketListFields
+    description
+    reason
+    conversationId
+    subscription { id expiresAt status product { id name } slot { id slotNo label masterAccountId } }
+    oldSlot { id slotNo label status masterAccountId }
+    newSlot { id slotNo label status masterAccountId }
+    comments { id body isInternal createdAt author { id name } }
+  }
+}
+
+query TicketStats {
+  ticketStats { open inProgress resolvedThisMonth replacementsThisMonth }
+}
+
+mutation CreateTicket($input: CreateTicketInput!) {
+  createTicket(input: $input) { ...TicketListFields }
+}
+
+mutation UpdateTicket($id: UUID!, $input: UpdateTicketInput!) {
+  updateTicket(id: $id, input: $input) { ...TicketListFields }
+}
+
+mutation AddTicketComment($ticketId: UUID!, $body: String!, $isInternal: Boolean) {
+  addTicketComment(ticketId: $ticketId, body: $body, isInternal: $isInternal) { id body isInternal createdAt author { id name } }
+}
+
+mutation ResolveReplacement($ticketId: UUID!, $newSlotId: UUID, $markOldSlot: SlotStatus, $extendDays: Int) {
+  resolveReplacement(ticketId: $ticketId, newSlotId: $newSlotId, markOldSlot: $markOldSlot, extendDays: $extendDays) { ...TicketListFields }
+}

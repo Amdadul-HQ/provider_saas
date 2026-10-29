@@ -17,4 +17,8 @@ Build a mobile-first, reusable, module-based UI driven by the GraphQL schema.
 - Typecheck/lint/build green; module exports index.ts; no hardcoded strings.
 
 ## Learned patterns (append, ≤3 lines each)
-- (none yet)
+- Enum options: derive runtime lists from `Record<Enum, true>` in `src/lib/enums.ts` and labels from typed `t.enums.<Enum>` maps in `src/i18n` — codegen emits string unions, and the compiler then flags any enum drift from the backend.
+- urql + Boolean mutations: the document cache can't attribute `Boolean!`/scalar results to a type. Use `useAction(doc, { typenames: [...] })` (src/lib/graphql/use-action.ts) and give list queries `typenameContext(...)` so empty lists still invalidate.
+- Client-only data on SSR'd routes: gate with `AuthGuard`/`useHydrated()` so `useQuery` never runs on the server; set `preferGetMethod: false` (urql defaults to GET).
+- RHF + zod v4: keep schema input == output (no type-predicate refines/transforms/defaults on fields); do null/cross-field checks with object-level `.refine(..., { path })`. Money fields store paisa via `MoneyField`.
+- Mobile grids: always give a single-column track explicitly (`grid-cols-1`, `minmax(0,1fr)`) plus `min-w-0` on panes, or long content widens the page at 375px; check `document.documentElement.scrollWidth` in the browser.

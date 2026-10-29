@@ -1,0 +1,64 @@
+fragment CustomerListFields on Customer {
+  id
+  name
+  phone
+  email
+  whatsapp
+  telegram
+  tags
+  source
+  status
+  preferredChannel
+  dueBalance
+  lifetimeValue
+  lastContactAt
+  activeSubscriptionCount
+  createdAt
+}
+
+fragment CustomerDetailFields on Customer {
+  ...CustomerListFields
+  address
+  notes
+  updatedAt
+  identities { id platform externalId handle avatarUrl socialAccountId createdAt }
+}
+
+query Customers($filter: CustomerFilter, $page: PageInput) {
+  customers(filter: $filter, page: $page) {
+    totalCount
+    pageInfo { hasNextPage endCursor }
+    edges { cursor node { ...CustomerListFields } }
+  }
+}
+
+query Customer($id: UUID!) {
+  customer(id: $id) {
+    ...CustomerDetailFields
+    subscriptions { ...SubscriptionListFields }
+  }
+}
+
+query CustomerNotes($customerId: UUID!) {
+  customerNotes(customerId: $customerId) { id body createdAt author { id name } }
+}
+
+mutation CreateCustomer($input: CreateCustomerInput!) {
+  createCustomer(input: $input) { ...CustomerListFields }
+}
+
+mutation UpdateCustomer($id: UUID!, $input: UpdateCustomerInput!) {
+  updateCustomer(id: $id, input: $input) { ...CustomerDetailFields }
+}
+
+mutation DeleteCustomer($id: UUID!) {
+  deleteCustomer(id: $id)
+}
+
+mutation AddCustomerNote($customerId: UUID!, $body: String!) {
+  addCustomerNote(customerId: $customerId, body: $body) { id body createdAt author { id name } }
+}
+
+mutation MergeCustomers($keepId: UUID!, $mergeId: UUID!) {
+  mergeCustomers(keepId: $keepId, mergeId: $mergeId) { ...CustomerDetailFields }
+}

@@ -1,0 +1,49 @@
+fragment ReminderRuleFields on ReminderRule {
+  id
+  name
+  trigger
+  offsetDays
+  sendHour
+  channel
+  productId
+  isActive
+  createdAt
+  template { id name }
+}
+
+query ReminderRules {
+  reminderRules { ...ReminderRuleFields }
+}
+
+query Reminders($status: ReminderStatus, $customerId: UUID, $page: PageInput) {
+  reminders(status: $status, customerId: $customerId, page: $page) {
+    id
+    channel
+    scheduledAt
+    sentAt
+    status
+    renderedBody
+    error
+    invoiceId
+    masterAccountId
+    rule { id name }
+    customer { id name }
+    subscription { id product { id name } }
+  }
+}
+
+mutation UpsertReminderRule($id: UUID, $input: ReminderRuleInput!) {
+  upsertReminderRule(id: $id, input: $input) { ...ReminderRuleFields }
+}
+
+mutation DeleteReminderRule($id: UUID!) {
+  deleteReminderRule(id: $id)
+}
+
+mutation SendReminderNow($subscriptionId: UUID!, $templateId: UUID, $channel: ReminderChannel) {
+  sendReminderNow(subscriptionId: $subscriptionId, templateId: $templateId, channel: $channel) { id status scheduledAt }
+}
+
+mutation CancelReminder($id: UUID!) {
+  cancelReminder(id: $id)
+}

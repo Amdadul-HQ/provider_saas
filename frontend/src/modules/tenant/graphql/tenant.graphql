@@ -1,0 +1,57 @@
+fragment TenantMemberFields on TenantMember {
+  id
+  role
+  commissionBps
+  status
+  createdAt
+  user { id name email phone avatarUrl }
+}
+
+query TenantSettings {
+  tenant {
+    id
+    name
+    slug
+    plan
+    status
+    currency
+    timezone
+    locale
+    settings
+    trialEndsAt
+    createdAt
+    members { ...TenantMemberFields }
+  }
+}
+
+mutation UpdateTenant($input: UpdateTenantInput!) {
+  updateTenant(input: $input) { id name currency timezone locale settings }
+}
+
+mutation InviteMember($input: InviteMemberInput!) {
+  inviteMember(input: $input) { ...TenantMemberFields }
+}
+
+mutation UpdateMemberRole($memberId: UUID!, $role: Role!, $commissionBps: Int) {
+  updateMemberRole(memberId: $memberId, role: $role, commissionBps: $commissionBps) { ...TenantMemberFields }
+}
+
+mutation RemoveMember($memberId: UUID!) {
+  removeMember(memberId: $memberId)
+}
+
+query Notifications($unreadOnly: Boolean, $page: PageInput) {
+  notifications(unreadOnly: $unreadOnly, page: $page) { id kind title body link readAt createdAt }
+}
+
+mutation MarkNotificationRead($id: UUID!) {
+  markNotificationRead(id: $id)
+}
+
+mutation MarkAllNotificationsRead {
+  markAllNotificationsRead
+}
+
+query AuditLogs($page: PageInput) {
+  auditLogs(page: $page) { id action entityType entityId meta createdAt user { id name } }
+}

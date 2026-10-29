@@ -1,0 +1,36 @@
+query DashboardStats {
+  dashboardStats {
+    activeSubscriptions
+    expiringIn7Days
+    expiredUnrenewed30Days
+    totalCustomers
+    newCustomersThisMonth
+    mrr
+    revenueThisMonth
+    costThisMonth
+    profitThisMonth
+    totalDue
+    pendingPayments
+    openTickets
+    openConversations
+    freeSlots
+    masterAccountsExpiringIn7Days
+    currency
+  }
+}
+
+query RevenueSeries($days: Int) {
+  revenueSeries(days: $days) { date value count }
+}
+
+query ProductStats($days: Int) {
+  productStats(days: $days) { activeSubscriptions revenue cost profit renewalRate product { id name } }
+}
+
+query ChannelStats($days: Int) {
+  channelStats(days: $days) { platform conversations customers orders }
+}
+
+query AtRiskCustomers($limit: Int) {
+  atRiskCustomers(limit: $limit) { reason expiresAt dueBalance customer { id name phone } }
+}

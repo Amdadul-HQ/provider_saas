@@ -1,0 +1,21 @@
+{
+  "name": "সেলারডেস্ক — SellerDesk",
+  "short_name": "সেলারডেস্ক",
+  "description": "ডিজিটাল সাবস্ক্রিপশন বিক্রেতাদের জন্য ইনবক্স, স্লট, ইনভয়েস ও রিমাইন্ডার",
+  "lang": "bn",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf8f3",
+  "theme_color": "#1f6f6f",
+  "icons": [
+    { "src": "/icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icons/maskable.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "ইনবক্স", "url": "/inbox" },
+    { "name": "নতুন সাবস্ক্রিপশন", "url": "/subscriptions" },
+    { "name": "পেমেন্ট যাচাই", "url": "/payments" }
+  ]
+}

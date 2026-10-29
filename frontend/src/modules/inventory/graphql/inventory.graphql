@@ -1,0 +1,94 @@
+fragment SupplierFields on Supplier {
+  id
+  name
+  contact
+  notes
+  rating
+  accountCount
+  createdAt
+}
+
+fragment SlotFields on Slot {
+  id
+  masterAccountId
+  slotNo
+  label
+  pin
+  status
+  subscription {
+    id
+    expiresAt
+    daysLeft
+    status
+    customer { id name }
+  }
+}
+
+fragment MasterAccountFields on MasterAccount {
+  id
+  label
+  loginHint
+  hasCredential
+  totalSlots
+  freeSlots
+  purchaseCost
+  currency
+  purchasedAt
+  expiresAt
+  status
+  notes
+  createdAt
+  product { id name deliveryType }
+  supplier { id name }
+}
+
+query Suppliers {
+  suppliers { ...SupplierFields }
+}
+
+mutation CreateSupplier($input: SupplierInput!) {
+  createSupplier(input: $input) { ...SupplierFields }
+}
+
+mutation UpdateSupplier($id: UUID!, $input: SupplierInput!) {
+  updateSupplier(id: $id, input: $input) { ...SupplierFields }
+}
+
+mutation DeleteSupplier($id: UUID!) {
+  deleteSupplier(id: $id)
+}
+
+query MasterAccounts($filter: MasterAccountFilter, $page: PageInput) {
+  masterAccounts(filter: $filter, page: $page) { ...MasterAccountFields }
+}
+
+query MasterAccount($id: UUID!) {
+  masterAccount(id: $id) {
+    ...MasterAccountFields
+    slots { ...SlotFields }
+  }
+}
+
+query FreeSlots($productId: UUID!) {
+  freeSlots(productId: $productId) { id masterAccountId slotNo label status }
+}
+
+mutation CreateMasterAccount($input: CreateMasterAccountInput!) {
+  createMasterAccount(input: $input) { ...MasterAccountFields }
+}
+
+mutation UpdateMasterAccount($id: UUID!, $input: UpdateMasterAccountInput!) {
+  updateMasterAccount(id: $id, input: $input) { ...MasterAccountFields }
+}
+
+mutation SetMasterAccountCredential($id: UUID!, $username: String!, $password: String!, $extra: JSON) {
+  setMasterAccountCredential(id: $id, username: $username, password: $password, extra: $extra)
+}
+
+mutation RevealMasterAccountCredential($id: UUID!) {
+  revealMasterAccountCredential(id: $id) { username password extra }
+}
+
+mutation UpdateSlot($id: UUID!, $label: String, $pin: String, $status: SlotStatus) {
+  updateSlot(id: $id, label: $label, pin: $pin, status: $status) { ...SlotFields }
+}

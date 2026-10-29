@@ -1,0 +1,46 @@
+fragment PostFields on Post {
+  id
+  body
+  media
+  scheduledAt
+  status
+  createdAt
+  updatedAt
+  createdBy { id name }
+  targets {
+    id
+    externalPostId
+    status
+    error
+    publishedAt
+    socialAccount { id name platform }
+  }
+}
+
+query Posts($status: PostStatus, $page: PageInput) {
+  posts(status: $status, page: $page) { ...PostFields }
+}
+
+query Post($id: UUID!) {
+  post(id: $id) { ...PostFields }
+}
+
+mutation CreatePost($input: PostInput!) {
+  createPost(input: $input) { ...PostFields }
+}
+
+mutation UpdatePost($id: UUID!, $input: PostInput!) {
+  updatePost(id: $id, input: $input) { ...PostFields }
+}
+
+mutation PublishPostNow($id: UUID!) {
+  publishPostNow(id: $id) { ...PostFields }
+}
+
+mutation DeletePost($id: UUID!) {
+  deletePost(id: $id)
+}
+
+mutation GeneratePriceList($format: String) {
+  generatePriceList(format: $format)
+}
