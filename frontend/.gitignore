@@ -46,3 +46,4 @@ next-env.d.ts
 # alternate build dir used next to a running dev server
 /.next-build/
 /.next-alt/
+/.next-fresh/
