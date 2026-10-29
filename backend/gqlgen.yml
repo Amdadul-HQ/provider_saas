@@ -85,3 +85,10 @@ models:
     fields:
       memberships:
         resolver: true
+  # Sprint 2 growth (graph/model/bound_growth.go)
+  AutoReplyRule:
+    model: provider_saas/graph/model.AutoReplyRule
+  Campaign:
+    model: provider_saas/graph/model.Campaign
+  Import:
+    model: provider_saas/graph/model.Import
