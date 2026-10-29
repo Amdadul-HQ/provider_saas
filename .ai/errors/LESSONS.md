@@ -248,3 +248,21 @@ Grep this file for your area before starting a task.
 - Root cause: harness treats DATABASE_URL/TEST_DATABASE_URL as the OWNER connection and derives psaas_app itself; passing the app role as DATABASE_URL made assertion queries hit fail-closed RLS
 - Fix: ran with owner URL; use 'make test-integration'
 - Prevention rule: always run integration tests via make test-integration; never hand-roll env for them
+
+## L-042 · 2026-10-29 · frontend/dev
+- What broke: Browser preview of the frontend showed 'cannot reach server': the running next dev on :3000 called the API on :8080 while CSP only allowed :8081
+- Root cause: next dev inlines NEXT_PUBLIC_* at start; the server predated .env.local, and a second dev server on another port is blocked by the API CORS allow-list (:3000 only)
+- Fix: Added a dev-only rewrites() proxy in next.config.ts (NEXT_DEV_API_PROXY) and a 'frontend-alt' launch config on :3001 with NEXT_DIST_DIR=.next-alt that talks to the API same-origin
+- Prevention rule: After changing .env.local restart next dev; for a second dev server use the frontend-alt launch config (proxy) instead of widening CORS; never run two next dev in the same distDir
+
+## L-043 · 2026-10-29 · frontend/tooling
+- What broke: pnpm lint reported 3683 problems
+- Root cause: eslint walked the alternate build dir .next-alt (not in ignores) and git had it tracked from an earlier session
+- Fix: Added .next-alt/** to eslint ignores and .gitignore; lint src with 'pnpm exec eslint src' when in doubt
+- Prevention rule: Every alternate distDir must be listed in eslint ignores and .gitignore before first use; never commit .next-* (frontend/.next-alt is still tracked: git rm -r --cached it)
+
+## L-044 · 2026-10-29 · tooling/preview
+- What broke: launch.json entry 'sh -c "HTTP_ADDR=:8082 ... make backend-dev"' bound :8080, failed the port check and left an orphaned api process
+- Root cause: The preview launcher does not pass inline env assignments through to the child the way a shell does; the api fell back to defaults and outlived the failed launch
+- Fix: Killed the orphan (go run + api serve) by PID; dropped the api-alt config and proxied through the frontend instead
+- Prevention rule: Do not rely on inline env in launch.json commands; put env in .env files or a wrapper script, and after a failed preview_start check lsof for orphans
