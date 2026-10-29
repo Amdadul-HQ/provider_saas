@@ -4,6 +4,7 @@
     {"name": "api", "runtimeExecutable": "make", "runtimeArgs": ["backend-dev"], "port": 8081},
     {"name": "worker", "runtimeExecutable": "make", "runtimeArgs": ["worker-dev"], "port": 8091},
     {"name": "frontend", "runtimeExecutable": "make", "runtimeArgs": ["frontend-dev"], "port": 3000},
-    {"name": "frontend-alt", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "cd frontend && NEXT_DIST_DIR=.next-alt NEXT_DEV_API_PROXY=http://localhost:8081 NEXT_PUBLIC_GRAPHQL_URL=http://localhost:3001/graphql NEXT_PUBLIC_APP_URL=http://localhost:3001 pnpm dev -p 3001"], "port": 3001}
+    {"name": "frontend-alt", "runtimeExecutable": "sh", "runtimeArgs": ["-c", "cd frontend && NEXT_DIST_DIR=.next-alt NEXT_DEV_API_PROXY=http://localhost:8082 NEXT_PUBLIC_GRAPHQL_URL=http://localhost:3001/graphql NEXT_PUBLIC_APP_URL=http://localhost:3001 pnpm dev -p 3001"], "port": 3001},
+    {"name": "api-alt", "runtimeExecutable": "bash", "runtimeArgs": ["scripts/dev/api-alt.sh"], "port": 8082}
   ]
 }

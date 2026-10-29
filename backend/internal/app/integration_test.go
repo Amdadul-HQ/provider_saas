@@ -269,9 +269,9 @@ func TestAuthFlows(t *testing.T) {
 	if _, err := testC.Auth.SwitchTenant(context.Background(), f.uid, other.tid, auth.ClientMeta{}); !errors.Is(err, apperr.ErrForbidden) {
 		t.Fatalf("switch to foreign tenant: %v", err)
 	}
-	// Duplicate registration -> conflict.
+	// Duplicate registration -> generic validation error (no account enumeration, bf678f0).
 	_, err = testC.Auth.Register(context.Background(), auth.RegisterInput{Name: "x", Email: &email, Password: "Passw0rd!", BusinessName: "x"}, auth.ClientMeta{})
-	if !errors.Is(err, apperr.ErrConflict) {
+	if !errors.Is(err, apperr.ErrValidation) {
 		t.Fatalf("duplicate register: %v", err)
 	}
 }
@@ -618,9 +618,71 @@ func TestGraphQLEndToEnd(t *testing.T) {
 	if out["errors"] != nil || out["data"].(map[string]any)["customer"] != nil {
 		t.Fatalf("unknown customer: %v", out)
 	}
-	// A STAFF token is forbidden from owner/admin mutations.
-	staff, _, _ := testC.Tokens.Issue(pauth.Principal{UserID: uuid.New(), TenantID: uuid.New(), Role: "staff"})
+	// A STAFF token is forbidden from owner/admin mutations. It must belong to a real user:
+	// tokens of unknown users fail the token_version revocation check (UNAUTHENTICATED) first.
+	staffUser := newTenant(t, "Staff Token Shop")
+	staff, _, _ := testC.Tokens.Issue(pauth.Principal{UserID: staffUser.uid, TenantID: staffUser.tid, Role: "staff"})
 	if code := errCode(gqlDo(t, h, staff, `mutation{ deleteCustomer(id:"`+uuid.NewString()+`") }`, nil)); code != "FORBIDDEN" {
 		t.Fatalf("staff code = %q", code)
+	}
+}
+
+// Cookie mode (SECURITY M6) end to end over HTTP: login sets the httpOnly refresh cookie and
+// returns no refresh token, refreshToken works from the cookie alone, logout expires it.
+func TestRefreshCookieFlow(t *testing.T) {
+	f := newTenant(t, "Cookie Flow Shop")
+	h := testC.HTTPHandler()
+	call := func(query string, cookie *http.Cookie) (*httptest.ResponseRecorder, map[string]any) {
+		t.Helper()
+		body, _ := json.Marshal(map[string]any{"query": query})
+		req := httptest.NewRequest("POST", "/graphql", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Auth-Mode", "cookie")
+		req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		var out map[string]any
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("decode %s: %v", rec.Body.String(), err)
+		}
+		return rec, out
+	}
+	refreshCookie := func(rec *httptest.ResponseRecorder) *http.Cookie {
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == "psaas_rt" {
+				return c
+			}
+		}
+		return nil
+	}
+
+	rec, out := call(fmt.Sprintf(`mutation { login(input:{identifier:%q, password:"Passw0rd!"}) { accessToken refreshToken } }`, *f.session.User.Email), nil)
+	login, _ := out["data"].(map[string]any)["login"].(map[string]any)
+	if login == nil || login["accessToken"] == "" || login["refreshToken"] != nil {
+		t.Fatalf("login in cookie mode = %v (refresh token must not be in the body)", out)
+	}
+	c := refreshCookie(rec)
+	if c == nil || c.Value == "" || !c.HttpOnly || c.Path != "/graphql" {
+		t.Fatalf("refresh cookie = %+v", c)
+	}
+
+	rec, out = call(`mutation { refreshToken { accessToken } }`, c)
+	if errCode(out) != "" {
+		t.Fatalf("refresh from cookie: %v", out)
+	}
+	rotated := refreshCookie(rec)
+	if rotated == nil || rotated.Value == "" || rotated.Value == c.Value {
+		t.Fatalf("refresh must rotate the cookie, got %+v", rotated)
+	}
+
+	rec, _ = call(`mutation { logout }`, rotated)
+	if cl := refreshCookie(rec); cl == nil || cl.MaxAge >= 0 {
+		t.Fatalf("logout must expire the cookie, got %+v", cl)
+	}
+	if _, out = call(`mutation { refreshToken { accessToken } }`, rotated); errCode(out) != "UNAUTHENTICATED" {
+		t.Fatalf("refresh after logout = %v", out)
 	}
 }

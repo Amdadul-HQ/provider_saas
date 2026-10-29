@@ -16,6 +16,7 @@ import (
 	"provider_saas/internal/modules/subscription"
 	"provider_saas/internal/modules/tenant"
 	"provider_saas/internal/platform/apperr"
+	pauth "provider_saas/internal/platform/auth"
 	"provider_saas/internal/platform/pagination"
 )
 
@@ -174,6 +175,11 @@ func toPaymentInput(p model.PaymentInput) billing.PaymentInput {
 // authenticated in ctx during register/login, so the field resolver cannot load them).
 func (r *Resolver) payload(ctx context.Context, s auth.Session) (*model.AuthPayload, error) {
 	p := toPayload(s)
+	// cookie mode (SECURITY M6): the refresh token goes into the httpOnly psaas_rt cookie and
+	// never reaches JavaScript; body-mode clients (API, mobile) keep getting it in the payload
+	if pauth.CookieMode(ctx) && pauth.SetRefreshCookie(ctx, s.RefreshToken) {
+		p.RefreshToken = nil
+	}
 	ms, err := r.AuthSvc.Memberships(ctx, s.User.ID)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/auth"
 	"provider_saas/internal/platform/apperr"
+	pauth "provider_saas/internal/platform/auth"
 
 	"github.com/google/uuid"
 )
@@ -38,9 +39,16 @@ func (r *mutationResolver) Login(ctx context.Context, input model.LoginInput) (*
 
 // RefreshToken is the resolver for the refreshToken field.
 func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken *string) (*model.AuthPayload, error) {
-	// TODO(sprint2-cookie): read from httpOnly cookie when nil.
-	s, err := r.AuthSvc.Refresh(ctx, strDeref(refreshToken), clientMeta(ctx))
+	// cookie mode: the web app sends no argument and the token arrives in the psaas_rt cookie;
+	// an explicit argument (legacy localStorage token, API clients) still wins
+	token := strDeref(refreshToken)
+	if token == "" {
+		token = pauth.RefreshFromCookie(ctx)
+	}
+	s, err := r.AuthSvc.Refresh(ctx, token, clientMeta(ctx))
 	if err != nil {
+		// a dead cookie would otherwise be re-sent on every page load
+		pauth.ClearRefreshCookie(ctx)
 		return nil, err
 	}
 	return r.payload(ctx, s)
@@ -48,7 +56,12 @@ func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken *strin
 
 // Logout is the resolver for the logout field.
 func (r *mutationResolver) Logout(ctx context.Context, refreshToken *string) (bool, error) {
-	return true, r.AuthSvc.Logout(ctx, strDeref(refreshToken))
+	token := strDeref(refreshToken)
+	if token == "" {
+		token = pauth.RefreshFromCookie(ctx)
+	}
+	pauth.ClearRefreshCookie(ctx)
+	return true, r.AuthSvc.Logout(ctx, token)
 }
 
 // LogoutAll is the resolver for the logoutAll field.

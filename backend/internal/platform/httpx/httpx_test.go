@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -88,5 +89,29 @@ func TestSecurityHeaders(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest("POST", "/graphql", nil))
 	if rec.Header().Get("X-Content-Type-Options") != "nosniff" || rec.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("headers = %v", rec.Header())
+	}
+}
+
+// The web app sends X-Auth-Mode and X-Requested-With on every call; a preflight that does not
+// allow them makes the browser block the whole site ("cannot reach the server").
+func TestCORSPreflightAllowsWebAppHeaders(t *testing.T) {
+	h := NewRouter(Deps{Logger: slog.Default(), GraphQL: http.NotFoundHandler(), CORSOrigins: []string{"http://localhost:3000"}})
+	req := httptest.NewRequest("OPTIONS", "/graphql", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Headers", "content-type,authorization,x-auth-mode,x-requested-with")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want the web origin", got)
+	}
+	allowed := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+	for _, h := range []string{"x-auth-mode", "x-requested-with", "authorization", "content-type"} {
+		if !strings.Contains(allowed, h) {
+			t.Fatalf("Access-Control-Allow-Headers %q is missing %s", allowed, h)
+		}
+	}
+	if rec.Header().Get("Access-Control-Allow-Credentials") != "true" {
+		t.Fatal("credentials must be allowed for the refresh cookie")
 	}
 }

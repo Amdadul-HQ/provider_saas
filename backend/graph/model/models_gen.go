@@ -29,23 +29,6 @@ type AuthPayload struct {
 	User         User    `json:"user"`
 }
 
-// FAQ bot: when an inbound message matches, the body/template is sent automatically (once per conversation per cooldown).
-type AutoReplyRule struct {
-	ID               uuid.UUID        `json:"id"`
-	Name             string           `json:"name"`
-	Keywords         []string         `json:"keywords"`
-	MatchType        AutoReplyMatch   `json:"matchType"`
-	Body             *string          `json:"body,omitempty"`
-	Template         *MessageTemplate `json:"template,omitempty"`
-	Platforms        []SocialPlatform `json:"platforms"`
-	OnlyOutsideHours bool             `json:"onlyOutsideHours"`
-	CooldownMinutes  int              `json:"cooldownMinutes"`
-	Priority         int              `json:"priority"`
-	IsActive         bool             `json:"isActive"`
-	Hits             int              `json:"hits"`
-	CreatedAt        time.Time        `json:"createdAt"`
-}
-
 type AutoReplyRuleInput struct {
 	Name             string           `json:"name"`
 	Keywords         []string         `json:"keywords"`
@@ -63,24 +46,6 @@ type AutoReplyTest struct {
 	Matched      bool           `json:"matched"`
 	Rule         *AutoReplyRule `json:"rule,omitempty"`
 	RenderedBody *string        `json:"renderedBody,omitempty"`
-}
-
-type Campaign struct {
-	ID            uuid.UUID        `json:"id"`
-	Name          string           `json:"name"`
-	Body          string           `json:"body"`
-	Template      *MessageTemplate `json:"template,omitempty"`
-	Channel       ReminderChannel  `json:"channel"`
-	Segment       map[string]any   `json:"segment"`
-	Offer         *CampaignOffer   `json:"offer,omitempty"`
-	ScheduledAt   *time.Time       `json:"scheduledAt,omitempty"`
-	Status        CampaignStatus   `json:"status"`
-	AudienceCount int              `json:"audienceCount"`
-	SentCount     int              `json:"sentCount"`
-	FailedCount   int              `json:"failedCount"`
-	CreatedBy     *User            `json:"createdBy,omitempty"`
-	CreatedAt     time.Time        `json:"createdAt"`
-	UpdatedAt     time.Time        `json:"updatedAt"`
 }
 
 type CampaignInput struct {
@@ -305,18 +270,6 @@ type DashboardStats struct {
 	FreeSlots                     int    `json:"freeSlots"`
 	MasterAccountsExpiringIn7Days int    `json:"masterAccountsExpiringIn7Days"`
 	Currency                      string `json:"currency"`
-}
-
-type Import struct {
-	ID         uuid.UUID      `json:"id"`
-	Kind       ImportKind     `json:"kind"`
-	FileURL    string         `json:"fileUrl"`
-	Status     ImportStatus   `json:"status"`
-	Stats      map[string]any `json:"stats"`
-	Error      *string        `json:"error,omitempty"`
-	CreatedBy  *User          `json:"createdBy,omitempty"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	FinishedAt *time.Time     `json:"finishedAt,omitempty"`
 }
 
 type ImportMappingInput struct {

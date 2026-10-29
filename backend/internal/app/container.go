@@ -95,13 +95,16 @@ func NewWithPool(cfg config.Config, log *slog.Logger, pool *pgxpool.Pool) (*Cont
 	if err != nil {
 		return nil, fmt.Errorf("vault: %w", err)
 	}
+	// one token_version cache shared by the issuer (revocation check on every request) and the
+	// services that bump versions (logoutAll, password/role change, member removal): SECURITY L2
+	versions := pauth.NewVersionCache(auth.TokenVersionLoader(pool), 0)
 	c := &Container{Cfg: cfg, Log: log, Pool: pool, Vault: v, Queue: jobs.NewQueue(pool),
-		Tokens: pauth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL)}
+		Tokens: pauth.NewTokenIssuer(cfg.JWTSecret, cfg.JWTAccessTTL).WithVersions(versions)}
 
 	// auth <-> tenant: tenant gets a user directory that does not depend on tenant.
-	c.Tenants = tenant.NewService(pool, auth.NewUserDirectory(pool), v, cfg.PublicAppURL)
+	c.Tenants = tenant.NewService(pool, auth.NewUserDirectory(pool, versions), v, cfg.PublicAppURL)
 	idLimiter, ipLimiter := c.loginLimiters()
-	c.Auth = auth.NewService(pool, c.Tokens, cfg.JWTRefreshTTL, c.Tenants, idLimiter, ipLimiter)
+	c.Auth = auth.NewService(pool, c.Tokens, cfg.JWTRefreshTTL, c.Tenants, idLimiter, ipLimiter, versions)
 	c.Customers = customer.NewService(pool)
 	c.Catalog = catalog.NewService(pool)
 	c.Inventory = inventory.NewService(pool, c.Catalog, v)
@@ -149,8 +152,12 @@ func (c *Container) HTTPHandler() http.Handler {
 	srv := gql.NewServer(graph.NewExecutableSchema(c.Resolver), gql.Options{
 		Dev: c.Cfg.IsDev(), ComplexityLimit: c.Cfg.ComplexityLimit, Logger: c.Log,
 	})
+	// refresh-token cookie (SECURITY M6): resolvers read/set psaas_rt through the request context;
+	// CSRFGuard rejects cookie-carrying requests without X-Requested-With or an allowed Origin
+	cookies := pauth.CookieOptions{Secure: !c.Cfg.IsDev(), MaxAge: c.Cfg.JWTRefreshTTL}
+	gqlHandler := pauth.CSRFGuard(c.Cfg.CORSOrigins)(pauth.HTTPMiddleware(cookies)(srv))
 	return httpx.NewRouter(httpx.Deps{
-		Logger: c.Log, Pool: c.Pool, GraphQL: srv,
+		Logger: c.Log, Pool: c.Pool, GraphQL: gqlHandler,
 		Auth:         pauth.Middleware(c.Tokens),
 		PerRequest:   c.Resolver.Middleware,
 		CORSOrigins:  c.Cfg.CORSOrigins,

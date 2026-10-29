@@ -43,9 +43,12 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(requestLogger(d.Logger))
 	r.Use(recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   d.CORSOrigins,
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-Id"},
+		AllowedOrigins: d.CORSOrigins,
+		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		// X-Auth-Mode (cookie refresh mode) and X-Requested-With (CSRF guard) are sent by the web
+		// app on every request (auth.AuthModeHeader / auth.CSRFHeader); without them the preflight
+		// fails and the browser blocks every API call.
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "X-Request-Id", "X-Auth-Mode", "X-Requested-With"},
 		ExposedHeaders:   []string{"X-Request-Id"},
 		AllowCredentials: true,
 		MaxAge:           600,

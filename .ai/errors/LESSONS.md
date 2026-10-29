@@ -296,3 +296,27 @@ Grep this file for your area before starting a task.
 - Root cause: The browser pane was hidden, so the page ran as a background tab: rAF/intervals pause and CSS/motion animations freeze mid-way
 - Fix: Call tabs_context to see pane visibility; before a screenshot run document.getAnimations().forEach(a=>a.finish()) and measure layout with getBoundingClientRect
 - Prevention rule: Judge layout from measurements, not from screenshots of a hidden pane; never 'fix' an animation bug seen only in a hidden pane
+
+## L-050 · 2026-10-29 · backend/http
+- What broke: Whole web app showed 'cannot reach the server': every browser call to the API failed (TypeError: Failed to fetch)
+- Root cause: The frontend sends X-Auth-Mode and X-Requested-With on every request (cookie mode, CSRF guard) but the API CORS AllowedHeaders only listed Authorization/Content-Type/X-Request-Id, so every preflight was rejected
+- Fix: Added both headers to AllowedHeaders; TestCORSPreflightAllowsWebAppHeaders; dev frontend now proxies /graphql same-origin (NEXT_DEV_API_PROXY)
+- Prevention rule: Any new request header the client sends must be added to CORS AllowedHeaders in the same change, with a preflight test; check a browser request, not only curl (curl skips preflight)
+
+## L-051 · 2026-10-29 · backend/build
+- What broke: Backend at HEAD did not compile: models redeclared and auth constructors called with old signatures
+- Root cause: Sprint 2 commits added gqlgen bindings without re-running gqlgen generate, and changed auth.NewService/NewUserDirectory signatures (VersionCache) without updating internal/app/container.go
+- Fix: Ran gqlgen generate (only models_gen.go changed) and wired one shared pauth.VersionCache into the token issuer, user directory and auth service
+- Prevention rule: Never commit backend code that does not pass 'go build ./... && go vet ./...'; after editing gqlgen.yml always run make gen in the same commit
+
+## L-052 · 2026-10-29 · backend/auth
+- What broke: Page reload always logged the user out even with a working API
+- Root cause: Cookie mode was implemented only as helpers (httpctx.go): resolvers had a TODO, HTTPMiddleware/CSRFGuard were never mounted, so no psaas_rt cookie was set and refreshToken() got an empty token
+- Fix: payload() sets the cookie in cookie mode, refresh/logout read and clear it, middleware mounted on /graphql; TestRefreshCookieFlow covers login → refresh → logout
+- Prevention rule: A security task is done only when the end-to-end path works in a browser (login, reload, logout); grep for TODO(<task>) before marking a sprint row built
+
+## L-053 · 2026-10-29 · infra/dev
+- What broke: API served database psaas at migration 14 while code needed 25
+- Root cause: make backend-dev exports MIGRATE_DATABASE_URL ?= .../psaas_dev; a local .env that sets only DATABASE_URL=.../psaas makes the API migrate psaas_dev but serve psaas
+- Fix: Added MIGRATE_DATABASE_URL (same database as DATABASE_URL) to the local .env; the new API applied 00015..00025 to psaas
+- Prevention rule: Local .env must set DATABASE_URL and MIGRATE_DATABASE_URL to the same database; compare goose_db_version with the newest migration file when the API misbehaves
