@@ -12,7 +12,7 @@ type Tenant {
   members: [TenantMember!]! @goField(forceResolver: true)
   createdAt: Time!
 }
-type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! createdAt: Time! }
+type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! inviteUrl: String inviteExpiresAt: Time createdAt: Time! }
 type Notification { id: UUID! kind: String! title: String! body: String link: String readAt: Time createdAt: Time! }
 type AuditLog { id: ID! user: User action: String! entityType: String! entityId: UUID meta: JSON! createdAt: Time! }
 
@@ -29,6 +29,9 @@ extend type Mutation {
   inviteMember(input: InviteMemberInput!): TenantMember! @auth(roles: [OWNER, ADMIN])
   updateMemberRole(memberId: UUID!, role: Role!, commissionBps: Int): TenantMember! @auth(roles: [OWNER])
   removeMember(memberId: UUID!): Boolean! @auth(roles: [OWNER])
+  resendInvite(memberId: UUID!): TenantMember! @auth(roles: [OWNER, ADMIN])
+  """Generates a new SMS-forwarder bearer token; the full token is returned exactly once."""
+  rotateSmsWebhookToken: String! @auth(roles: [OWNER, ADMIN])
   markNotificationRead(id: UUID!): Boolean! @auth
   markAllNotificationsRead: Boolean! @auth
 }

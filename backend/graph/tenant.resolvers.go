@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/tenant"
@@ -64,6 +65,16 @@ func (r *mutationResolver) RemoveMember(ctx context.Context, memberID uuid.UUID)
 		return false, err
 	}
 	return true, r.TenantSvc.RemoveMember(ctx, tid, uid, memberID)
+}
+
+// ResendInvite is the resolver for the resendInvite field.
+func (r *mutationResolver) ResendInvite(ctx context.Context, memberID uuid.UUID) (*model.TenantMember, error) {
+	panic(fmt.Errorf("not implemented: ResendInvite - resendInvite"))
+}
+
+// RotateSmsWebhookToken is the resolver for the rotateSmsWebhookToken field.
+func (r *mutationResolver) RotateSmsWebhookToken(ctx context.Context) (string, error) {
+	panic(fmt.Errorf("not implemented: RotateSmsWebhookToken - rotateSmsWebhookToken"))
 }
 
 // MarkNotificationRead is the resolver for the markNotificationRead field.

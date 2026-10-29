@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 	"provider_saas/graph/generated"
 	"provider_saas/graph/model"
 	"provider_saas/internal/modules/auth"
@@ -69,6 +70,11 @@ func (r *mutationResolver) ChangePassword(ctx context.Context, currentPassword s
 	return true, r.AuthSvc.ChangePassword(ctx, p.UserID, currentPassword, newPassword)
 }
 
+// AcceptInvite is the resolver for the acceptInvite field.
+func (r *mutationResolver) AcceptInvite(ctx context.Context, token string, password string, name *string) (*model.AuthPayload, error) {
+	panic(fmt.Errorf("not implemented: AcceptInvite - acceptInvite"))
+}
+
 // Me is the resolver for the me field.
 func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
 	p, err := principal(ctx)
@@ -80,6 +86,11 @@ func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
 		return nil, err
 	}
 	return toUser(u), nil
+}
+
+// Invite is the resolver for the invite field.
+func (r *queryResolver) Invite(ctx context.Context, token string) (*model.InvitePreview, error) {
+	panic(fmt.Errorf("not implemented: Invite - invite"))
 }
 
 // Memberships is the resolver for the memberships field.

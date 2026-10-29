@@ -128,3 +128,57 @@ Grep this file for your area before starting a task.
 - Root cause: A stray 'cat > /dev/null' in a chained command waited on stdin forever
 - Fix: Stopped the task and re-ran the real command alone
 - Prevention rule: Never leave stdin-reading commands (cat without file, read) in non-interactive chains; review heredoc tails before running
+
+## L-022 · 2026-10-29 · security/db
+- What broke: RLS policies exist (00008) but give no protection: the API connects as a Postgres superuser who owns the tables, and the policy allows all rows when app.tenant_id is unset
+- Root cause: Superusers and table owners bypass RLS (no FORCE ROW LEVEL SECURITY, no app_user role created); the policy was written fail-open (IS NULL OR '' => true)
+- Fix: Reported as SPRINT-01-SECURITY H1; fix: non-superuser NOBYPASSRLS app role, FORCE RLS, fail-closed policy
+- Prevention rule: Every RLS change ships with an integration test that does SET ROLE <app role> and asserts 0 rows without app.tenant_id; never connect the API as the migration/owner role
+
+## L-023 · 2026-10-29 · security/authz
+- What broke: VIEWER and RESELLER can run verifyPayment, markDelivered, createSubscription(markPaid) and other mutations that trigger credential delivery
+- Root cause: A bare @auth means any authenticated role; no service-level role checks and no role matrix
+- Fix: Reported as SPRINT-01-SECURITY H2; fix: role-matrix ADR plus roles on every Mutation
+- Prevention rule: Every Mutation field must declare @auth(roles:[...]); a schema test fails on a bare @auth on Mutation; VIEWER is read-only by default
+
+## L-024 · 2026-10-29 · security/secrets
+- What broke: Delivered master-account passwords are stored in plaintext in messages.body and the conversation preview; Meta and Telegram tokens and the app secret can leak through url.Error strings into GraphQL errors, redirect URLs and last_error
+- Root cause: The secret is rendered into a general-purpose persisted field; secrets are put in URL query strings and Go's *url.Error includes the full URL
+- Fix: Reported as SPRINT-01-SECURITY H3 and M3
+- Prevention rule: Plaintext secrets may live only in the vault or in a transient encrypted job payload; never in a URL; unwrap *url.Error before returning or storing an upstream error; grep the stored/returned strings for secrets in review
+
+## L-025 · 2026-10-29 · security/payments
+- What broke: SMS auto-verification accepts any SMS that looks like bKash/Nagad text, so a customer can forge a payment SMS and get credentials delivered automatically
+- Root cause: The parser trusts message content; the forwarder's sender field is ignored
+- Fix: Reported as SPRINT-01-SECURITY H4; fix: sender short-code allowlist and a review state
+- Prevention rule: Any automatic money verification must authenticate the source (sender ID or signed provider API), not only parse the content
+
+## L-026 · 2026-10-29 · security/ratelimit
+- What broke: Per-IP rate limits (global and placeOrder) can be bypassed with forged X-Forwarded-For, and aliased login fields multiply brute-force attempts per request
+- Root cause: chi middleware.RealIP trusts client headers; the limiter counts HTTP requests, not GraphQL fields
+- Fix: Reported as SPRINT-01-SECURITY H6 and M1
+- Prevention rule: Trust XFF only from configured proxy CIDRs; rate-limit sensitive GraphQL fields per identifier and allow only one auth or public-write field per operation
+
+## L-027 · 2026-10-29 · infra/vault
+- What broke: QA: every seeded vault secret failed with 'vault: decryption failed' (credential reveal + all outbound messages) while new secrets worked
+- Root cause: VAULT_KEY is not pinned for dev (no .env.example/Makefile default); seed and the restarted API used different keys and key_version=1 on both so nothing detected the mismatch
+- Fix: Filed SPRINT-01-QA BUG-01: pin a dev-only key in .env.example/Makefile; add a key fingerprint or boot-time canary decrypt
+- Prevention rule: Any encryption key used by seed and server must come from one committed dev default; after restarting the API run one reveal/decrypt smoke before handing the env to QA
+
+## L-028 · 2026-10-29 · frontend/i18n
+- What broke: QA: raw API strings reached users (EXPIRING_SOON, OVERDUE_INVOICE, free, active, password_changed, 'vault: decryption failed', 'invalid UUID'); wrong password showed 'session expired'
+- Root cause: UI renders server enum/code strings and error.message directly; one generic UNAUTHENTICATED->session-expired mapping is reused on the login form
+- Fix: Filed BUG-05/06/07
+- Prevention rule: Every enum-like string from the API goes through an i18n map with a fallback; never render error.message to users; auth forms map their own error codes
+
+## L-029 · 2026-10-29 · backend/db
+- What broke: QA: new tenant's first invoice was INV-202610-0081 and first ticket #9
+- Root cause: invoice_number_seq, ticket_number_seq and order_number_seq are global Postgres sequences shared by all tenants
+- Fix: Filed BUG-11 (per-tenant counters needed)
+- Prevention rule: Human-facing document numbers in a multi-tenant table use a per-tenant counter (tenant_counters row locked FOR UPDATE), never a global sequence
+
+## L-030 · 2026-10-29 · backend/billing
+- What broke: QA: verifying two pending payments made invoice paidAmount 185548 > total 135048 and customer due -50500 silently
+- Root cause: recordPayment/verifyPayment never compare amount against invoice dueAmount (including other pending payments)
+- Fix: Filed BUG-04
+- Prevention rule: Money mutations validate against the remaining due at verify time; overpayment is either rejected or booked as an explicit advance; add a test for it

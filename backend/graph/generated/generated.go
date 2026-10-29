@@ -200,6 +200,16 @@ type ComplexityRoot struct {
 		Unread     func(childComplexity int) int
 	}
 
+	InvitePreview struct {
+		EmailHint   func(childComplexity int) int
+		ExpiresAt   func(childComplexity int) int
+		InviteeName func(childComplexity int) int
+		PhoneHint   func(childComplexity int) int
+		Role        func(childComplexity int) int
+		TenantName  func(childComplexity int) int
+		UserExists  func(childComplexity int) int
+	}
+
 	Invoice struct {
 		CreatedAt  func(childComplexity int) int
 		Currency   func(childComplexity int) int
@@ -302,6 +312,7 @@ type ComplexityRoot struct {
 	}
 
 	Mutation struct {
+		AcceptInvite                  func(childComplexity int, token string, password string, name *string) int
 		AddConversationLabel          func(childComplexity int, id uuid.UUID, label string) int
 		AddCustomerNote               func(childComplexity int, customerID uuid.UUID, body string) int
 		AddLedgerAdjustment           func(childComplexity int, customerID uuid.UUID, entryType model.LedgerEntryType, amount int64, note *string) int
@@ -358,8 +369,10 @@ type ComplexityRoot struct {
 		RemoveConversationLabel       func(childComplexity int, id uuid.UUID, label string) int
 		RemoveMember                  func(childComplexity int, memberID uuid.UUID) int
 		RenewSubscription             func(childComplexity int, id uuid.UUID, input model.RenewSubscriptionInput) int
+		ResendInvite                  func(childComplexity int, memberID uuid.UUID) int
 		ResolveReplacement            func(childComplexity int, ticketID uuid.UUID, newSlotID *uuid.UUID, markOldSlot *model.SlotStatus, extendDays *int) int
 		RevealMasterAccountCredential func(childComplexity int, id uuid.UUID) int
+		RotateSmsWebhookToken         func(childComplexity int) int
 		SendInvoice                   func(childComplexity int, id uuid.UUID, channel *model.Platform) int
 		SendMessage                   func(childComplexity int, input model.SendMessageInput) int
 		SendReminderNow               func(childComplexity int, subscriptionID uuid.UUID, templateID *uuid.UUID, channel *model.ReminderChannel) int
@@ -616,6 +629,7 @@ type ComplexityRoot struct {
 		FreeSlots             func(childComplexity int, productID uuid.UUID) int
 		Health                func(childComplexity int) int
 		InboxCounts           func(childComplexity int) int
+		Invite                func(childComplexity int, token string) int
 		Invoice               func(childComplexity int, id uuid.UUID) int
 		Invoices              func(childComplexity int, filter *model.InvoiceFilter, page *model.PageInput) int
 		Ledger                func(childComplexity int, customerID uuid.UUID) int
@@ -788,12 +802,14 @@ type ComplexityRoot struct {
 	}
 
 	TenantMember struct {
-		CommissionBps func(childComplexity int) int
-		CreatedAt     func(childComplexity int) int
-		ID            func(childComplexity int) int
-		Role          func(childComplexity int) int
-		Status        func(childComplexity int) int
-		User          func(childComplexity int) int
+		CommissionBps   func(childComplexity int) int
+		CreatedAt       func(childComplexity int) int
+		ID              func(childComplexity int) int
+		InviteExpiresAt func(childComplexity int) int
+		InviteURL       func(childComplexity int) int
+		Role            func(childComplexity int) int
+		Status          func(childComplexity int) int
+		User            func(childComplexity int) int
 	}
 
 	Ticket struct {
@@ -899,6 +915,7 @@ type MutationResolver interface {
 	Logout(ctx context.Context, refreshToken string) (bool, error)
 	SwitchTenant(ctx context.Context, tenantID uuid.UUID) (*model.AuthPayload, error)
 	ChangePassword(ctx context.Context, currentPassword string, newPassword string) (bool, error)
+	AcceptInvite(ctx context.Context, token string, password string, name *string) (*model.AuthPayload, error)
 	CreateInvoice(ctx context.Context, input model.CreateInvoiceInput) (*model.Invoice, error)
 	SendInvoice(ctx context.Context, id uuid.UUID, channel *model.Platform) (*model.Invoice, error)
 	VoidInvoice(ctx context.Context, id uuid.UUID, reason *string) (*model.Invoice, error)
@@ -967,6 +984,8 @@ type MutationResolver interface {
 	InviteMember(ctx context.Context, input model.InviteMemberInput) (*model.TenantMember, error)
 	UpdateMemberRole(ctx context.Context, memberID uuid.UUID, role model.Role, commissionBps *int) (*model.TenantMember, error)
 	RemoveMember(ctx context.Context, memberID uuid.UUID) (bool, error)
+	ResendInvite(ctx context.Context, memberID uuid.UUID) (*model.TenantMember, error)
+	RotateSmsWebhookToken(ctx context.Context) (string, error)
 	MarkNotificationRead(ctx context.Context, id uuid.UUID) (bool, error)
 	MarkAllNotificationsRead(ctx context.Context) (bool, error)
 	CreateTicket(ctx context.Context, input model.CreateTicketInput) (*model.Ticket, error)
@@ -1010,6 +1029,7 @@ type QueryResolver interface {
 	ChannelStats(ctx context.Context, days *int) ([]model.ChannelStat, error)
 	AtRiskCustomers(ctx context.Context, limit *int) ([]model.AtRiskCustomer, error)
 	Me(ctx context.Context) (*model.User, error)
+	Invite(ctx context.Context, token string) (*model.InvitePreview, error)
 	Invoices(ctx context.Context, filter *model.InvoiceFilter, page *model.PageInput) (*model.InvoiceConnection, error)
 	Invoice(ctx context.Context, id uuid.UUID) (*model.Invoice, error)
 	Payments(ctx context.Context, filter *model.PaymentFilter, page *model.PageInput) (*model.PaymentConnection, error)
@@ -1701,6 +1721,49 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.InboxCounts.Unread(childComplexity), true
 
+	case "InvitePreview.emailHint":
+		if e.ComplexityRoot.InvitePreview.EmailHint == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.EmailHint(childComplexity), true
+	case "InvitePreview.expiresAt":
+		if e.ComplexityRoot.InvitePreview.ExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.ExpiresAt(childComplexity), true
+	case "InvitePreview.inviteeName":
+		if e.ComplexityRoot.InvitePreview.InviteeName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.InviteeName(childComplexity), true
+	case "InvitePreview.phoneHint":
+		if e.ComplexityRoot.InvitePreview.PhoneHint == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.PhoneHint(childComplexity), true
+	case "InvitePreview.role":
+		if e.ComplexityRoot.InvitePreview.Role == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.Role(childComplexity), true
+	case "InvitePreview.tenantName":
+		if e.ComplexityRoot.InvitePreview.TenantName == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.TenantName(childComplexity), true
+	case "InvitePreview.userExists":
+		if e.ComplexityRoot.InvitePreview.UserExists == nil {
+			break
+		}
+
+		return e.ComplexityRoot.InvitePreview.UserExists(childComplexity), true
+
 	case "Invoice.createdAt":
 		if e.ComplexityRoot.Invoice.CreatedAt == nil {
 			break
@@ -2154,6 +2217,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.MessageTemplate.Name(childComplexity), true
 
+	case "Mutation.acceptInvite":
+		if e.ComplexityRoot.Mutation.AcceptInvite == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_acceptInvite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.AcceptInvite(childComplexity, args["token"].(string), args["password"].(string), args["name"].(*string)), true
 	case "Mutation.addConversationLabel":
 		if e.ComplexityRoot.Mutation.AddConversationLabel == nil {
 			break
@@ -2760,6 +2834,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RenewSubscription(childComplexity, args["id"].(uuid.UUID), args["input"].(model.RenewSubscriptionInput)), true
+	case "Mutation.resendInvite":
+		if e.ComplexityRoot.Mutation.ResendInvite == nil {
+			break
+		}
+
+		args, err := ec.field_Mutation_resendInvite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Mutation.ResendInvite(childComplexity, args["memberId"].(uuid.UUID)), true
 	case "Mutation.resolveReplacement":
 		if e.ComplexityRoot.Mutation.ResolveReplacement == nil {
 			break
@@ -2782,6 +2867,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.Mutation.RevealMasterAccountCredential(childComplexity, args["id"].(uuid.UUID)), true
+	case "Mutation.rotateSmsWebhookToken":
+		if e.ComplexityRoot.Mutation.RotateSmsWebhookToken == nil {
+			break
+		}
+
+		return e.ComplexityRoot.Mutation.RotateSmsWebhookToken(childComplexity), true
 	case "Mutation.sendInvoice":
 		if e.ComplexityRoot.Mutation.SendInvoice == nil {
 			break
@@ -4110,6 +4201,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.ComplexityRoot.Query.InboxCounts(childComplexity), true
 
+	case "Query.invite":
+		if e.ComplexityRoot.Query.Invite == nil {
+			break
+		}
+
+		args, err := ec.field_Query_invite_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.ComplexityRoot.Query.Invite(childComplexity, args["token"].(string)), true
 	case "Query.invoice":
 		if e.ComplexityRoot.Query.Invoice == nil {
 			break
@@ -5086,6 +5188,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.TenantMember.ID(childComplexity), true
+	case "TenantMember.inviteExpiresAt":
+		if e.ComplexityRoot.TenantMember.InviteExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TenantMember.InviteExpiresAt(childComplexity), true
+	case "TenantMember.inviteUrl":
+		if e.ComplexityRoot.TenantMember.InviteURL == nil {
+			break
+		}
+
+		return e.ComplexityRoot.TenantMember.InviteURL(childComplexity), true
 	case "TenantMember.role":
 		if e.ComplexityRoot.TenantMember.Role == nil {
 			break
@@ -5526,12 +5640,15 @@ extend type Query {
 }
 type Membership { id: UUID! tenant: Tenant! role: Role! commissionBps: Int! status: String! }
 type AuthPayload { accessToken: String! refreshToken: String! user: User! }
+"""Public preview of a pending invite, looked up by token."""
+type InvitePreview { tenantName: String! role: Role! inviteeName: String! emailHint: String phoneHint: String expiresAt: Time! userExists: Boolean! }
 
 input RegisterInput { name: String! email: String phone: String password: String! businessName: String! }
 input LoginInput { identifier: String! password: String! }
 
 extend type Query {
   me: User! @auth
+  invite(token: String!): InvitePreview
 }
 extend type Mutation {
   register(input: RegisterInput!): AuthPayload!
@@ -5540,6 +5657,8 @@ extend type Mutation {
   logout(refreshToken: String!): Boolean!
   switchTenant(tenantId: UUID!): AuthPayload! @auth
   changePassword(currentPassword: String!, newPassword: String!): Boolean! @auth
+  """Accept a pending invite. New users set a password; existing users prove ownership with their password."""
+  acceptInvite(token: String!, password: String!, name: String): AuthPayload!
 }
 `, BuiltIn: false},
 	{Name: "../../internal/modules/billing/billing.graphql", Input: `enum InvoiceStatus { DRAFT SENT PARTIAL PAID OVERDUE VOID }
@@ -6039,7 +6158,7 @@ extend type Mutation {
   members: [TenantMember!]! @goField(forceResolver: true)
   createdAt: Time!
 }
-type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! createdAt: Time! }
+type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! inviteUrl: String inviteExpiresAt: Time createdAt: Time! }
 type Notification { id: UUID! kind: String! title: String! body: String link: String readAt: Time createdAt: Time! }
 type AuditLog { id: ID! user: User action: String! entityType: String! entityId: UUID meta: JSON! createdAt: Time! }
 
@@ -6056,6 +6175,9 @@ extend type Mutation {
   inviteMember(input: InviteMemberInput!): TenantMember! @auth(roles: [OWNER, ADMIN])
   updateMemberRole(memberId: UUID!, role: Role!, commissionBps: Int): TenantMember! @auth(roles: [OWNER])
   removeMember(memberId: UUID!): Boolean! @auth(roles: [OWNER])
+  resendInvite(memberId: UUID!): TenantMember! @auth(roles: [OWNER, ADMIN])
+  """Generates a new SMS-forwarder bearer token; the full token is returned exactly once."""
+  rotateSmsWebhookToken: String! @auth(roles: [OWNER, ADMIN])
   markNotificationRead(id: UUID!): Boolean! @auth
   markAllNotificationsRead: Boolean! @auth
 }
@@ -6383,6 +6505,26 @@ func (ec *executionContext) childFields_InboxCounts(ctx context.Context, field g
 		return ec.fieldContext_InboxCounts_unread(ctx, field)
 	}
 	return nil, fmt.Errorf("no field named %q was found under type InboxCounts", field.Name)
+}
+
+func (ec *executionContext) childFields_InvitePreview(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+	switch field.Name {
+	case "tenantName":
+		return ec.fieldContext_InvitePreview_tenantName(ctx, field)
+	case "role":
+		return ec.fieldContext_InvitePreview_role(ctx, field)
+	case "inviteeName":
+		return ec.fieldContext_InvitePreview_inviteeName(ctx, field)
+	case "emailHint":
+		return ec.fieldContext_InvitePreview_emailHint(ctx, field)
+	case "phoneHint":
+		return ec.fieldContext_InvitePreview_phoneHint(ctx, field)
+	case "expiresAt":
+		return ec.fieldContext_InvitePreview_expiresAt(ctx, field)
+	case "userExists":
+		return ec.fieldContext_InvitePreview_userExists(ctx, field)
+	}
+	return nil, fmt.Errorf("no field named %q was found under type InvitePreview", field.Name)
 }
 
 func (ec *executionContext) childFields_Invoice(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
@@ -7305,6 +7447,10 @@ func (ec *executionContext) childFields_TenantMember(ctx context.Context, field 
 		return ec.fieldContext_TenantMember_commissionBps(ctx, field)
 	case "status":
 		return ec.fieldContext_TenantMember_status(ctx, field)
+	case "inviteUrl":
+		return ec.fieldContext_TenantMember_inviteUrl(ctx, field)
+	case "inviteExpiresAt":
+		return ec.fieldContext_TenantMember_inviteExpiresAt(ctx, field)
 	case "createdAt":
 		return ec.fieldContext_TenantMember_createdAt(ctx, field)
 	}
@@ -7558,6 +7704,36 @@ func (ec *executionContext) field_Conversation_messages_args(ctx context.Context
 		return nil, err
 	}
 	args["page"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Mutation_acceptInvite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "token",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg0
+	arg1, err := graphql.ProcessArgField(ctx, rawArgs, "password",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["password"] = arg1
+	arg2, err := graphql.ProcessArgField(ctx, rawArgs, "name",
+		func(ctx context.Context, v any) (*string, error) {
+			return ec.unmarshalOString2ᚖstring(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["name"] = arg2
 	return args, nil
 }
 
@@ -8565,6 +8741,20 @@ func (ec *executionContext) field_Mutation_renewSubscription_args(ctx context.Co
 	return args, nil
 }
 
+func (ec *executionContext) field_Mutation_resendInvite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "memberId",
+		func(ctx context.Context, v any) (uuid.UUID, error) {
+			return ec.unmarshalNUUID2githubᚗcomᚋgoogleᚋuuidᚐUUID(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["memberId"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Mutation_resolveReplacement_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -9290,6 +9480,20 @@ func (ec *executionContext) field_Query_freeSlots_args(ctx context.Context, rawA
 		return nil, err
 	}
 	args["productId"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_invite_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "token",
+		func(ctx context.Context, v any) (string, error) {
+			return ec.unmarshalNString2string(ctx, v)
+		})
+	if err != nil {
+		return nil, err
+	}
+	args["token"] = arg0
 	return args, nil
 }
 
@@ -12193,6 +12397,167 @@ func (ec *executionContext) fieldContext_InboxCounts_unread(_ context.Context, f
 	return graphql.NewScalarFieldContext("InboxCounts", field, false, false, "Int")
 }
 
+func (ec *executionContext) _InvitePreview_tenantName(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_tenantName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TenantName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_tenantName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "String")
+}
+
+func (ec *executionContext) _InvitePreview_role(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_role(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.Role, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v model.Role) graphql.Marshaler {
+			return ec.marshalNRole2provider_saasᚋgraphᚋmodelᚐRole(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_role(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "Role")
+}
+
+func (ec *executionContext) _InvitePreview_inviteeName(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_inviteeName(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InviteeName, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_inviteeName(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "String")
+}
+
+func (ec *executionContext) _InvitePreview_emailHint(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_emailHint(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.EmailHint, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_emailHint(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "String")
+}
+
+func (ec *executionContext) _InvitePreview_phoneHint(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_phoneHint(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.PhoneHint, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_phoneHint(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "String")
+}
+
+func (ec *executionContext) _InvitePreview_expiresAt(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_expiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.ExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_expiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "Time")
+}
+
+func (ec *executionContext) _InvitePreview_userExists(ctx context.Context, field graphql.CollectedField, obj *model.InvitePreview) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_InvitePreview_userExists(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.UserExists, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v bool) graphql.Marshaler {
+			return ec.marshalNBoolean2bool(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_InvitePreview_userExists(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("InvitePreview", field, false, false, "Boolean")
+}
+
 func (ec *executionContext) _Invoice_id(ctx context.Context, field graphql.CollectedField, obj *model.Invoice) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -14323,6 +14688,50 @@ func (ec *executionContext) fieldContext_Mutation_changePassword(ctx context.Con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Mutation_changePassword_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_acceptInvite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_acceptInvite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().AcceptInvite(ctx, fc.Args["token"].(string), fc.Args["password"].(string), fc.Args["name"].(*string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.AuthPayload) graphql.Marshaler {
+			return ec.marshalNAuthPayload2ᚖprovider_saasᚋgraphᚋmodelᚐAuthPayload(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_acceptInvite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_AuthPayload(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_acceptInvite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -18337,6 +18746,109 @@ func (ec *executionContext) fieldContext_Mutation_removeMember(ctx context.Conte
 		return fc, err
 	}
 	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_resendInvite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_resendInvite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Mutation().ResendInvite(ctx, fc.Args["memberId"].(uuid.UUID))
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN"})
+				if err != nil {
+					var zeroVal *model.TenantMember
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal *model.TenantMember
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v *model.TenantMember) graphql.Marshaler {
+			return ec.marshalNTenantMember2ᚖprovider_saasᚋgraphᚋmodelᚐTenantMember(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_resendInvite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Mutation",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_TenantMember(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Mutation_resendInvite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Mutation_rotateSmsWebhookToken(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Mutation_rotateSmsWebhookToken(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return ec.Resolvers.Mutation().RotateSmsWebhookToken(ctx)
+		},
+		func(ctx context.Context, next graphql.Resolver) graphql.Resolver {
+			directive0 := next
+
+			directive1 := func(ctx context.Context) (any, error) {
+				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN"})
+				if err != nil {
+					var zeroVal string
+					return zeroVal, err
+				}
+				if ec.Directives.Auth == nil {
+					var zeroVal string
+					return zeroVal, errors.New("directive auth is not implemented")
+				}
+				return ec.Directives.Auth(ctx, nil, directive0, roles)
+			}
+
+			next = directive1
+			return next
+		},
+		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
+			return ec.marshalNString2string(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_Mutation_rotateSmsWebhookToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("Mutation", field, true, true, "String")
 }
 
 func (ec *executionContext) _Mutation_markNotificationRead(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
@@ -22728,6 +23240,50 @@ func (ec *executionContext) fieldContext_Query_me(_ context.Context, field graph
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return ec.childFields_User(ctx, field)
 		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_invite(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_Query_invite(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.Resolvers.Query().Invite(ctx, fc.Args["token"].(string))
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *model.InvitePreview) graphql.Marshaler {
+			return ec.marshalOInvitePreview2ᚖprovider_saasᚋgraphᚋmodelᚐInvitePreview(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_Query_invite(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.childFields_InvitePreview(ctx, field)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_invite_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
 	}
 	return fc, nil
 }
@@ -27530,6 +28086,52 @@ func (ec *executionContext) _TenantMember_status(ctx context.Context, field grap
 }
 func (ec *executionContext) fieldContext_TenantMember_status(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("TenantMember", field, false, false, "String")
+}
+
+func (ec *executionContext) _TenantMember_inviteUrl(ctx context.Context, field graphql.CollectedField, obj *model.TenantMember) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TenantMember_inviteUrl(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InviteURL, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_TenantMember_inviteUrl(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TenantMember", field, false, false, "String")
+}
+
+func (ec *executionContext) _TenantMember_inviteExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.TenantMember) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_TenantMember_inviteExpiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.InviteExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *time.Time) graphql.Marshaler {
+			return ec.marshalOTime2ᚖtimeᚐTime(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_TenantMember_inviteExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("TenantMember", field, false, false, "Time")
 }
 
 func (ec *executionContext) _TenantMember_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.TenantMember) (ret graphql.Marshaler) {
@@ -33418,6 +34020,69 @@ func (ec *executionContext) _InboxCounts(ctx context.Context, sel ast.SelectionS
 	return out
 }
 
+var invitePreviewImplementors = []string{"InvitePreview"}
+
+func (ec *executionContext) _InvitePreview(ctx context.Context, sel ast.SelectionSet, obj *model.InvitePreview) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, invitePreviewImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := graphql.NewDeferredGroup(ctx)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("InvitePreview")
+		case "tenantName":
+			out.Values[i] = ec._InvitePreview_tenantName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "role":
+			out.Values[i] = ec._InvitePreview_role(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inviteeName":
+			out.Values[i] = ec._InvitePreview_inviteeName(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "emailHint":
+			out.Values[i] = ec._InvitePreview_emailHint(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "phoneHint":
+			out.Values[i] = ec._InvitePreview_phoneHint(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "expiresAt":
+			out.Values[i] = ec._InvitePreview_expiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "userExists":
+			out.Values[i] = ec._InvitePreview_userExists(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	if n := len(deferred.Defers); n > 0 {
+		atomic.AddInt32(&ec.Deferred, int32(min(n, math.MaxInt32)))
+		ec.ProcessDeferredGroup(deferred)
+	}
+
+	return out
+}
+
 var invoiceImplementors = []string{"Invoice"}
 
 func (ec *executionContext) _Invoice(ctx context.Context, sel ast.SelectionSet, obj *model.Invoice) graphql.Marshaler {
@@ -34117,6 +34782,13 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "acceptInvite":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_acceptInvite(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "createInvoice":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_createInvoice(ctx, field)
@@ -34589,6 +35261,20 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 		case "removeMember":
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Mutation_removeMember(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "resendInvite":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_resendInvite(ctx, field)
+			})
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "rotateSmsWebhookToken":
+			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
+				return ec._Mutation_rotateSmsWebhookToken(ctx, field)
 			})
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
@@ -36085,6 +36771,12 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 				func(ctx context.Context) graphql.Marshaler {
 					return ec._Query_me(ctx, field)
 				})
+		case "invite":
+			out.ResolveRootConcurrently(innerCtx, ec.OperationContext, i,
+				true, false,
+				func(ctx context.Context) graphql.Marshaler {
+					return ec._Query_invite(ctx, field)
+				})
 		case "invoices":
 			out.ResolveRootConcurrently(innerCtx, ec.OperationContext, i,
 				true, true,
@@ -37220,6 +37912,16 @@ func (ec *executionContext) _TenantMember(ctx context.Context, sel ast.Selection
 		case "status":
 			out.Values[i] = ec._TenantMember_status(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "inviteUrl":
+			out.Values[i] = ec._TenantMember_inviteUrl(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "inviteExpiresAt":
+			out.Values[i] = ec._TenantMember_inviteExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
 				out.Invalids++
 			}
 		case "createdAt":
@@ -39966,6 +40668,13 @@ func (ec *executionContext) marshalOInt2ᚖint(ctx context.Context, sel ast.Sele
 	_ = ctx
 	res := graphql.MarshalInt(*v)
 	return res
+}
+
+func (ec *executionContext) marshalOInvitePreview2ᚖprovider_saasᚋgraphᚋmodelᚐInvitePreview(ctx context.Context, sel ast.SelectionSet, v *model.InvitePreview) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._InvitePreview(ctx, sel, v)
 }
 
 func (ec *executionContext) marshalOInvoice2ᚖprovider_saasᚋgraphᚋmodelᚐInvoice(ctx context.Context, sel ast.SelectionSet, v *model.Invoice) graphql.Marshaler {

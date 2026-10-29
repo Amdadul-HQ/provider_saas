@@ -236,6 +236,17 @@ type InviteMemberInput struct {
 	CommissionBps *int    `json:"commissionBps,omitempty"`
 }
 
+// Public preview of a pending invite, looked up by token.
+type InvitePreview struct {
+	TenantName  string    `json:"tenantName"`
+	Role        Role      `json:"role"`
+	InviteeName string    `json:"inviteeName"`
+	EmailHint   *string   `json:"emailHint,omitempty"`
+	PhoneHint   *string   `json:"phoneHint,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+	UserExists  bool      `json:"userExists"`
+}
+
 type InvoiceConnection struct {
 	Edges      []InvoiceEdge `json:"edges"`
 	PageInfo   PageInfo      `json:"pageInfo"`
@@ -597,12 +608,14 @@ type Tenant struct {
 }
 
 type TenantMember struct {
-	ID            uuid.UUID `json:"id"`
-	User          User      `json:"user"`
-	Role          Role      `json:"role"`
-	CommissionBps int       `json:"commissionBps"`
-	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID              uuid.UUID  `json:"id"`
+	User            User       `json:"user"`
+	Role            Role       `json:"role"`
+	CommissionBps   int        `json:"commissionBps"`
+	Status          string     `json:"status"`
+	InviteURL       *string    `json:"inviteUrl,omitempty"`
+	InviteExpiresAt *time.Time `json:"inviteExpiresAt,omitempty"`
+	CreatedAt       time.Time  `json:"createdAt"`
 }
 
 type TicketFilter struct {
