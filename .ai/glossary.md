@@ -1,0 +1,11 @@
+# Glossary
+- **Provider / tenant** — a seller business using our SaaS.
+- **Customer** — the provider's buyer (end user).
+- **Master account** — upstream account bought from a supplier (e.g. a Netflix Premium account with 5 profiles).
+- **Slot** — one sellable unit of a master account (a profile, a seat, a key).
+- **Subscription** — a customer's active entitlement to a product for a period, optionally bound to a slot.
+- **TrxID** — bKash/Nagad/Rocket transaction id typed by the customer after paying.
+- **Baki khata** — due/credit ledger; customers who pay later.
+- **Replacement** — a new slot/account given to a customer when the old one gets banned or password-changed.
+- **Storefront** — provider's public page (`/s/<slug>`) where customers order without inboxing.
+- **Magic link** — passwordless customer portal link sent over WhatsApp/Messenger.

@@ -1,0 +1,56 @@
+enum SubscriptionStatus { PENDING ACTIVE EXPIRING EXPIRED CANCELLED REPLACED }
+
+type Subscription {
+  id: UUID!
+  customer: Customer! @goField(forceResolver: true)
+  product: Product! @goField(forceResolver: true)
+  plan: ProductPlan @goField(forceResolver: true)
+  slot: Slot @goField(forceResolver: true)
+  startsAt: Time!
+  expiresAt: Time!
+  daysLeft: Int!
+  price: Money!
+  cost: Money!
+  currency: String!
+  status: SubscriptionStatus!
+  autoRenew: Boolean!
+  deliveredAt: Time
+  deliveryNote: String
+  renewedFromId: UUID
+  soldBy: User @goField(forceResolver: true)
+  notes: String
+  createdAt: Time!
+}
+type SubscriptionEdge { cursor: String! node: Subscription! }
+type SubscriptionConnection { edges: [SubscriptionEdge!]! pageInfo: PageInfo! totalCount: Int! }
+
+input SubscriptionFilter { search: String status: SubscriptionStatus productId: UUID customerId: UUID expiringWithinDays: Int expiredWithinDays: Int }
+input CreateSubscriptionInput {
+  customerId: UUID!
+  productId: UUID!
+  planId: UUID
+  slotId: UUID              # null + SHARED_SLOT product = auto-pick next free slot
+  startsAt: Time
+  durationDays: Int         # overrides plan duration
+  price: Money              # overrides plan price
+  cost: Money
+  autoRenew: Boolean = false
+  notes: String
+  createInvoice: Boolean = true
+  markPaid: PaymentInput    # optional immediate payment
+}
+input RenewSubscriptionInput { planId: UUID durationDays: Int price: Money createInvoice: Boolean = true markPaid: PaymentInput }
+
+extend type Query {
+  subscriptions(filter: SubscriptionFilter, page: PageInput): SubscriptionConnection! @auth
+  subscription(id: UUID!): Subscription @auth
+  expiringSubscriptions(days: Int = 7): [Subscription!]! @auth
+}
+extend type Mutation {
+  createSubscription(input: CreateSubscriptionInput!): Subscription! @auth
+  renewSubscription(id: UUID!, input: RenewSubscriptionInput!): Subscription! @auth
+  markDelivered(id: UUID!, deliveryNote: String): Subscription! @auth
+  cancelSubscription(id: UUID!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN, STAFF])
+  reassignSlot(id: UUID!, slotId: UUID!): Subscription! @auth
+  extendSubscription(id: UUID!, days: Int!, reason: String): Subscription! @auth(roles: [OWNER, ADMIN])
+}

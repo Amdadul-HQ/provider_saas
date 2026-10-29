@@ -1,0 +1,62 @@
+enum ConversationStatus { OPEN PENDING CLOSED SPAM }
+enum MessageDirection { INBOUND OUTBOUND }
+enum MessageKind { TEXT IMAGE VIDEO AUDIO FILE STICKER TEMPLATE SYSTEM }
+enum TemplateCategory { QUICK_REPLY REMINDER DELIVERY INVOICE WINBACK OTHER }
+
+type Conversation {
+  id: UUID!
+  socialAccount: SocialAccount! @goField(forceResolver: true)
+  customer: Customer @goField(forceResolver: true)
+  identity: CustomerIdentity @goField(forceResolver: true)
+  platform: SocialPlatform!
+  externalThreadId: String!
+  status: ConversationStatus!
+  assignedTo: User @goField(forceResolver: true)
+  unreadCount: Int!
+  lastMessageAt: Time
+  lastMessagePreview: String
+  lastInboundAt: Time
+  canReply: Boolean!            # WhatsApp 24h window / Messenger policy
+  labels: [String!]!
+  messages(page: PageInput): [Message!]! @goField(forceResolver: true)
+  createdAt: Time!
+}
+type Message {
+  id: UUID!
+  conversationId: UUID!
+  direction: MessageDirection!
+  externalId: String
+  kind: MessageKind!
+  body: String
+  attachments: JSON!
+  sentBy: User @goField(forceResolver: true)
+  status: String!
+  error: String
+  sentAt: Time!
+}
+type MessageTemplate { id: UUID! key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean! }
+type ConversationConnection { edges: [ConversationEdge!]! pageInfo: PageInfo! totalCount: Int! }
+type ConversationEdge { cursor: String! node: Conversation! }
+type InboxCounts { open: Int! unassigned: Int! mine: Int! unread: Int! }
+
+input ConversationFilter { status: ConversationStatus platform: SocialPlatform socialAccountId: UUID assignedTo: UUID unassigned: Boolean search: String label: String }
+input SendMessageInput { conversationId: UUID! body: String templateId: UUID variables: JSON attachments: JSON }
+input MessageTemplateInput { key: String! name: String! body: String! category: TemplateCategory! isActive: Boolean = true }
+
+extend type Query {
+  conversations(filter: ConversationFilter, page: PageInput): ConversationConnection! @auth
+  conversation(id: UUID!): Conversation @auth
+  inboxCounts: InboxCounts! @auth
+  messageTemplates(category: TemplateCategory): [MessageTemplate!]! @auth
+}
+extend type Mutation {
+  sendMessage(input: SendMessageInput!): Message! @auth
+  assignConversation(id: UUID!, userId: UUID): Conversation! @auth
+  setConversationStatus(id: UUID!, status: ConversationStatus!): Conversation! @auth
+  markConversationRead(id: UUID!): Conversation! @auth
+  addConversationLabel(id: UUID!, label: String!): Conversation! @auth
+  removeConversationLabel(id: UUID!, label: String!): Conversation! @auth
+  linkConversationCustomer(id: UUID!, customerId: UUID!): Conversation! @auth
+  upsertMessageTemplate(id: UUID, input: MessageTemplateInput!): MessageTemplate! @auth(roles: [OWNER, ADMIN])
+  deleteMessageTemplate(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+}

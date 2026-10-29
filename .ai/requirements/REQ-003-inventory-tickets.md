@@ -1,0 +1,2 @@
+# REQ-003 Slot inventory, suppliers, tickets
+Suppliers; master accounts (product, supplier, cost, expiry, total slots, credentials in vault); slots auto-generated; assign slot to subscription; free on expiry; upstream-expiry alert before customer expiry. Tickets: complaint/replacement with status flow (open → in_progress → resolved), replacement moves the subscription to a new slot and records warranty use.

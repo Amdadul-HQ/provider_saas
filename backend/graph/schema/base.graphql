@@ -1,0 +1,18 @@
+scalar Time
+scalar UUID
+scalar Money      # int64 minor units (paisa)
+scalar JSON
+
+directive @auth(roles: [Role!]) on FIELD_DEFINITION
+directive @goModel(model: String, models: [String!]) on OBJECT | INPUT_OBJECT | SCALAR | ENUM | INTERFACE | UNION
+directive @goField(forceResolver: Boolean, name: String) on INPUT_FIELD_DEFINITION | FIELD_DEFINITION
+
+enum Role { OWNER ADMIN STAFF RESELLER VIEWER }
+enum Platform { FACEBOOK INSTAGRAM WHATSAPP TELEGRAM SMS EMAIL }
+enum SortDirection { ASC DESC }
+
+type PageInfo { hasNextPage: Boolean! endCursor: String }
+input PageInput { first: Int = 25, after: String }
+
+type Query { health: String! }
+type Mutation { ping: Boolean! @auth }

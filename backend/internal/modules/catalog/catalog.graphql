@@ -1,0 +1,36 @@
+enum DeliveryType { SHARED_SLOT PRIVATE_ACCOUNT LICENSE_KEY INVITE_LINK MANUAL }
+
+type Product {
+  id: UUID!
+  name: String!
+  category: String
+  description: String
+  imageUrl: String
+  deliveryType: DeliveryType!
+  warrantyDays: Int!
+  deliveryTemplate: String
+  isActive: Boolean!
+  sortOrder: Int!
+  plans: [ProductPlan!]! @goField(forceResolver: true)
+  freeSlotCount: Int! @goField(forceResolver: true)
+  activeSubscriptionCount: Int! @goField(forceResolver: true)
+  createdAt: Time!
+}
+type ProductPlan { id: UUID! productId: UUID! name: String! durationDays: Int! price: Money! cost: Money! currency: String! isActive: Boolean! sortOrder: Int! }
+
+input ProductFilter { search: String category: String isActive: Boolean }
+input ProductPlanInput { name: String! durationDays: Int! price: Money! cost: Money = 0 isActive: Boolean = true sortOrder: Int = 0 }
+input CreateProductInput { name: String! category: String description: String imageUrl: String deliveryType: DeliveryType = SHARED_SLOT warrantyDays: Int = 0 deliveryTemplate: String plans: [ProductPlanInput!] }
+input UpdateProductInput { name: String category: String description: String imageUrl: String deliveryType: DeliveryType warrantyDays: Int deliveryTemplate: String isActive: Boolean sortOrder: Int }
+
+extend type Query {
+  products(filter: ProductFilter, page: PageInput): [Product!]! @auth
+  product(id: UUID!): Product @auth
+}
+extend type Mutation {
+  createProduct(input: CreateProductInput!): Product! @auth(roles: [OWNER, ADMIN])
+  updateProduct(id: UUID!, input: UpdateProductInput!): Product! @auth(roles: [OWNER, ADMIN])
+  deleteProduct(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  upsertProductPlan(productId: UUID!, id: UUID, input: ProductPlanInput!): ProductPlan! @auth(roles: [OWNER, ADMIN])
+  deleteProductPlan(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+}

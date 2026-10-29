@@ -1,0 +1,46 @@
+enum MasterAccountStatus { ACTIVE EXPIRING EXPIRED BANNED REPLACED RETIRED }
+enum SlotStatus { FREE RESERVED ASSIGNED BANNED RETIRED }
+
+type Supplier { id: UUID! name: String! contact: String notes: String rating: Int accountCount: Int! @goField(forceResolver: true) createdAt: Time! }
+type MasterAccount {
+  id: UUID!
+  product: Product! @goField(forceResolver: true)
+  supplier: Supplier @goField(forceResolver: true)
+  label: String!
+  loginHint: String
+  hasCredential: Boolean!
+  totalSlots: Int!
+  freeSlots: Int! @goField(forceResolver: true)
+  purchaseCost: Money!
+  currency: String!
+  purchasedAt: Time
+  expiresAt: Time
+  status: MasterAccountStatus!
+  notes: String
+  slots: [Slot!]! @goField(forceResolver: true)
+  createdAt: Time!
+}
+type Slot { id: UUID! masterAccountId: UUID! slotNo: Int! label: String pin: String status: SlotStatus! subscription: Subscription @goField(forceResolver: true) }
+type RevealedCredential { username: String! password: String! extra: JSON }
+
+input SupplierInput { name: String! contact: String notes: String rating: Int }
+input MasterAccountFilter { productId: UUID supplierId: UUID status: MasterAccountStatus expiringWithinDays: Int }
+input CreateMasterAccountInput { productId: UUID! supplierId: UUID label: String! loginHint: String username: String password: String extra: JSON totalSlots: Int! purchaseCost: Money! purchasedAt: Time expiresAt: Time notes: String }
+input UpdateMasterAccountInput { supplierId: UUID label: String loginHint: String totalSlots: Int purchaseCost: Money purchasedAt: Time expiresAt: Time status: MasterAccountStatus notes: String }
+
+extend type Query {
+  suppliers: [Supplier!]! @auth
+  masterAccounts(filter: MasterAccountFilter, page: PageInput): [MasterAccount!]! @auth
+  masterAccount(id: UUID!): MasterAccount @auth
+  freeSlots(productId: UUID!): [Slot!]! @auth
+}
+extend type Mutation {
+  createSupplier(input: SupplierInput!): Supplier! @auth(roles: [OWNER, ADMIN])
+  updateSupplier(id: UUID!, input: SupplierInput!): Supplier! @auth(roles: [OWNER, ADMIN])
+  deleteSupplier(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  createMasterAccount(input: CreateMasterAccountInput!): MasterAccount! @auth(roles: [OWNER, ADMIN])
+  updateMasterAccount(id: UUID!, input: UpdateMasterAccountInput!): MasterAccount! @auth(roles: [OWNER, ADMIN])
+  setMasterAccountCredential(id: UUID!, username: String!, password: String!, extra: JSON): Boolean! @auth(roles: [OWNER, ADMIN])
+  revealMasterAccountCredential(id: UUID!): RevealedCredential! @auth(roles: [OWNER, ADMIN])
+  updateSlot(id: UUID!, label: String, pin: String, status: SlotStatus): Slot! @auth
+}

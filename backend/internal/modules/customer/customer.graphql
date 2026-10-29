@@ -1,0 +1,47 @@
+enum CustomerStatus { LEAD ACTIVE INACTIVE BLOCKED }
+enum CustomerSource { MANUAL FACEBOOK INSTAGRAM WHATSAPP TELEGRAM STOREFRONT IMPORT }
+
+type Customer {
+  id: UUID!
+  name: String!
+  phone: String
+  email: String
+  whatsapp: String
+  telegram: String
+  address: String
+  tags: [String!]!
+  notes: String
+  source: CustomerSource!
+  preferredChannel: Platform
+  dueBalance: Money!
+  lifetimeValue: Money!
+  status: CustomerStatus!
+  lastContactAt: Time
+  identities: [CustomerIdentity!]! @goField(forceResolver: true)
+  subscriptions: [Subscription!]! @goField(forceResolver: true)
+  activeSubscriptionCount: Int! @goField(forceResolver: true)
+  createdAt: Time!
+  updatedAt: Time!
+}
+type CustomerIdentity { id: UUID! platform: Platform! externalId: String! handle: String avatarUrl: String socialAccountId: UUID createdAt: Time! }
+type CustomerNote { id: UUID! author: User body: String! createdAt: Time! }
+type CustomerEdge { cursor: String! node: Customer! }
+type CustomerConnection { edges: [CustomerEdge!]! pageInfo: PageInfo! totalCount: Int! }
+
+input CustomerFilter { search: String status: CustomerStatus source: CustomerSource tags: [String!] hasDue: Boolean expiringWithinDays: Int }
+input CreateCustomerInput { name: String! phone: String email: String whatsapp: String telegram: String address: String tags: [String!] notes: String source: CustomerSource = MANUAL preferredChannel: Platform }
+input UpdateCustomerInput { name: String phone: String email: String whatsapp: String telegram: String address: String tags: [String!] notes: String status: CustomerStatus preferredChannel: Platform }
+
+extend type Query {
+  customers(filter: CustomerFilter, page: PageInput): CustomerConnection! @auth
+  customer(id: UUID!): Customer @auth
+  customerNotes(customerId: UUID!): [CustomerNote!]! @auth
+}
+extend type Mutation {
+  createCustomer(input: CreateCustomerInput!): Customer! @auth
+  updateCustomer(id: UUID!, input: UpdateCustomerInput!): Customer! @auth
+  deleteCustomer(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  addCustomerNote(customerId: UUID!, body: String!): CustomerNote! @auth
+  mergeCustomers(keepId: UUID!, mergeId: UUID!): Customer! @auth(roles: [OWNER, ADMIN])
+  linkIdentity(customerId: UUID!, identityId: UUID!): Customer! @auth
+}

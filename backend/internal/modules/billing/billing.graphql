@@ -1,0 +1,73 @@
+enum InvoiceStatus { DRAFT SENT PARTIAL PAID OVERDUE VOID }
+enum PaymentMethod { BKASH NAGAD ROCKET UPAY BANK CASH CARD OTHER }
+enum PaymentStatus { PENDING VERIFIED REJECTED REFUNDED }
+enum LedgerEntryType { DEBIT CREDIT }
+
+type Invoice {
+  id: UUID!
+  number: String!
+  customer: Customer! @goField(forceResolver: true)
+  status: InvoiceStatus!
+  items: [InvoiceItem!]! @goField(forceResolver: true)
+  payments: [Payment!]! @goField(forceResolver: true)
+  subtotal: Money!
+  discount: Money!
+  total: Money!
+  paidAmount: Money!
+  dueAmount: Money!
+  currency: String!
+  issuedAt: Time!
+  dueAt: Time
+  paidAt: Time
+  notes: String
+  createdAt: Time!
+}
+type InvoiceItem { id: UUID! subscriptionId: UUID description: String! quantity: Int! unitPrice: Money! total: Money! }
+type Payment {
+  id: UUID!
+  customer: Customer @goField(forceResolver: true)
+  invoice: Invoice @goField(forceResolver: true)
+  method: PaymentMethod!
+  trxId: String
+  senderNumber: String
+  amount: Money!
+  currency: String!
+  status: PaymentStatus!
+  verifiedBy: User @goField(forceResolver: true)
+  verifiedAt: Time
+  verificationSource: String
+  notes: String
+  receivedAt: Time!
+  createdAt: Time!
+}
+type PaymentInboxItem { id: UUID! source: String! method: PaymentMethod senderNumber: String trxId: String amount: Money rawText: String! status: String! matchedPaymentId: UUID receivedAt: Time! }
+type LedgerEntry { id: UUID! entryType: LedgerEntryType! amount: Money! refType: String refId: UUID note: String createdBy: User @goField(forceResolver: true) createdAt: Time! }
+type InvoiceConnection { edges: [InvoiceEdge!]! pageInfo: PageInfo! totalCount: Int! }
+type InvoiceEdge { cursor: String! node: Invoice! }
+type PaymentConnection { edges: [PaymentEdge!]! pageInfo: PageInfo! totalCount: Int! }
+type PaymentEdge { cursor: String! node: Payment! }
+
+input InvoiceFilter { search: String status: InvoiceStatus customerId: UUID overdueOnly: Boolean }
+input PaymentFilter { status: PaymentStatus method: PaymentMethod customerId: UUID search: String }
+input InvoiceItemInput { subscriptionId: UUID description: String! quantity: Int = 1 unitPrice: Money! }
+input CreateInvoiceInput { customerId: UUID! items: [InvoiceItemInput!]! discount: Money = 0 dueAt: Time notes: String send: Boolean = false }
+input PaymentInput { method: PaymentMethod! amount: Money! trxId: String senderNumber: String receivedAt: Time notes: String }
+
+extend type Query {
+  invoices(filter: InvoiceFilter, page: PageInput): InvoiceConnection! @auth
+  invoice(id: UUID!): Invoice @auth
+  payments(filter: PaymentFilter, page: PageInput): PaymentConnection! @auth
+  paymentInbox(status: String, page: PageInput): [PaymentInboxItem!]! @auth
+  ledger(customerId: UUID!): [LedgerEntry!]! @auth
+}
+extend type Mutation {
+  createInvoice(input: CreateInvoiceInput!): Invoice! @auth
+  sendInvoice(id: UUID!, channel: Platform): Invoice! @auth
+  voidInvoice(id: UUID!, reason: String): Invoice! @auth(roles: [OWNER, ADMIN])
+  recordPayment(invoiceId: UUID, customerId: UUID, input: PaymentInput!): Payment! @auth
+  verifyPayment(id: UUID!): Payment! @auth
+  rejectPayment(id: UUID!, reason: String): Payment! @auth
+  matchPaymentInbox(inboxId: UUID!, paymentId: UUID!): Payment! @auth
+  ignorePaymentInbox(inboxId: UUID!): Boolean! @auth
+  addLedgerAdjustment(customerId: UUID!, entryType: LedgerEntryType!, amount: Money!, note: String): LedgerEntry! @auth(roles: [OWNER, ADMIN])
+}

@@ -1,0 +1,31 @@
+schema:
+  - graph/schema/*.graphql
+  - internal/modules/*/*.graphql
+exec:
+  filename: graph/generated/generated.go
+  package: generated
+model:
+  filename: graph/model/models_gen.go
+  package: model
+resolver:
+  layout: follow-schema
+  dir: graph
+  package: graph
+  filename_template: "{name}.resolvers.go"
+omit_slice_element_pointers: true
+omit_getters: true
+struct_fields_always_pointers: false
+resolvers_always_return_pointers: true
+models:
+  UUID:
+    model: github.com/99designs/gqlgen/graphql.UUID
+  Time:
+    model: github.com/99designs/gqlgen/graphql.Time
+  Money:
+    model: github.com/99designs/gqlgen/graphql.Int64
+  JSON:
+    model: github.com/99designs/gqlgen/graphql.Map
+  ID:
+    model: github.com/99designs/gqlgen/graphql.ID
+  Int:
+    model: github.com/99designs/gqlgen/graphql.Int

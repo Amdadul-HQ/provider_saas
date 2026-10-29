@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+node_modules/
+.next/
+dist/
+bin/
+*.log
+.DS_Store
+frontend/src/gql/
+backend/tmp/

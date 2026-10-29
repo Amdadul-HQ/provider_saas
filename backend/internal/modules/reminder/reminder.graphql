@@ -1,0 +1,19 @@
+enum ReminderTrigger { BEFORE_EXPIRY ON_EXPIRY AFTER_EXPIRY INVOICE_DUE INVOICE_OVERDUE MASTER_EXPIRY }
+enum ReminderChannel { PREFERRED FACEBOOK INSTAGRAM WHATSAPP TELEGRAM SMS EMAIL IN_APP }
+enum ReminderStatus { SCHEDULED SENT FAILED SKIPPED CANCELLED }
+
+type ReminderRule { id: UUID! name: String! trigger: ReminderTrigger! offsetDays: Int! sendHour: Int! channel: ReminderChannel! template: MessageTemplate @goField(forceResolver: true) productId: UUID isActive: Boolean! createdAt: Time! }
+type Reminder { id: UUID! rule: ReminderRule @goField(forceResolver: true) customer: Customer @goField(forceResolver: true) subscription: Subscription @goField(forceResolver: true) invoiceId: UUID masterAccountId: UUID channel: String! scheduledAt: Time! sentAt: Time status: ReminderStatus! renderedBody: String error: String }
+
+input ReminderRuleInput { name: String! trigger: ReminderTrigger! offsetDays: Int = 0 sendHour: Int = 10 channel: ReminderChannel = PREFERRED templateId: UUID productId: UUID isActive: Boolean = true }
+
+extend type Query {
+  reminderRules: [ReminderRule!]! @auth
+  reminders(status: ReminderStatus, customerId: UUID, page: PageInput): [Reminder!]! @auth
+}
+extend type Mutation {
+  upsertReminderRule(id: UUID, input: ReminderRuleInput!): ReminderRule! @auth(roles: [OWNER, ADMIN])
+  deleteReminderRule(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  sendReminderNow(subscriptionId: UUID!, templateId: UUID, channel: ReminderChannel = PREFERRED): Reminder! @auth
+  cancelReminder(id: UUID!): Boolean! @auth
+}

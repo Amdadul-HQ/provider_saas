@@ -1,0 +1,34 @@
+type Tenant {
+  id: UUID!
+  name: String!
+  slug: String!
+  plan: String!
+  status: String!
+  currency: String!
+  timezone: String!
+  locale: String!
+  settings: JSON!
+  trialEndsAt: Time
+  members: [TenantMember!]! @goField(forceResolver: true)
+  createdAt: Time!
+}
+type TenantMember { id: UUID! user: User! role: Role! commissionBps: Int! status: String! createdAt: Time! }
+type Notification { id: UUID! kind: String! title: String! body: String link: String readAt: Time createdAt: Time! }
+type AuditLog { id: ID! user: User action: String! entityType: String! entityId: UUID meta: JSON! createdAt: Time! }
+
+input UpdateTenantInput { name: String currency: String timezone: String locale: String settings: JSON }
+input InviteMemberInput { email: String phone: String name: String! role: Role! commissionBps: Int = 0 }
+
+extend type Query {
+  tenant: Tenant! @auth
+  notifications(unreadOnly: Boolean = false, page: PageInput): [Notification!]! @auth
+  auditLogs(page: PageInput): [AuditLog!]! @auth(roles: [OWNER, ADMIN])
+}
+extend type Mutation {
+  updateTenant(input: UpdateTenantInput!): Tenant! @auth(roles: [OWNER, ADMIN])
+  inviteMember(input: InviteMemberInput!): TenantMember! @auth(roles: [OWNER, ADMIN])
+  updateMemberRole(memberId: UUID!, role: Role!, commissionBps: Int): TenantMember! @auth(roles: [OWNER])
+  removeMember(memberId: UUID!): Boolean! @auth(roles: [OWNER])
+  markNotificationRead(id: UUID!): Boolean! @auth
+  markAllNotificationsRead: Boolean! @auth
+}

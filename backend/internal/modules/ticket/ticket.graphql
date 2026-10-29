@@ -1,0 +1,43 @@
+enum TicketKind { REPLACEMENT COMPLAINT QUESTION REFUND OTHER }
+enum TicketPriority { LOW NORMAL HIGH URGENT }
+enum TicketStatus { OPEN IN_PROGRESS WAITING_CUSTOMER RESOLVED CLOSED }
+
+type Ticket {
+  id: UUID!
+  number: Int!
+  customer: Customer! @goField(forceResolver: true)
+  subscription: Subscription @goField(forceResolver: true)
+  conversationId: UUID
+  kind: TicketKind!
+  priority: TicketPriority!
+  status: TicketStatus!
+  title: String!
+  description: String
+  reason: String
+  oldSlot: Slot @goField(forceResolver: true)
+  newSlot: Slot @goField(forceResolver: true)
+  assignedTo: User @goField(forceResolver: true)
+  comments: [TicketComment!]! @goField(forceResolver: true)
+  resolvedAt: Time
+  createdAt: Time!
+  updatedAt: Time!
+}
+type TicketComment { id: UUID! author: User @goField(forceResolver: true) body: String! isInternal: Boolean! createdAt: Time! }
+type TicketStats { open: Int! inProgress: Int! resolvedThisMonth: Int! replacementsThisMonth: Int! }
+
+input TicketFilter { status: TicketStatus kind: TicketKind priority: TicketPriority customerId: UUID assignedTo: UUID search: String }
+input CreateTicketInput { customerId: UUID! subscriptionId: UUID conversationId: UUID kind: TicketKind! priority: TicketPriority = NORMAL title: String! description: String reason: String }
+input UpdateTicketInput { priority: TicketPriority status: TicketStatus title: String description: String reason: String assignedTo: UUID }
+
+extend type Query {
+  tickets(filter: TicketFilter, page: PageInput): [Ticket!]! @auth
+  ticket(id: UUID!): Ticket @auth
+  ticketStats: TicketStats! @auth
+}
+extend type Mutation {
+  createTicket(input: CreateTicketInput!): Ticket! @auth
+  updateTicket(id: UUID!, input: UpdateTicketInput!): Ticket! @auth
+  addTicketComment(ticketId: UUID!, body: String!, isInternal: Boolean = true): TicketComment! @auth
+  """Resolve a replacement ticket: moves the subscription to newSlotId (or next free), marks old slot banned/retired."""
+  resolveReplacement(ticketId: UUID!, newSlotId: UUID, markOldSlot: SlotStatus = BANNED, extendDays: Int = 0): Ticket! @auth
+}

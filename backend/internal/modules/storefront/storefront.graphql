@@ -1,0 +1,68 @@
+enum OrderStatus { NEW AWAITING_PAYMENT PAID DELIVERED CANCELLED }
+enum OrderSource { STOREFRONT INBOX MANUAL PORTAL }
+
+type Storefront {
+  id: UUID!
+  slug: String!
+  displayName: String!
+  tagline: String
+  logoUrl: String
+  coverUrl: String
+  theme: JSON!
+  whatsapp: String
+  messengerUrl: String
+  telegram: String
+  paymentInstructions: String
+  paymentNumbers: JSON!
+  isPublished: Boolean!
+  publicUrl: String!
+}
+"""Public, unauthenticated view of a storefront."""
+type PublicStorefront { slug: String! displayName: String! tagline: String logoUrl: String coverUrl: String theme: JSON! whatsapp: String messengerUrl: String telegram: String paymentInstructions: String paymentNumbers: JSON! products: [PublicProduct!]! }
+type PublicProduct { id: UUID! name: String! category: String description: String imageUrl: String plans: [PublicPlan!]! inStock: Boolean! }
+type PublicPlan { id: UUID! name: String! durationDays: Int! price: Money! currency: String! }
+type Order {
+  id: UUID!
+  number: Int!
+  customer: Customer @goField(forceResolver: true)
+  product: Product! @goField(forceResolver: true)
+  plan: ProductPlan @goField(forceResolver: true)
+  quantity: Int!
+  amount: Money!
+  currency: String!
+  source: OrderSource!
+  status: OrderStatus!
+  payment: Payment @goField(forceResolver: true)
+  subscriptionId: UUID
+  customerName: String
+  customerPhone: String
+  customerNote: String
+  createdAt: Time!
+}
+type PublicOrder { number: Int! status: OrderStatus! amount: Money! currency: String! productName: String! paymentInstructions: String paymentNumbers: JSON! }
+"""Customer portal view via magic link."""
+type PortalView { customer: PortalCustomer! subscriptions: [PortalSubscription!]! invoices: [PortalInvoice!]! storefront: PublicStorefront! }
+type PortalCustomer { name: String! phone: String dueBalance: Money! }
+type PortalSubscription { id: UUID! productName: String! planName: String startsAt: Time! expiresAt: Time! daysLeft: Int! status: SubscriptionStatus! deliveryNote: String }
+type PortalInvoice { id: UUID! number: String! total: Money! paidAmount: Money! status: InvoiceStatus! issuedAt: Time! dueAt: Time }
+
+input StorefrontInput { slug: String displayName: String tagline: String logoUrl: String coverUrl: String theme: JSON whatsapp: String messengerUrl: String telegram: String paymentInstructions: String paymentNumbers: JSON isPublished: Boolean }
+input PlaceOrderInput { slug: String! productId: UUID! planId: UUID! quantity: Int = 1 customerName: String! customerPhone: String! customerNote: String paymentMethod: PaymentMethod trxId: String senderNumber: String }
+input OrderFilter { status: OrderStatus source: OrderSource search: String }
+
+extend type Query {
+  storefront: Storefront @auth
+  orders(filter: OrderFilter, page: PageInput): [Order!]! @auth
+  order(id: UUID!): Order @auth
+  publicStorefront(slug: String!): PublicStorefront
+  publicOrder(slug: String!, number: Int!, phone: String!): PublicOrder
+  portal(token: String!): PortalView
+}
+extend type Mutation {
+  upsertStorefront(input: StorefrontInput!): Storefront! @auth(roles: [OWNER, ADMIN])
+  placeOrder(input: PlaceOrderInput!): PublicOrder!
+  confirmOrder(id: UUID!, slotId: UUID, deliveryNote: String): Order! @auth
+  cancelOrder(id: UUID!, reason: String): Order! @auth
+  createPortalLink(customerId: UUID!, sendVia: Platform): String! @auth
+  portalRequestRenewal(token: String!, subscriptionId: UUID!, paymentMethod: PaymentMethod, trxId: String): PublicOrder!
+}

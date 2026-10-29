@@ -1,0 +1,37 @@
+enum SocialPlatform { FACEBOOK INSTAGRAM WHATSAPP TELEGRAM }
+enum SocialAccountStatus { CONNECTED TOKEN_EXPIRED DISCONNECTED ERROR }
+
+type SocialAccount {
+  id: UUID!
+  platform: SocialPlatform!
+  externalId: String!
+  name: String!
+  username: String
+  avatarUrl: String
+  tokenExpiresAt: Time
+  scopes: [String!]!
+  webhookVerified: Boolean!
+  status: SocialAccountStatus!
+  lastError: String
+  lastSyncedAt: Time
+  openConversationCount: Int! @goField(forceResolver: true)
+  createdAt: Time!
+}
+type OAuthUrl { url: String! state: String! }
+
+input ConnectTelegramInput { botToken: String! }
+input ConnectWhatsAppInput { phoneNumberId: String! businessAccountId: String! accessToken: String! displayName: String! }
+
+extend type Query {
+  socialAccounts: [SocialAccount!]! @auth
+  socialAccount(id: UUID!): SocialAccount @auth
+}
+extend type Mutation {
+  """Returns the Meta OAuth URL; the callback (/webhooks/meta/oauth) stores pages in vault."""
+  startMetaConnect(platform: SocialPlatform!): OAuthUrl! @auth(roles: [OWNER, ADMIN])
+  completeMetaConnect(code: String!, state: String!): [SocialAccount!]! @auth(roles: [OWNER, ADMIN])
+  connectTelegram(input: ConnectTelegramInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
+  connectWhatsApp(input: ConnectWhatsAppInput!): SocialAccount! @auth(roles: [OWNER, ADMIN])
+  disconnectSocialAccount(id: UUID!): Boolean! @auth(roles: [OWNER, ADMIN])
+  syncSocialAccount(id: UUID!): SocialAccount! @auth
+}

@@ -1,0 +1,30 @@
+type DashboardStats {
+  activeSubscriptions: Int!
+  expiringIn7Days: Int!
+  expiredUnrenewed30Days: Int!
+  totalCustomers: Int!
+  newCustomersThisMonth: Int!
+  mrr: Money!
+  revenueThisMonth: Money!
+  costThisMonth: Money!
+  profitThisMonth: Money!
+  totalDue: Money!
+  pendingPayments: Int!
+  openTickets: Int!
+  openConversations: Int!
+  freeSlots: Int!
+  masterAccountsExpiringIn7Days: Int!
+  currency: String!
+}
+type TimeSeriesPoint { date: Time! value: Money! count: Int! }
+type ProductStat { product: Product! @goField(forceResolver: true) activeSubscriptions: Int! revenue: Money! cost: Money! profit: Money! renewalRate: Float! }
+type ChannelStat { platform: SocialPlatform! conversations: Int! customers: Int! orders: Int! }
+type AtRiskCustomer { customer: Customer! @goField(forceResolver: true) reason: String! expiresAt: Time dueBalance: Money! }
+
+extend type Query {
+  dashboardStats: DashboardStats! @auth
+  revenueSeries(days: Int = 30): [TimeSeriesPoint!]! @auth
+  productStats(days: Int = 30): [ProductStat!]! @auth
+  channelStats(days: Int = 30): [ChannelStat!]! @auth
+  atRiskCustomers(limit: Int = 20): [AtRiskCustomer!]! @auth
+}

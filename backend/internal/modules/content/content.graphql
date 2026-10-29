@@ -1,0 +1,29 @@
+enum PostStatus { DRAFT SCHEDULED PUBLISHING PUBLISHED PARTIAL FAILED }
+
+type Post {
+  id: UUID!
+  body: String!
+  media: JSON!
+  scheduledAt: Time
+  status: PostStatus!
+  targets: [PostTarget!]! @goField(forceResolver: true)
+  createdBy: User @goField(forceResolver: true)
+  createdAt: Time!
+  updatedAt: Time!
+}
+type PostTarget { id: UUID! socialAccount: SocialAccount! @goField(forceResolver: true) externalPostId: String status: String! error: String publishedAt: Time }
+
+input PostInput { body: String! media: JSON scheduledAt: Time socialAccountIds: [UUID!]! }
+
+extend type Query {
+  posts(status: PostStatus, page: PageInput): [Post!]! @auth
+  post(id: UUID!): Post @auth
+}
+extend type Mutation {
+  createPost(input: PostInput!): Post! @auth
+  updatePost(id: UUID!, input: PostInput!): Post! @auth
+  publishPostNow(id: UUID!): Post! @auth
+  deletePost(id: UUID!): Boolean! @auth
+  """Generate a branded price-list image/PDF URL from active products."""
+  generatePriceList(format: String = "png"): String! @auth
+}
