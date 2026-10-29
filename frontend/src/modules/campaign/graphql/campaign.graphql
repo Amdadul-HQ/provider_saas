@@ -1,0 +1,48 @@
+fragment CampaignFields on Campaign {
+  id
+  name
+  body
+  channel
+  segment
+  offer { discountPercent validDays couponCode }
+  scheduledAt
+  status
+  audienceCount
+  sentCount
+  failedCount
+  createdAt
+  updatedAt
+  template { id name body }
+  createdBy { id name }
+}
+
+query Campaigns($status: CampaignStatus, $page: PageInput) {
+  campaigns(status: $status, page: $page) { ...CampaignFields }
+}
+
+query Campaign($id: UUID!) {
+  campaign(id: $id) { ...CampaignFields }
+}
+
+query SegmentPreview($segment: SegmentInput!, $sampleSize: Int) {
+  segmentPreview(segment: $segment, sampleSize: $sampleSize) {
+    count
+    sample { id name phone identities { id platform avatarUrl } }
+  }
+}
+
+mutation CreateCampaign($input: CampaignInput!) {
+  createCampaign(input: $input) { ...CampaignFields }
+}
+
+mutation UpdateCampaign($id: UUID!, $input: CampaignInput!) {
+  updateCampaign(id: $id, input: $input) { ...CampaignFields }
+}
+
+mutation SendCampaign($id: UUID!) {
+  sendCampaign(id: $id) { ...CampaignFields }
+}
+
+mutation CancelCampaign($id: UUID!) {
+  cancelCampaign(id: $id) { ...CampaignFields }
+}

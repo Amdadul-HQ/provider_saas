@@ -44,6 +44,10 @@ type EnumLabelMap = {
   OrderStatus: G.OrderStatus
   OrderSource: G.OrderSource
   MessageKind: G.MessageKind
+  CampaignStatus: G.CampaignStatus
+  ImportKind: G.ImportKind
+  ImportStatus: G.ImportStatus
+  AutoReplyMatch: G.AutoReplyMatch
 }
 export type EnumName = keyof EnumLabelMap
 export type EnumValue<E extends EnumName> = EnumLabelMap[E]

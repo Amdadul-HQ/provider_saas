@@ -65,3 +65,18 @@ mutation MarkAllNotificationsRead {
 query AuditLogs($page: PageInput) {
   auditLogs(page: $page) { id action entityType entityId meta createdAt user { id name } }
 }
+
+query CommissionReport($from: Time, $to: Time, $memberId: UUID) {
+  commissionReport(from: $from, to: $to, memberId: $memberId) {
+    sales
+    revenue
+    cost
+    commission
+    currency
+    member { id role commissionBps status user { id name email phone avatarUrl } }
+  }
+}
+
+query MyStats($from: Time, $to: Time) {
+  myStats(from: $from, to: $to) { sales revenue commission activeSubscriptions customers dueBalance currency }
+}

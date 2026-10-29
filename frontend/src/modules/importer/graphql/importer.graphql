@@ -1,0 +1,36 @@
+fragment ImportFields on Import {
+  id
+  kind
+  fileUrl
+  status
+  stats
+  error
+  createdAt
+  finishedAt
+  createdBy { id name }
+}
+
+query Imports($page: PageInput) {
+  imports(page: $page) { ...ImportFields }
+}
+
+query Import($id: UUID!) {
+  import(id: $id) { ...ImportFields }
+}
+
+mutation PreviewImport($fileUrl: String!, $kind: ImportKind!, $sampleSize: Int) {
+  previewImport(fileUrl: $fileUrl, kind: $kind, sampleSize: $sampleSize) {
+    kind
+    detectedFormat
+    columns
+    suggestedMapping
+    rows
+    totalRows
+    warnings
+    usedAI
+  }
+}
+
+mutation StartImport($fileUrl: String!, $kind: ImportKind!, $input: ImportMappingInput!) {
+  startImport(fileUrl: $fileUrl, kind: $kind, input: $input) { ...ImportFields }
+}

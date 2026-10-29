@@ -3,6 +3,10 @@
  * compiler fails when the backend adds/removes an enum value — the schema stays the source of truth.
  */
 import type {
+  AutoReplyMatch,
+  CampaignStatus,
+  ImportKind,
+  ImportStatus,
   ConversationStatus,
   CustomerSource,
   CustomerStatus,
@@ -61,6 +65,11 @@ export const REMINDER_CHANNELS = keys<ReminderChannel>({ PREFERRED: true, FACEBO
 export const REMINDER_STATUSES = keys<ReminderStatus>({ SCHEDULED: true, SENT: true, FAILED: true, SKIPPED: true, CANCELLED: true })
 export const ORDER_STATUSES = keys<OrderStatus>({ NEW: true, AWAITING_PAYMENT: true, PAID: true, DELIVERED: true, CANCELLED: true })
 export const ORDER_SOURCES = keys<OrderSource>({ STOREFRONT: true, INBOX: true, MANUAL: true, PORTAL: true })
+
+export const CAMPAIGN_STATUSES = keys<CampaignStatus>({ DRAFT: true, SCHEDULED: true, SENDING: true, SENT: true, CANCELLED: true, FAILED: true })
+export const IMPORT_KINDS = keys<ImportKind>({ CUSTOMERS_CSV: true, SUBSCRIPTIONS_CSV: true, CHAT_EXPORT: true })
+export const IMPORT_STATUSES = keys<ImportStatus>({ PENDING: true, PROCESSING: true, DONE: true, FAILED: true })
+export const AUTO_REPLY_MATCHES = keys<AutoReplyMatch>({ CONTAINS: true, EXACT: true, REGEX: true, ANY: true })
 
 /** Mobile wallet methods that carry a TrxID. */
 export const MOBILE_WALLETS: PaymentMethod[] = ["BKASH", "NAGAD", "ROCKET", "UPAY"]

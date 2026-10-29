@@ -8,6 +8,7 @@ fragment PlanFields on ProductPlan {
   currency
   isActive
   sortOrder
+  resellerPrice
 }
 
 fragment ProductFields on Product {
