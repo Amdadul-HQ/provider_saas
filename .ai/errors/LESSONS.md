@@ -266,3 +266,9 @@ Grep this file for your area before starting a task.
 - Root cause: The preview launcher does not pass inline env assignments through to the child the way a shell does; the api fell back to defaults and outlived the failed launch
 - Fix: Killed the orphan (go run + api serve) by PID; dropped the api-alt config and proxied through the frontend instead
 - Prevention rule: Do not rely on inline env in launch.json commands; put env in .env files or a wrapper script, and after a failed preview_start check lsof for orphans
+
+## L-045 · 2026-10-29 · frontend/css
+- What broke: Every Latin string rendered in Times and Bengali in the system font; computed body font-family was 'Times'
+- Root cause: html { @apply font-sans } referenced var(--font-manrope)/var(--font-bengali), but next/font defines those variables on <body> (className), so on <html> the var() is undefined and the whole font-family declaration is invalid at computed-value time; latent since Sprint 1 (Inter/Noto had the same structure)
+- Fix: Moved font-sans from html to body in globals.css
+- Prevention rule: Apply font utilities on the element that owns the next/font variables (body) or below; after a font change verify getComputedStyle(document.body).fontFamily in the browser

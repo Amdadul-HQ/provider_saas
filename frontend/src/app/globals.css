@@ -109,13 +109,14 @@
     @apply border-border outline-ring/50;
   }
   html {
-    @apply font-sans;
     -webkit-tap-highlight-color: transparent;
     scrollbar-width: thin;
     scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    /* font-sans lives on body, not html: next/font defines --font-manrope/--font-bengali on body,
+       and a font-family whose var() is undefined is invalid at computed-value time (→ Times) */
+    @apply bg-background font-sans text-foreground antialiased;
     /* Bengali conjuncts need a little more line height than Latin */
     line-height: 1.6;
     text-rendering: optimizeLegibility;

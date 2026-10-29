@@ -27,7 +27,7 @@ function FocusTile({ href, icon: Icon, value, label }: { href: string; icon: Luc
       </span>
       <span className="min-w-0">
         <span className="tabular block font-heading text-lg leading-none font-bold text-white">{value}</span>
-        <span className="mt-1 block truncate text-xs text-white/75">{label}</span>
+        <span className="mt-1 line-clamp-2 text-xs leading-tight text-white/75">{label}</span>
       </span>
     </Link>
   )
