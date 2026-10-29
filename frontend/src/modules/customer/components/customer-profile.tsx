@@ -11,7 +11,7 @@ import { enumLabel, useT } from "@/i18n"
 export function CustomerProfile({ customer, actions }: { customer: CustomerDetailFieldsFragment; actions?: ReactNode }) {
   const t = useT()
   return (
-    <div className="rounded-xl border bg-card">
+    <div className="rounded-2xl border border-border/80 bg-card shadow-xs">
       <div className="flex flex-col gap-4 p-4 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">

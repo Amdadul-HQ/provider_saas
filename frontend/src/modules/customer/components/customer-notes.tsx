@@ -40,7 +40,7 @@ export function CustomerNotes({ customerId }: { customerId: string }) {
         {(notes) => (
           <ul className="space-y-2">
             {notes.map((n) => (
-              <li key={n.id} className="rounded-lg border bg-card p-3">
+              <li key={n.id} className="rounded-xl bg-muted/60 p-3">
                 <p className="text-sm whitespace-pre-wrap">{n.body}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {n.author?.name ?? "—"} · <DateText value={n.createdAt} withTime />

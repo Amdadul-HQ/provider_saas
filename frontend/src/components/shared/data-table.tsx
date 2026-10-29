@@ -123,11 +123,11 @@ export function DataTable<T>({
       ) : (
         <>
           {mobileCard ? (
-            <ul className="space-y-2 md:hidden" aria-busy={fetching}>
+            <ul className="stagger space-y-2 md:hidden" aria-busy={fetching}>
               {initialLoading
                 ? Array.from({ length: skeletonRows }).map((_, i) => (
                     <li key={i}>
-                      <Skeleton className="h-20 w-full rounded-xl" />
+                      <Skeleton className="h-20 w-full rounded-2xl" />
                     </li>
                   ))
                 : table.getRowModel().rows.map((row) => (
@@ -135,27 +135,27 @@ export function DataTable<T>({
                       {rowHref ? (
                         <Link
                           href={rowHref(row.original)}
-                          className="block w-full rounded-xl border bg-card p-3 text-left transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:bg-muted"
+                          className="block w-full rounded-2xl border border-border/80 bg-card p-3.5 text-left shadow-xs transition-[background-color,transform] duration-(--dur-fast) focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none active:scale-[0.99] active:bg-muted"
                         >
                           {mobileCard(row.original)}
                         </Link>
                       ) : onRowClick ? (
                         <button
                           type="button"
-                          className="block w-full rounded-xl border bg-card p-3 text-left transition-colors active:bg-muted"
+                          className="block w-full rounded-2xl border border-border/80 bg-card p-3.5 text-left shadow-xs transition-[background-color,transform] duration-(--dur-fast) active:scale-[0.99] active:bg-muted"
                           onClick={() => onRowClick(row.original)}
                         >
                           {mobileCard(row.original)}
                         </button>
                       ) : (
-                        <div className="rounded-xl border bg-card p-3">{mobileCard(row.original)}</div>
+                        <div className="rounded-2xl border border-border/80 bg-card p-3.5 shadow-xs">{mobileCard(row.original)}</div>
                       )}
                     </li>
                   ))}
             </ul>
           ) : null}
 
-          <div className={cn("overflow-hidden rounded-xl border bg-card", mobileCard && "hidden md:block")}>
+          <div className={cn("overflow-hidden rounded-2xl border border-border/80 bg-card shadow-xs", mobileCard && "hidden md:block")}>
             <Table>
               <TableHeader className="bg-muted/50">
                 {table.getHeaderGroups().map((hg) => (
@@ -164,7 +164,7 @@ export function DataTable<T>({
                       <TableHead
                         key={header.id}
                         className={cn(
-                          "h-10 text-xs font-medium tracking-wide text-muted-foreground uppercase",
+                          "h-10 text-xs font-medium text-muted-foreground",
                           header.column.columnDef.meta?.sticky === "right" && cn(STICKY_RIGHT, "bg-muted"),
                         )}
                       >

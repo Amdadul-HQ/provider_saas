@@ -88,7 +88,7 @@ function Comments({ ticket }: { ticket: Ticket }) {
         {ticket.comments.length === 0 ? <p className="text-sm text-muted-foreground">{t.tickets.noComments}</p> : null}
         <ul className="space-y-2">
           {ticket.comments.map((c) => (
-            <li key={c.id} className={cn("rounded-lg border p-3", c.isInternal && "border-dashed bg-muted/40")}>
+            <li key={c.id} className={cn("rounded-xl border border-border/80 bg-card p-3 shadow-xs", c.isInternal && "border-dashed bg-muted/40 shadow-none")}>
               <p className="text-sm whitespace-pre-wrap">{c.body}</p>
               <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
                 {c.isInternal ? <LockIcon className="size-3" /> : null}

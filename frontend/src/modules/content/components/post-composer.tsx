@@ -8,7 +8,7 @@ import { Loader2Icon, SendIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field"
-import { PlatformIcon, SectionCard, TextareaField, TextField } from "@/components/shared"
+import { MultiImagePicker, PlatformIcon, SectionCard, TextareaField, TextField } from "@/components/shared"
 import { dateTimeInputToISO } from "@/lib/dates"
 import { v } from "@/lib/validation"
 import { useSocialAccounts } from "@/modules/social"
@@ -26,20 +26,20 @@ export function PostComposer({ onSaved }: { onSaved?: () => void }) {
     () =>
       z.object({
         body: v.requiredString(t),
-        mediaUrl: v.optionalString(),
+        mediaUrls: z.array(z.string()),
         scheduledAt: v.optionalString(),
         socialAccountIds: z.array(z.string()).min(1, t.content.selectAtLeastOne),
       }),
     [t],
   )
   type Values = z.infer<typeof schema>
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { body: "", mediaUrl: "", scheduledAt: "", socialAccountIds: [] } })
+  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { body: "", mediaUrls: [], scheduledAt: "", socialAccountIds: [] } })
 
   async function save(values: Values, publishNow: boolean) {
     const res = await create({
       input: {
         body: values.body,
-        media: values.mediaUrl ? [{ type: "image", url: values.mediaUrl }] : [],
+        media: values.mediaUrls.map((url) => ({ type: "image", url })),
         scheduledAt: publishNow ? null : dateTimeInputToISO(values.scheduledAt),
         socialAccountIds: values.socialAccountIds,
       },
@@ -55,7 +55,11 @@ export function PostComposer({ onSaved }: { onSaved?: () => void }) {
       <form noValidate onSubmit={form.handleSubmit((v) => save(v, false))}>
         <FieldGroup>
           <TextareaField control={form.control} name="body" label={t.content.body} placeholder={t.content.bodyPlaceholder} rows={5} required />
-          <TextField control={form.control} name="mediaUrl" type="url" label={t.content.mediaUrl} />
+          <Controller
+            control={form.control}
+            name="mediaUrls"
+            render={({ field }) => <MultiImagePicker label={t.content.media} values={field.value} onChange={field.onChange} max={10} />}
+          />
           <Controller
             control={form.control}
             name="socialAccountIds"

@@ -37,12 +37,12 @@ function Inbox() {
 
   return (
     // full-bleed on the shell: cancel main padding, fill viewport minus header (and bottom nav on phones)
-    <div className="-mx-4 -mt-4 -mb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1rem)] h-[calc(100dvh-3.5rem-var(--bottom-nav-height)-env(safe-area-inset-bottom))] md:-mx-6 md:-mt-6 md:-mb-10 md:h-[calc(100dvh-4rem)]">
-      <div className="grid h-full grid-cols-1 md:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]">
-        <section className={cn("min-h-0 min-w-0 border-r bg-card", selected && "hidden md:block")} aria-label={t.inbox.title}>
+    <div className="-mx-4 -mt-4 -mb-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom)+1rem)] h-[calc(100dvh-var(--topbar-height)-var(--bottom-nav-height)-env(safe-area-inset-bottom))] md:-mx-8 md:-mt-7 md:-mb-12 md:h-[calc(100dvh-4rem)]">
+      <div className="grid h-full grid-cols-1 bg-card md:grid-cols-[20rem_minmax(0,1fr)] xl:grid-cols-[22rem_minmax(0,1fr)_20rem]">
+        <section className={cn("min-h-0 min-w-0 border-r", selected && "hidden md:block")} aria-label={t.inbox.title}>
           <ConversationList selectedId={selected} hrefFor={(c) => hrefFor(c.id)} initialSearch={params.get("search") ?? undefined} />
         </section>
-        <section className={cn("min-h-0 min-w-0", !selected && "hidden md:block")}>
+        <section className={cn("min-h-0 min-w-0 bg-background", !selected && "hidden md:block")}>
           {selected ? (
             <MessageThread
               conversationId={selected}
@@ -59,7 +59,7 @@ function Inbox() {
             </div>
           )}
         </section>
-        <aside className="hidden min-h-0 overflow-y-auto border-l bg-card p-4 xl:block" aria-label={t.inbox.customerPanel}>
+        <aside className="scroll-thin hidden min-h-0 overflow-y-auto border-l p-4 xl:block" aria-label={t.inbox.customerPanel}>
           {selected ? <CustomerPane conversationId={selected} onNewSubscription={setSubFor} /> : null}
         </aside>
       </div>

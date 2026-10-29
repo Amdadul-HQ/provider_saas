@@ -188,6 +188,10 @@ const en: Dict = {
     renewalRate: "Renewal rate",
     conversations: "Conversations",
     orders: "Orders",
+    greeting: { morning: "Good morning", afternoon: "Good afternoon", evening: "Good evening" },
+    focusHeadline: (n: number) => (n === 1 ? "1 thing needs your attention today" : `${n} things need your attention today`),
+    focusAllClear: "All clear, nothing waiting on you today",
+    focusDue: "Due from customers",
   },
   customers: {
     title: "Customers",

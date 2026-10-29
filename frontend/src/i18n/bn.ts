@@ -191,6 +191,10 @@ const bn = {
     renewalRate: "রিনিউ হার",
     conversations: "কথোপকথন",
     orders: "অর্ডার",
+    greeting: { morning: "শুভ সকাল", afternoon: "শুভ দুপুর", evening: "শুভ সন্ধ্যা" },
+    focusHeadline: (n: number) => `আজ ${n}টি বিষয়ে নজর দিন`,
+    focusAllClear: "সব ঠিক আছে, আজ কিছু বাকি নেই",
+    focusDue: "টাকা বাকি",
   },
   customers: {
     title: "কাস্টমার",

@@ -34,6 +34,7 @@ function PlanDialog({
         durationDays: v.positiveInt(t),
         price: v.money(t),
         cost: v.optionalMoney(t),
+        resellerPrice: v.optionalMoney(t),
         isActive: z.boolean(),
         sortOrder: v.optionalInt(t),
       }),
@@ -47,6 +48,7 @@ function PlanDialog({
       durationDays: plan?.durationDays ?? 30,
       price: plan?.price ?? 0,
       cost: plan?.cost ?? 0,
+      resellerPrice: plan?.resellerPrice ?? null,
       isActive: plan?.isActive ?? true,
       sortOrder: plan?.sortOrder ?? 0,
     },
@@ -69,7 +71,7 @@ function PlanDialog({
           const ok = await upsert({
             productId,
             id: plan?.id ?? null,
-            input: { ...values, cost: values.cost ?? 0, sortOrder: values.sortOrder ?? 0 },
+            input: { ...values, cost: values.cost ?? 0, resellerPrice: values.resellerPrice ?? null, sortOrder: values.sortOrder ?? 0 },
           })
           if (ok) onOpenChange(false)
         })}
@@ -81,6 +83,7 @@ function PlanDialog({
             <NumberField control={form.control} name="sortOrder" label="#" min={0} />
             <MoneyField control={form.control} name="price" label={t.common.price} required />
             <MoneyField control={form.control} name="cost" label={t.common.cost} />
+            <MoneyField control={form.control} name="resellerPrice" label={t.catalog.resellerPrice} description={t.catalog.resellerPriceHint} className="col-span-2" />
           </div>
           <SwitchField control={form.control} name="isActive" label={t.common.active} />
         </FieldGroup>
@@ -113,6 +116,12 @@ export function PlansEditor({ productId, plans }: { productId: string; plans: Pl
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {t.common.days(p.durationDays)} · {t.common.cost}: <MoneyText amount={p.cost} currency={p.currency} tone="muted" className="font-normal" />
+                  {p.resellerPrice !== null && p.resellerPrice !== undefined ? (
+                    <>
+                      {" "}
+                      · {t.catalog.resellerPrice}: <MoneyText amount={p.resellerPrice} currency={p.currency} tone="muted" className="font-normal" />
+                    </>
+                  ) : null}
                 </p>
               </div>
               <div className="text-right">

@@ -1,13 +1,15 @@
 import type { Metadata, Viewport } from "next"
 import { headers } from "next/headers"
-import { Inter, Noto_Sans_Bengali } from "next/font/google"
+import { Hind_Siliguri, Manrope } from "next/font/google"
 import { Providers } from "./providers"
 import "./globals.css"
 
-const inter = Inter({ variable: "--font-inter", subsets: ["latin"], display: "swap" })
-const bengali = Noto_Sans_Bengali({
+// ADR-009: Manrope carries Latin + digits, Hind Siliguri carries Bengali (the face Bangladeshi
+// fintech UIs use); Manrope has no Bengali glyphs so Bengali runs fall through to Hind Siliguri.
+const manrope = Manrope({ variable: "--font-manrope", subsets: ["latin"], display: "swap" })
+const bengali = Hind_Siliguri({
   variable: "--font-bengali",
-  subsets: ["bengali"],
+  subsets: ["bengali", "latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
 })
@@ -23,7 +25,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#1f6f6f" },
+    { media: "(prefers-color-scheme: light)", color: "#1d6b6b" },
     { media: "(prefers-color-scheme: dark)", color: "#14262b" },
   ],
   width: "device-width",
@@ -36,7 +38,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const nonce = (await headers()).get("x-nonce") ?? undefined
   return (
     <html lang="bn" suppressHydrationWarning>
-      <body className={`${inter.variable} ${bengali.variable}`}>
+      <body className={`${manrope.variable} ${bengali.variable}`}>
         <Providers nonce={nonce}>{children}</Providers>
       </body>
     </html>

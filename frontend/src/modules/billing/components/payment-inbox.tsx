@@ -103,7 +103,7 @@ export function PaymentInbox() {
           {items.map((item) => {
             const done = Boolean(item.matchedPaymentId)
             return (
-              <li key={item.id} className={cn("rounded-xl border bg-card p-3", done && "opacity-60")}>
+              <li key={item.id} className={cn("rounded-2xl border border-border/80 bg-card p-3.5 shadow-xs", done && "opacity-60")}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 space-y-0.5">
                     <p className="text-sm font-medium">

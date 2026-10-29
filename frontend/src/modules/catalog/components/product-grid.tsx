@@ -19,7 +19,7 @@ export function ProductCard({ product, onClick }: { product: ProductFieldsFragme
       type={onClick ? "button" : undefined}
       onClick={onClick}
       className={cn(
-        "flex h-full w-full flex-col gap-3 rounded-xl border bg-card p-4 text-left transition-colors",
+        "flex h-full w-full flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 text-left shadow-xs transition-[box-shadow,border-color,transform] duration-(--dur) ease-(--ease-smooth) hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-md active:translate-y-0",
         onClick && "hover:border-primary/40 active:bg-muted",
         !product.isActive && "opacity-60",
       )}

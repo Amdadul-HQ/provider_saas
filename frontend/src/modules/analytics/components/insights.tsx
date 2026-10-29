@@ -89,7 +89,7 @@ export function ChannelStatsList({ days = 30 }: { days?: number }) {
   return (
     <ul className="grid grid-cols-2 gap-2">
       {rows.map((r) => (
-        <li key={r.platform} className="space-y-1 rounded-lg border p-3">
+        <li key={r.platform} className="space-y-1 rounded-xl bg-muted/60 p-3">
           <p className="flex items-center gap-2 text-sm font-medium">
             <PlatformIcon platform={r.platform} className="size-5" /> {enumLabel(t, "Platform", r.platform)}
           </p>

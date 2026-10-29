@@ -6,8 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-inter), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
-  --font-heading: var(--font-inter), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-manrope), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-manrope), var(--font-bengali), ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 
   --color-background: var(--background);
@@ -48,14 +48,60 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-hero-from: var(--hero-from);
+  --color-hero-to: var(--hero-to);
+  --color-hero-glow: var(--hero-glow);
 
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* radius scale: 8 · 10 · 12 · 16 · 20 · 24 · 32 */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 20px);
+
+  /* elevation (tinted, see tokens.css) */
+  --shadow-xs: var(--elev-1);
+  --shadow-sm: var(--elev-2);
+  --shadow-md: var(--elev-3);
+  --shadow-float: var(--elev-float);
+
+  /* motion */
+  --ease-smooth: var(--ease-smooth);
+  --ease-spring: var(--ease-spring);
+  --animate-rise: rise var(--dur-slow) var(--ease-smooth) both;
+  --animate-pop: pop var(--dur) var(--ease-spring) both;
+  --animate-shimmer: shimmer 1.8s ease-in-out infinite;
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  @keyframes shimmer {
+    from {
+      transform: translateX(-100%);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
 }
 
 @layer base {
@@ -65,14 +111,70 @@
   html {
     @apply font-sans;
     -webkit-tap-highlight-color: transparent;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklch, var(--foreground) 18%, transparent) transparent;
   }
   body {
     @apply bg-background text-foreground antialiased;
     /* Bengali conjuncts need a little more line height than Latin */
     line-height: 1.6;
+    text-rendering: optimizeLegibility;
   }
   :lang(bn) {
     letter-spacing: 0.005em;
+  }
+  ::selection {
+    background: color-mix(in oklch, var(--primary) 22%, transparent);
+  }
+  /* motion is a courtesy, never a requirement */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* one rise per route change (DashboardShell keys this by pathname) */
+  .page-enter {
+    /* backwards, not both: once it lands no transform remains to trap fixed/sticky descendants */
+    animation: rise var(--dur-slow) var(--ease-smooth) backwards;
+  }
+  /* tile grids: children arrive one after another, 8 steps then flat */
+  .stagger > * {
+    animation: rise var(--dur-slow) var(--ease-smooth) backwards;
+  }
+  .stagger > :nth-child(2) {
+    animation-delay: 45ms;
+  }
+  .stagger > :nth-child(3) {
+    animation-delay: 90ms;
+  }
+  .stagger > :nth-child(4) {
+    animation-delay: 135ms;
+  }
+  .stagger > :nth-child(5) {
+    animation-delay: 180ms;
+  }
+  .stagger > :nth-child(6) {
+    animation-delay: 225ms;
+  }
+  .stagger > :nth-child(7) {
+    animation-delay: 270ms;
+  }
+  .stagger > :nth-child(n + 8) {
+    animation-delay: 315ms;
+  }
+  /* hero gradient with an amber glow in the top-right corner */
+  .hero-surface {
+    background:
+      radial-gradient(42rem 22rem at 100% -20%, color-mix(in oklch, var(--hero-glow) 28%, transparent), transparent 60%),
+      linear-gradient(135deg, var(--hero-from), var(--hero-to));
   }
 }
 
@@ -82,4 +184,10 @@
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
+}
+
+/* thin scrollbars inside panes that scroll on their own */
+@utility scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
 }

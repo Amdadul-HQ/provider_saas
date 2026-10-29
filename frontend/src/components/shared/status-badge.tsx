@@ -30,6 +30,8 @@ const TONES: { [E in EnumName]?: Partial<Record<EnumValue<E>, Tone>> } = {
   ReminderStatus: { SCHEDULED: "info", SENT: "success", FAILED: "danger", SKIPPED: "neutral", CANCELLED: "neutral" },
   OrderStatus: { NEW: "info", AWAITING_PAYMENT: "warning", PAID: "primary", DELIVERED: "success", CANCELLED: "neutral" },
   LedgerEntryType: { DEBIT: "danger", CREDIT: "success" },
+  CampaignStatus: { DRAFT: "neutral", SCHEDULED: "info", SENDING: "primary", SENT: "success", CANCELLED: "neutral", FAILED: "danger" },
+  ImportStatus: { PENDING: "info", PROCESSING: "primary", DONE: "success", FAILED: "danger" },
 }
 
 export function toneFor<E extends EnumName>(name: E, value: EnumValue<E>): Tone {
@@ -41,7 +43,7 @@ export function ToneBadge({ tone = "neutral", children, className }: { tone?: To
   return (
     <span
       className={cn(
-        "inline-flex h-6 items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset",
+        "inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset",
         toneClass[tone],
         className,
       )}

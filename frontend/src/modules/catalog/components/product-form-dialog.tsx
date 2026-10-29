@@ -1,13 +1,13 @@
 "use client"
 
 import { useMemo } from "react"
-import { useFieldArray, useForm } from "react-hook-form"
+import { Controller, useFieldArray, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { PlusIcon, Trash2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field"
-import { MoneyField, NumberField, ResponsiveDialog, SelectField, SwitchField, TextareaField, TextField } from "@/components/shared"
+import { ImagePicker, MoneyField, NumberField, ResponsiveDialog, SelectField, SwitchField, TextareaField, TextField } from "@/components/shared"
 import type { DeliveryType, ProductFieldsFragment } from "@/gql/graphql"
 import { DELIVERY_TYPES } from "@/lib/enums"
 import { v } from "@/lib/validation"
@@ -42,7 +42,7 @@ export function ProductFormDialog({
         isActive: z.boolean(),
         sortOrder: v.optionalInt(t),
         plans: z.array(
-          z.object({ name: v.requiredString(t), durationDays: v.positiveInt(t), price: v.money(t), cost: v.optionalMoney(t) }),
+          z.object({ name: v.requiredString(t), durationDays: v.positiveInt(t), price: v.money(t), cost: v.optionalMoney(t), resellerPrice: v.optionalMoney(t) }),
         ),
       }),
     [t],
@@ -60,7 +60,7 @@ export function ProductFormDialog({
       deliveryTemplate: product?.deliveryTemplate ?? "",
       isActive: product?.isActive ?? true,
       sortOrder: product?.sortOrder ?? 0,
-      plans: isEdit ? [] : [{ name: "", durationDays: 30, price: 0, cost: 0 }],
+      plans: isEdit ? [] : [{ name: "", durationDays: 30, price: 0, cost: 0, resellerPrice: null }],
     },
   })
   const plans = useFieldArray({ control: form.control, name: "plans" })
@@ -83,7 +83,7 @@ export function ProductFormDialog({
       }
     } else {
       const res = await create({
-        input: { ...base, plans: values.plans.map((p, i) => ({ ...p, cost: p.cost ?? 0, sortOrder: i, isActive: true })) },
+        input: { ...base, plans: values.plans.map((p, i) => ({ ...p, cost: p.cost ?? 0, resellerPrice: p.resellerPrice ?? null, sortOrder: i, isActive: true })) },
       })
       if (res) {
         onSaved?.(res.createProduct)
@@ -121,8 +121,12 @@ export function ProductFormDialog({
               options={DELIVERY_TYPES.map((d) => ({ value: d, label: enumLabel(t, "DeliveryType", d) }))}
             />
             <NumberField control={form.control} name="warrantyDays" label={t.catalog.warrantyDays} min={0} />
-            <TextField control={form.control} name="imageUrl" type="url" label={t.catalog.imageUrl} />
           </div>
+          <Controller
+            control={form.control}
+            name="imageUrl"
+            render={({ field }) => <ImagePicker label={t.catalog.imageUrl} value={field.value} onChange={(url) => field.onChange(url ?? "")} />}
+          />
           <TextareaField control={form.control} name="description" label={t.catalog.description} rows={2} />
           <TextareaField control={form.control} name="deliveryTemplate" label={t.catalog.deliveryTemplate} description={t.catalog.deliveryTemplateHint} rows={3} />
           {isEdit ? <SwitchField control={form.control} name="isActive" label={t.common.active} /> : null}
@@ -131,17 +135,18 @@ export function ProductFormDialog({
               <FieldLegend>{t.catalog.plans}</FieldLegend>
               <div className="space-y-3">
                 {plans.fields.map((f, i) => (
-                  <div key={f.id} className="grid grid-cols-2 items-start gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_6rem_7rem_7rem_auto]">
+                  <div key={f.id} className="grid grid-cols-2 items-start gap-2 rounded-lg border p-3 sm:grid-cols-[1fr_5rem_6.5rem_6.5rem_6.5rem_auto]">
                     <TextField control={form.control} name={`plans.${i}.name`} label={t.catalog.planName} placeholder={t.catalog.planNamePlaceholder} className="col-span-2 sm:col-span-1" />
                     <NumberField control={form.control} name={`plans.${i}.durationDays`} label={t.catalog.durationDays} min={1} />
                     <MoneyField control={form.control} name={`plans.${i}.price`} label={t.common.price} />
                     <MoneyField control={form.control} name={`plans.${i}.cost`} label={t.common.cost} />
+                    <MoneyField control={form.control} name={`plans.${i}.resellerPrice`} label={t.catalog.resellerPrice} />
                     <Button type="button" variant="ghost" size="icon" className="self-end" aria-label={t.common.delete} onClick={() => plans.remove(i)}>
                       <Trash2Icon />
                     </Button>
                   </div>
                 ))}
-                <Button type="button" variant="outline" onClick={() => plans.append({ name: "", durationDays: 30, price: 0, cost: 0 })}>
+                <Button type="button" variant="outline" onClick={() => plans.append({ name: "", durationDays: 30, price: 0, cost: 0, resellerPrice: null })}>
                   <PlusIcon /> {t.catalog.addPlan}
                 </Button>
               </div>

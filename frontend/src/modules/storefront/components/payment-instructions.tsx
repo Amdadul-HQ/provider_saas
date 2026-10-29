@@ -17,7 +17,7 @@ export function PaymentNumbersList({ paymentNumbers, instructions }: { paymentNu
           <p className="text-sm font-medium">{t.storefront.payTo}</p>
           <ul className="space-y-2">
             {numbers.map((n, i) => (
-              <li key={`${n.method}-${i}`} className="flex items-center justify-between gap-2 rounded-xl border bg-card p-3">
+              <li key={`${n.method}-${i}`} className="flex items-center justify-between gap-2 rounded-2xl border border-border/80 bg-card p-3 shadow-xs">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">
                     {label("PaymentMethod", n.method)}

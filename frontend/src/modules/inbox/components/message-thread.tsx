@@ -41,9 +41,9 @@ function MessageBubble({ m }: { m: MessageFieldsFragment }) {
     <div className={cn("flex", out ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[82%] rounded-2xl px-3.5 py-2 text-sm shadow-xs md:max-w-[70%]",
-          out && !failed && "rounded-br-md bg-primary text-primary-foreground",
-          !out && "rounded-bl-md border bg-card",
+          "animate-pop max-w-[82%] rounded-2xl px-3.5 py-2 text-sm md:max-w-[70%]",
+          out && !failed && "rounded-br-md bg-primary text-primary-foreground shadow-sm shadow-primary/20",
+          !out && "rounded-bl-md bg-card shadow-xs",
           // failed outbound: light surface + strong red ring so text and time keep ≥4.5:1 contrast (BUG-14)
           failed && "rounded-br-md border border-destructive bg-card text-foreground ring-1 ring-destructive/30",
         )}
@@ -140,10 +140,10 @@ function Composer({ conversationId, canReply, vars }: { conversationId: string; 
     }
   }
   return (
-    <div className="border-t bg-card p-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-      {!canReply ? <p className="mb-2 rounded-lg bg-warning/15 px-3 py-2 text-xs text-warning-foreground dark:text-warning">{t.inbox.cannotReply}</p> : null}
+    <div className="bg-background px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] md:px-4 md:pb-3">
+      {!canReply ? <p className="mb-2 rounded-xl bg-warning/15 px-3 py-2 text-xs text-warning-foreground dark:text-warning">{t.inbox.cannotReply}</p> : null}
       <form
-        className="flex items-end gap-1.5"
+        className="flex items-end gap-1.5 rounded-[1.4rem] border border-border/80 bg-card p-1.5 shadow-sm transition-[box-shadow,border-color] duration-(--dur-fast) focus-within:border-ring/60 focus-within:shadow-md"
         onSubmit={(e) => {
           e.preventDefault()
           void submit()
@@ -174,9 +174,9 @@ function Composer({ conversationId, canReply, vars }: { conversationId: string; 
           disabled={!canReply && !templateId}
           aria-describedby={unfilled.length ? `unfilled-${conversationId}` : undefined}
           aria-invalid={unfilled.length > 0 || undefined}
-          className={cn("max-h-36 min-h-10 resize-none", unfilled.length > 0 && "border-destructive ring-1 ring-destructive/30")}
+          className={cn("max-h-36 min-h-10 resize-none border-0 bg-transparent shadow-none focus-visible:ring-0", unfilled.length > 0 && "ring-1 ring-destructive/40")}
         />
-        <Button type="submit" size="icon" disabled={sending || (!body.trim() && !templateId)} aria-label={t.inbox.send}>
+        <Button type="submit" size="icon" className="rounded-full" disabled={sending || (!body.trim() && !templateId)} aria-label={t.inbox.send}>
           <SendIcon />
         </Button>
       </form>
@@ -282,7 +282,7 @@ export function MessageThread({ conversationId, onBack, headerExtra }: { convers
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       {/* phones: row 1 = back · name · info, row 2 = status/assign/labels, so the name keeps ≥12 chars (BUG-14) */}
-      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b bg-card px-2 py-2 md:flex-nowrap md:px-4">
+      <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-border/70 bg-card/90 px-2 py-2 backdrop-blur md:flex-nowrap md:px-4">
         {onBack ? (
           <Button variant="ghost" size="icon" onClick={onBack} aria-label={t.common.back} className="md:hidden">
             <ArrowLeftIcon />
@@ -325,7 +325,7 @@ export function MessageThread({ conversationId, onBack, headerExtra }: { convers
         <LabelEditor conversation={conv} />
         </div>
       </header>
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto bg-muted/30 px-3 py-4 md:px-6" aria-live="polite">
+      <div className="scroll-thin min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-4 md:px-6" aria-live="polite">
         {messages.length === 0 ? <p className="py-10 text-center text-sm text-muted-foreground">{t.inbox.noMessages}</p> : null}
         {messages.map((m) => {
           const day = f.date(m.sentAt)
@@ -333,7 +333,7 @@ export function MessageThread({ conversationId, onBack, headerExtra }: { convers
           lastDay = day
           return (
             <div key={m.id} className="space-y-2">
-              {divider ? <p className="py-1 text-center text-[11px] font-medium text-muted-foreground">{day}</p> : null}
+              {divider ? <p className="mx-auto w-fit rounded-full bg-card px-3 py-0.5 text-[11px] font-medium text-muted-foreground shadow-xs">{day}</p> : null}
               <MessageBubble m={m} />
             </div>
           )

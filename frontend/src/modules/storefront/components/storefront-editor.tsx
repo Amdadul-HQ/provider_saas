@@ -1,13 +1,13 @@
 "use client"
 
 import { useMemo } from "react"
-import { useFieldArray, useForm } from "react-hook-form"
+import { Controller, useFieldArray, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import { ExternalLinkIcon, PlusIcon, Trash2Icon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { FieldGroup, FieldLegend, FieldSet } from "@/components/ui/field"
-import { CopyButton, ErrorState, ListSkeleton, SectionCard, SelectField, SwitchField, TextareaField, TextField } from "@/components/shared"
+import { CopyButton, ErrorState, ImagePicker, ListSkeleton, SectionCard, SelectField, SwitchField, TextareaField, TextField } from "@/components/shared"
 import type { StorefrontFieldsFragment } from "@/gql/graphql"
 import { MOBILE_WALLETS, PAYMENT_METHODS } from "@/lib/enums"
 import { RoleGate } from "@/lib/auth"
@@ -86,9 +86,19 @@ function EditorForm({ storefront }: { storefront: StorefrontFieldsFragment | nul
           <TextField control={form.control} name="displayName" label={t.storefront.displayName} required />
           <TextField control={form.control} name="slug" label={t.storefront.slug} placeholder="my-shop" required />
           <TextField control={form.control} name="tagline" label={t.storefront.tagline} className="sm:col-span-2" />
-          <TextField control={form.control} name="logoUrl" type="url" label={t.storefront.logoUrl} />
-          <TextField control={form.control} name="coverUrl" type="url" label={t.storefront.coverUrl} />
           <TextField control={form.control} name="primaryColor" label={t.storefront.brandColor} placeholder="#1f6f6f" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)]">
+          <Controller
+            control={form.control}
+            name="logoUrl"
+            render={({ field }) => <ImagePicker label={t.storefront.logoUrl} value={field.value} onChange={(url) => field.onChange(url ?? "")} />}
+          />
+          <Controller
+            control={form.control}
+            name="coverUrl"
+            render={({ field }) => <ImagePicker label={t.storefront.coverUrl} aspect="wide" value={field.value} onChange={(url) => field.onChange(url ?? "")} />}
+          />
         </div>
         <FieldSet>
           <FieldLegend variant="label">{t.storefront.contactUs}</FieldLegend>

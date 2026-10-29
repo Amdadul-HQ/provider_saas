@@ -1,4 +1,5 @@
 export * from "./components/dashboard-stats"
 export { RevenueChart } from "./components/revenue-chart-lazy"
 export * from "./components/insights"
+export * from "./components/today-focus"
 export * from "./hooks/use-analytics"

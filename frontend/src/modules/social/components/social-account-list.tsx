@@ -15,7 +15,7 @@ function AccountCard({ account, onDisconnect }: { account: SocialAccountFieldsFr
   const t = useT()
   const [sync, syncing] = useSyncSocialAccount()
   return (
-    <div className="flex h-full flex-col gap-3 rounded-xl border bg-card p-4">
+    <div className="flex h-full flex-col gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-xs">
       <div className="flex items-start gap-3">
         <div className="relative">
           <Avatar className="size-11">

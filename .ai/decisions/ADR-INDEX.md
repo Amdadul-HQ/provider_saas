@@ -9,3 +9,4 @@
 | [ADR-006](ADR-006-jobs.md) | Postgres-backed job queue polled by worker; no external broker in v1 | accepted |
 | [ADR-007](ADR-007-role-matrix.md) | Role matrix: roles on every Mutation, reseller row scoping, viewer read-only | accepted |
 | [ADR-008](ADR-008-rls-app-role.md) | RLS with non-owner app role, FORCE, fail-closed policy, key-scoped lookup policies | accepted |
+| [ADR-009](ADR-009-design-language.md) | UI design language v2 "Nodi": tokens, Manrope + Hind Siliguri, Today hero, floating dock, motion rules | accepted |

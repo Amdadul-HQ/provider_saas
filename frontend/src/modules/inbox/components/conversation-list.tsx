@@ -35,21 +35,25 @@ function ConversationRow({ c, selected, href }: { c: ConversationListFieldsFragm
       aria-current={selected ? "page" : undefined}
       aria-label={`${title}${unread} · ${c.lastMessagePreview ?? ""}`}
       className={cn(
-        "flex w-full items-start gap-3 border-b px-3 py-3 text-left transition-colors last:border-b-0",
-        selected ? "bg-primary/8" : "hover:bg-muted/60 active:bg-muted",
+        "mx-2 my-0.5 flex items-start gap-3 rounded-xl px-2.5 py-2.5 text-left transition-[background-color,transform] duration-(--dur-fast) ease-(--ease-smooth) outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+        selected ? "bg-primary/8 ring-1 ring-primary/15" : "hover:bg-muted/70 active:scale-[0.99] active:bg-muted",
       )}
     >
       <div className="relative shrink-0">
-        <Avatar className="size-10">
+        <Avatar className="size-11">
           {c.identity?.avatarUrl ? <AvatarImage src={c.identity.avatarUrl} alt="" /> : null}
-          <AvatarFallback className="text-xs">{title.slice(0, 2)}</AvatarFallback>
+          <AvatarFallback className={cn("text-xs font-semibold", c.unreadCount > 0 ? "bg-primary/12 text-primary" : "bg-secondary text-secondary-foreground")}>
+            {title.slice(0, 2)}
+          </AvatarFallback>
         </Avatar>
-        <PlatformIcon platform={c.platform} className="absolute -right-1 -bottom-1 size-4.5 ring-2 ring-card [&_svg]:size-2.5" />
+        <PlatformIcon platform={c.platform} className="absolute -right-0.5 -bottom-0.5 size-5 ring-2 ring-card [&_svg]:size-2.5" />
       </div>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <p className={cn("truncate text-sm", c.unreadCount > 0 ? "font-semibold" : "font-medium")}>{title}</p>
-          <span className="shrink-0 text-[11px] text-muted-foreground">{c.lastMessageAt ? f.relative(c.lastMessageAt) : ""}</span>
+          <span className={cn("shrink-0 text-[11px]", c.unreadCount > 0 ? "font-medium text-primary" : "text-muted-foreground")}>
+            {c.lastMessageAt ? f.relative(c.lastMessageAt) : ""}
+          </span>
         </div>
         <div className="flex items-center justify-between gap-2">
           <p className={cn("truncate text-xs", c.unreadCount > 0 ? "text-foreground" : "text-muted-foreground")}>{c.lastMessagePreview ?? "—"}</p>
@@ -62,11 +66,11 @@ function ConversationRow({ c, selected, href }: { c: ConversationListFieldsFragm
         {c.labels.length || c.assignedTo ? (
           <div className="mt-1 flex flex-wrap gap-1">
             {c.labels.slice(0, 3).map((l) => (
-              <span key={l} className="rounded bg-accent px-1.5 text-[10px] font-medium text-accent-foreground">
+              <span key={l} className="rounded-md bg-accent px-1.5 text-[10px] font-medium text-accent-foreground">
                 {l}
               </span>
             ))}
-            {c.assignedTo ? <span className="rounded bg-muted px-1.5 text-[10px] text-muted-foreground">@{c.assignedTo.name}</span> : null}
+            {c.assignedTo ? <span className="rounded-md bg-muted px-1.5 text-[10px] text-muted-foreground">@{c.assignedTo.name}</span> : null}
           </div>
         ) : null}
       </div>
@@ -111,7 +115,7 @@ export function ConversationList({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="space-y-2 border-b p-3">
+      <div className="space-y-2 border-b border-border/70 p-3">
         <Tabs
           value={scope}
           onValueChange={(v) => {
@@ -119,16 +123,23 @@ export function ConversationList({
             setScope(v as Scope)
           }}
         >
-          <TabsList className="w-full">
-            <TabsTrigger value="all" className="flex-1">
-              {t.inbox.counts.open} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.open)}</span> : null}
-            </TabsTrigger>
-            <TabsTrigger value="mine" className="flex-1">
-              {t.inbox.counts.mine} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.mine)}</span> : null}
-            </TabsTrigger>
-            <TabsTrigger value="unassigned" className="flex-1">
-              {t.inbox.counts.unassigned} {counts ? <span className="tabular text-muted-foreground">{f.number(counts.inboxCounts.unassigned)}</span> : null}
-            </TabsTrigger>
+          <TabsList className="h-9 w-full rounded-full p-1">
+            {(
+              [
+                ["all", t.inbox.counts.open, counts?.inboxCounts.open],
+                ["mine", t.inbox.counts.mine, counts?.inboxCounts.mine],
+                ["unassigned", t.inbox.counts.unassigned, counts?.inboxCounts.unassigned],
+              ] as const
+            ).map(([value, label, count]) => (
+              <TabsTrigger key={value} value={value} className="flex-1 rounded-full data-active:shadow-xs">
+                {label}
+                {typeof count === "number" ? (
+                  <span className={cn("tabular rounded-full px-1.5 text-[11px] leading-4", scope === value ? "bg-primary/10 text-primary" : "text-muted-foreground")}>
+                    {f.number(count)}
+                  </span>
+                ) : null}
+              </TabsTrigger>
+            ))}
           </TabsList>
         </Tabs>
         <SearchInput className="md:max-w-none" value={filter.search ?? ""} onChange={(search) => update({ search: search || undefined })} placeholder={t.inbox.searchPlaceholder} />
@@ -149,7 +160,7 @@ export function ConversationList({
           />
         </div>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="scroll-thin min-h-0 flex-1 overflow-y-auto py-1.5">
         {!conn ? (
           error ? (
             <ErrorState compact className="m-3" error={error} onRetry={() => refetch({ requestPolicy: "network-only" })} />
