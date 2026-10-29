@@ -9,8 +9,19 @@ type User {
   createdAt: Time!
 }
 type Membership { id: UUID! tenant: Tenant! role: Role! commissionBps: Int! status: String! }
-"""refreshToken is null when the server set it as an httpOnly cookie (cookie mode)."""
-type AuthPayload { accessToken: String! refreshToken: String user: User! }
+"""
+In cookie mode (X-Auth-Mode: cookie, the web app) both tokens are httpOnly cookies and
+accessToken/refreshToken are null (ADR-011); other clients get them in the body.
+"""
+type AuthPayload {
+  accessToken: String
+  refreshToken: String
+  "When the access token expires: refresh before this."
+  accessTokenExpiresAt: Time!
+  "The business this session is scoped to (null until the user has one)."
+  tenantId: UUID
+  user: User!
+}
 """Public preview of a pending invite, looked up by token."""
 type InvitePreview { tenantName: String! role: Role! inviteeName: String! emailHint: String phoneHint: String expiresAt: Time! userExists: Boolean! }
 

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { authPayload, fakeJwt, headersOf, json, memoryStorage, mockFetch, opName, TENANT_ID } from "@/lib/auth/test-utils"
+import { authPayload, headersOf, json, memoryStorage, mockFetch, opName } from "@/lib/auth/test-utils"
 
 async function load() {
   vi.resetModules()
@@ -22,7 +22,7 @@ describe("urql auth exchange in cookie mode", () => {
     vi.restoreAllMocks()
   })
 
-  it("sends cookie-mode headers, credentials and the bearer token on every request", async () => {
+  it("sends cookie-mode headers and credentials, never an Authorization header", async () => {
     const { makeClient, session, gql } = await load()
     session.useSessionStore.getState().setAuthenticated(authPayload())
     const calls = mockFetch(() => json({ data: { inboxCounts: { __typename: "InboxCounts", open: 1, unassigned: 0, mine: 0, unread: 2 } } }))
@@ -33,7 +33,7 @@ describe("urql auth exchange in cookie mode", () => {
     const h = headersOf(calls[0]!)
     expect(h["x-auth-mode"]).toBe("cookie")
     expect(h["x-requested-with"]).toBe("XMLHttpRequest")
-    expect(h.authorization).toMatch(/^Bearer /)
+    expect(h.authorization).toBeUndefined() // the httpOnly psaas_at cookie authenticates
     expect(calls[0]!.init.credentials).toBe("include")
     expect(calls[0]!.init.method).toBe("POST")
   })
@@ -41,10 +41,9 @@ describe("urql auth exchange in cookie mode", () => {
   it("on UNAUTHENTICATED refreshes from the cookie (no argument) and retries once", async () => {
     const { makeClient, session, gql } = await load()
     session.useSessionStore.getState().setAuthenticated(authPayload())
-    const fresh = fakeJwt({ exp: Math.floor(Date.now() / 1000) + 900, tenant_id: TENANT_ID, v: 2 })
     let failedOnce = false
     const calls = mockFetch((call) => {
-      if (opName(call) === "RefreshToken") return json({ data: { refreshToken: authPayload(fresh) } })
+      if (opName(call) === "RefreshToken") return json({ data: { refreshToken: authPayload() } })
       if (!failedOnce) {
         failedOnce = true
         return unauthenticated()
@@ -56,7 +55,20 @@ describe("urql auth exchange in cookie mode", () => {
     expect(res.error).toBeUndefined()
     expect(calls.map(opName)).toEqual(["InboxCounts", "RefreshToken", "InboxCounts"])
     expect(calls[1]!.body.variables).toEqual({})
-    expect(headersOf(calls[2]!).authorization).toBe(`Bearer ${fresh}`)
+    expect(calls[2]!.init.credentials).toBe("include")
+  })
+
+  it("refreshes before sending when the access cookie is about to expire", async () => {
+    const { makeClient, session, gql } = await load()
+    session.useSessionStore.getState().setAuthenticated(authPayload(10)) // inside the 30 s skew
+    const calls = mockFetch((call) =>
+      opName(call) === "RefreshToken"
+        ? json({ data: { refreshToken: authPayload() } })
+        : json({ data: { inboxCounts: { __typename: "InboxCounts", open: 0, unassigned: 0, mine: 0, unread: 0 } } }),
+    )
+    const res = await makeClient().query(gql.InboxCountsDocument, {}).toPromise()
+    expect(res.error).toBeUndefined()
+    expect(calls.map(opName)).toEqual(["RefreshToken", "InboxCounts"])
   })
 
   it("on HTTP 401 also refreshes and signs out when the cookie is gone", async () => {
@@ -91,6 +103,6 @@ describe("urql auth exchange in cookie mode", () => {
     await client.mutation(gql.LogoutAllDocument, {}).toPromise()
     expect(calls.map((c) => c.body.variables ?? {})).toEqual([{}, {}])
     expect(calls[0]!.init.credentials).toBe("include")
-    expect(headersOf(calls[1]!).authorization).toMatch(/^Bearer /)
+    expect(headersOf(calls[1]!).authorization).toBeUndefined()
   })
 })

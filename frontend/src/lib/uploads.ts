@@ -8,7 +8,6 @@
  * relative to the API origin. XMLHttpRequest (not fetch) because only XHR reports upload progress.
  */
 import { refreshSession } from "@/lib/auth/session"
-import { getAccessToken } from "@/lib/auth/tokens"
 import { apiUrl } from "@/lib/config"
 
 export type UploadKind = "image" | "media" | "import"
@@ -81,8 +80,7 @@ function send(file: File, { kind, onProgress, signal }: Options): Promise<{ stat
     const xhr = new XMLHttpRequest()
     xhr.open("POST", apiUrl("/uploads"))
     xhr.responseType = "text"
-    const token = getAccessToken()
-    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`)
+    xhr.withCredentials = true // the httpOnly psaas_at cookie authenticates (ADR-011)
     xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest")
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable && onProgress) onProgress(Math.min(1, e.loaded / e.total))

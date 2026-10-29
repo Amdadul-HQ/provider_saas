@@ -47,8 +47,8 @@ func (r *mutationResolver) RefreshToken(ctx context.Context, refreshToken *strin
 	}
 	s, err := r.AuthSvc.Refresh(ctx, token, clientMeta(ctx))
 	if err != nil {
-		// a dead cookie would otherwise be re-sent on every page load
-		pauth.ClearRefreshCookie(ctx)
+		// dead cookies would otherwise be re-sent on every page load
+		pauth.ClearAuthCookies(ctx)
 		return nil, err
 	}
 	return r.payload(ctx, s)
@@ -60,7 +60,7 @@ func (r *mutationResolver) Logout(ctx context.Context, refreshToken *string) (bo
 	if token == "" {
 		token = pauth.RefreshFromCookie(ctx)
 	}
-	pauth.ClearRefreshCookie(ctx)
+	pauth.ClearAuthCookies(ctx)
 	return true, r.AuthSvc.Logout(ctx, token)
 }
 

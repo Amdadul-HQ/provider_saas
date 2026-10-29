@@ -11,3 +11,4 @@
 | [ADR-008](ADR-008-rls-app-role.md) | RLS with non-owner app role, FORCE, fail-closed policy, key-scoped lookup policies | accepted |
 | [ADR-009](ADR-009-design-language.md) | UI design language v2 "Nodi": tokens, Manrope + Hind Siliguri, Today hero, floating dock, motion rules | accepted |
 | [ADR-010](ADR-010-list-query-builder.md) | List queries: one pagination.Page (opaque or row-id cursor) + platform/sqlb builder for filters, search and keyset paging | accepted |
+| [ADR-011](ADR-011-access-token-cookie.md) | Web app holds no token: access JWT in httpOnly psaas_at cookie next to psaas_rt; payload returns accessTokenExpiresAt + tenantId | accepted |

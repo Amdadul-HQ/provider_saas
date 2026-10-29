@@ -627,20 +627,25 @@ func TestGraphQLEndToEnd(t *testing.T) {
 	}
 }
 
-// Cookie mode (SECURITY M6) end to end over HTTP: login sets the httpOnly refresh cookie and
-// returns no refresh token, refreshToken works from the cookie alone, logout expires it.
+// Cookie mode (SECURITY M6, ADR-011) end to end over HTTP: login sets httpOnly access and
+// refresh cookies and returns neither token, the access cookie alone authenticates (behind the
+// CSRF guard), refreshToken rotates both from the cookie, logout expires both.
 func TestRefreshCookieFlow(t *testing.T) {
 	f := newTenant(t, "Cookie Flow Shop")
 	h := testC.HTTPHandler()
-	call := func(query string, cookie *http.Cookie) (*httptest.ResponseRecorder, map[string]any) {
+	call := func(query string, xrw bool, cookies ...*http.Cookie) (*httptest.ResponseRecorder, map[string]any) {
 		t.Helper()
 		body, _ := json.Marshal(map[string]any{"query": query})
 		req := httptest.NewRequest("POST", "/graphql", bytes.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Auth-Mode", "cookie")
-		req.Header.Set("X-Requested-With", "XMLHttpRequest")
-		if cookie != nil {
-			req.AddCookie(cookie)
+		if xrw {
+			req.Header.Set("X-Requested-With", "XMLHttpRequest")
+		}
+		for _, c := range cookies {
+			if c != nil {
+				req.AddCookie(c)
+			}
 		}
 		rec := httptest.NewRecorder()
 		h.ServeHTTP(rec, req)
@@ -650,39 +655,64 @@ func TestRefreshCookieFlow(t *testing.T) {
 		}
 		return rec, out
 	}
-	refreshCookie := func(rec *httptest.ResponseRecorder) *http.Cookie {
+	cookie := func(rec *httptest.ResponseRecorder, name string) *http.Cookie {
 		for _, c := range rec.Result().Cookies() {
-			if c.Name == "psaas_rt" {
+			if c.Name == name {
 				return c
 			}
 		}
 		return nil
 	}
 
-	rec, out := call(fmt.Sprintf(`mutation { login(input:{identifier:%q, password:"Passw0rd!"}) { accessToken refreshToken } }`, *f.session.User.Email), nil)
+	rec, out := call(fmt.Sprintf(`mutation { login(input:{identifier:%q, password:"Passw0rd!"}) { accessToken refreshToken accessTokenExpiresAt tenantId } }`,
+		*f.session.User.Email), true)
 	login, _ := out["data"].(map[string]any)["login"].(map[string]any)
-	if login == nil || login["accessToken"] == "" || login["refreshToken"] != nil {
-		t.Fatalf("login in cookie mode = %v (refresh token must not be in the body)", out)
+	if login == nil || login["accessToken"] != nil || login["refreshToken"] != nil {
+		t.Fatalf("login in cookie mode = %v (no token may be in the body)", out)
 	}
-	c := refreshCookie(rec)
-	if c == nil || c.Value == "" || !c.HttpOnly || c.Path != "/graphql" {
-		t.Fatalf("refresh cookie = %+v", c)
+	if login["tenantId"] != f.tid.String() || login["accessTokenExpiresAt"] == "" {
+		t.Fatalf("login payload = %v", login)
+	}
+	at, rt := cookie(rec, "psaas_at"), cookie(rec, "psaas_rt")
+	if at == nil || at.Value == "" || !at.HttpOnly || at.Path != "/" || at.MaxAge <= 0 || at.MaxAge > 15*60 || at.SameSite != http.SameSiteLaxMode {
+		t.Fatalf("access cookie = %+v", at)
+	}
+	if rt == nil || rt.Value == "" || !rt.HttpOnly || rt.Path != "/graphql" {
+		t.Fatalf("refresh cookie = %+v", rt)
 	}
 
-	rec, out = call(`mutation { refreshToken { accessToken } }`, c)
+	// the access cookie alone authenticates...
+	if _, out = call(`{ me { id } }`, true, at); errCode(out) != "" || out["data"].(map[string]any)["me"].(map[string]any)["id"] != f.uid.String() {
+		t.Fatalf("me with the access cookie = %v", out)
+	}
+	// ...but never without the CSRF header (a cross-site form cannot set it)
+	if rec, _ = call(`{ me { id } }`, false, at); rec.Code != http.StatusForbidden {
+		t.Fatalf("access cookie without X-Requested-With: status %d, want 403", rec.Code)
+	}
+	// no cookie, no Bearer: anonymous
+	if _, out = call(`{ me { id } }`, true); errCode(out) != "UNAUTHENTICATED" {
+		t.Fatalf("me without cookies = %v", out)
+	}
+
+	rec, out = call(`mutation { refreshToken { accessTokenExpiresAt } }`, true, rt)
 	if errCode(out) != "" {
 		t.Fatalf("refresh from cookie: %v", out)
 	}
-	rotated := refreshCookie(rec)
-	if rotated == nil || rotated.Value == "" || rotated.Value == c.Value {
-		t.Fatalf("refresh must rotate the cookie, got %+v", rotated)
+	rotated, newAt := cookie(rec, "psaas_rt"), cookie(rec, "psaas_at")
+	if rotated == nil || rotated.Value == "" || rotated.Value == rt.Value {
+		t.Fatalf("refresh must rotate the refresh cookie, got %+v", rotated)
+	}
+	if newAt == nil || newAt.Value == "" {
+		t.Fatalf("refresh must set a new access cookie, got %+v", newAt)
 	}
 
-	rec, _ = call(`mutation { logout }`, rotated)
-	if cl := refreshCookie(rec); cl == nil || cl.MaxAge >= 0 {
-		t.Fatalf("logout must expire the cookie, got %+v", cl)
+	rec, _ = call(`mutation { logout }`, true, rotated, newAt)
+	for _, name := range []string{"psaas_rt", "psaas_at"} {
+		if cl := cookie(rec, name); cl == nil || cl.MaxAge >= 0 {
+			t.Fatalf("logout must expire %s, got %+v", name, cl)
+		}
 	}
-	if _, out = call(`mutation { refreshToken { accessToken } }`, rotated); errCode(out) != "UNAUTHENTICATED" {
+	if _, out = call(`mutation { refreshToken { accessTokenExpiresAt } }`, true, rotated); errCode(out) != "UNAUTHENTICATED" {
 		t.Fatalf("refresh after logout = %v", out)
 	}
 }

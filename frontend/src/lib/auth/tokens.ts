@@ -1,16 +1,18 @@
 /**
- * Token storage (SPRINT-01-SECURITY M6, cookie mode).
- * - Access token: memory only (never persisted) — limits XSS blast radius.
- * - Refresh token: an httpOnly cookie the API sets when the request carries `X-Auth-Mode: cookie`.
- *   JavaScript never sees it. Only a non-secret "a session may exist" hint is kept in localStorage,
- *   so anonymous visitors (storefront, portal) don't fire a refresh request on every page load.
+ * Session bookkeeping in cookie mode (SPRINT-01-SECURITY M6, ADR-011). The web app holds no token:
+ * - Access token: the httpOnly `psaas_at` cookie (15 min). JavaScript only remembers *when* it
+ *   expires (`accessTokenExpiresAt` from the auth payload) so requests refresh just before.
+ * - Refresh token: the httpOnly `psaas_rt` cookie, rotated on every refresh.
+ * - localStorage keeps only a non-secret "a session may exist" hint, so anonymous visitors
+ *   (storefront, portal) don't fire a refresh request on every page load.
  * - Legacy: Sprint 1 kept the refresh token in localStorage (`psaas.rt`). `refreshSession` spends it
- *   once to obtain the cookie and then deletes it.
+ *   once to obtain the cookies and then deletes it.
  */
 const LEGACY_REFRESH_KEY = "psaas.rt"
 const SESSION_HINT_KEY = "psaas.session"
 
-let accessToken: string | null = null
+/** Epoch ms when the access cookie expires; null = unknown (fresh page load) or signed out. */
+let accessExpiresAt: number | null = null
 
 function storage(): Storage | null {
   if (typeof window === "undefined") return null
@@ -21,13 +23,10 @@ function storage(): Storage | null {
   }
 }
 
-export function getAccessToken() {
-  return accessToken
-}
-
-/** Stores the access token in memory and remembers that a cookie session exists. */
-export function setAccessToken(access: string) {
-  accessToken = access
+/** Records a fresh session: when its access cookie expires, and that a cookie session exists. */
+export function setAccessExpiry(expiresAt: string) {
+  const ms = Date.parse(expiresAt)
+  accessExpiresAt = Number.isNaN(ms) ? null : ms
   try {
     storage()?.setItem(SESSION_HINT_KEY, "1")
   } catch {
@@ -35,7 +34,7 @@ export function setAccessToken(access: string) {
   }
 }
 
-/** True when this browser has (probably) got a refresh cookie: a past login or a legacy token to migrate. */
+/** True when this browser has (probably) got session cookies: a past login or a legacy token to migrate. */
 export function hasSessionHint(): boolean {
   const s = storage()
   if (!s) return false
@@ -46,7 +45,7 @@ export function hasSessionHint(): boolean {
   }
 }
 
-/** Sprint 1 refresh token still sitting in localStorage (to be exchanged for the cookie once). */
+/** Sprint 1 refresh token still sitting in localStorage (to be exchanged for the cookies once). */
 export function getLegacyRefreshToken(): string | null {
   try {
     return storage()?.getItem(LEGACY_REFRESH_KEY) ?? null
@@ -63,8 +62,9 @@ export function clearLegacyRefreshToken() {
   }
 }
 
+/** Forgets the session locally. The API clears the cookies on logout or a failed refresh. */
 export function clearTokens() {
-  accessToken = null
+  accessExpiresAt = null
   try {
     storage()?.removeItem(SESSION_HINT_KEY)
     storage()?.removeItem(LEGACY_REFRESH_KEY)
@@ -73,28 +73,8 @@ export function clearTokens() {
   }
 }
 
-type JwtClaims = { exp?: number; tid?: string; tenant_id?: string; tenantId?: string; [k: string]: unknown }
-
-export function decodeJwt(token: string | null): JwtClaims | null {
-  if (!token) return null
-  const part = token.split(".")[1]
-  if (!part) return null
-  try {
-    const json = atob(part.replace(/-/g, "+").replace(/_/g, "/"))
-    return JSON.parse(json) as JwtClaims
-  } catch {
-    return null
-  }
-}
-
-/** True when the access token is missing or expires within `skewSeconds`. */
+/** True when the access cookie is gone or expires within `skewSeconds` (unknown expiry counts as expiring). */
 export function accessTokenExpiring(skewSeconds = 30): boolean {
-  const claims = decodeJwt(accessToken)
-  if (!claims?.exp) return accessToken === null
-  return claims.exp * 1000 - skewSeconds * 1000 < Date.now()
-}
-
-export function tenantIdFromToken(): string | null {
-  const c = decodeJwt(accessToken)
-  return (c?.tenant_id ?? c?.tid ?? c?.tenantId ?? null) as string | null
+  if (accessExpiresAt === null) return true
+  return accessExpiresAt - skewSeconds * 1000 < Date.now()
 }

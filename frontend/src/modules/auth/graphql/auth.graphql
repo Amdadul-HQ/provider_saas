@@ -19,17 +19,17 @@ query Me {
 }
 
 mutation Login($input: LoginInput!) {
-  login(input: $input) { accessToken user { ...SessionUser } }
+  login(input: $input) { accessTokenExpiresAt tenantId user { ...SessionUser } }
 }
 
 mutation Register($input: RegisterInput!) {
-  register(input: $input) { accessToken user { ...SessionUser } }
+  register(input: $input) { accessTokenExpiresAt tenantId user { ...SessionUser } }
 }
 
 # cookie mode: no argument → the API reads the httpOnly cookie; the argument is only used once to
 # migrate a Sprint 1 localStorage token. refreshToken is not selected: in cookie mode it is null.
 mutation RefreshToken($refreshToken: String) {
-  refreshToken(refreshToken: $refreshToken) { accessToken user { ...SessionUser } }
+  refreshToken(refreshToken: $refreshToken) { accessTokenExpiresAt tenantId user { ...SessionUser } }
 }
 
 mutation Logout {
@@ -45,7 +45,7 @@ mutation CreateEventsToken {
 }
 
 mutation SwitchTenant($tenantId: UUID!) {
-  switchTenant(tenantId: $tenantId) { accessToken user { ...SessionUser } }
+  switchTenant(tenantId: $tenantId) { accessTokenExpiresAt tenantId user { ...SessionUser } }
 }
 
 mutation ChangePassword($currentPassword: String!, $newPassword: String!) {
@@ -57,5 +57,5 @@ query Invite($token: String!) {
 }
 
 mutation AcceptInvite($token: String!, $password: String!, $name: String) {
-  acceptInvite(token: $token, password: $password, name: $name) { accessToken user { ...SessionUser } }
+  acceptInvite(token: $token, password: $password, name: $name) { accessTokenExpiresAt tenantId user { ...SessionUser } }
 }

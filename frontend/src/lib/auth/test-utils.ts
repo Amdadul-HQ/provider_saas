@@ -15,11 +15,6 @@ export function memoryStorage(initial: Record<string, string> = {}): Storage {
   }
 }
 
-export function fakeJwt(claims: Record<string, unknown>): string {
-  const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
-  return `${b64({ alg: "HS256", typ: "JWT" })}.${b64(claims)}.sig`
-}
-
 export const TENANT_ID = "11111111-1111-1111-1111-111111111111"
 
 export function sessionUser() {
@@ -44,9 +39,16 @@ export function sessionUser() {
   }
 }
 
-export function authPayload(accessToken = fakeJwt({ exp: Math.floor(Date.now() / 1000) + 900, tenant_id: TENANT_ID })) {
-  // cookie mode: refreshToken is null in the body
-  return { __typename: "AuthPayload", accessToken, refreshToken: null, user: sessionUser() }
+/** A cookie-mode auth payload (ADR-011): no token in the body, only when the access cookie expires. */
+export function authPayload(expiresInSeconds = 900) {
+  return {
+    __typename: "AuthPayload",
+    accessToken: null,
+    refreshToken: null,
+    accessTokenExpiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString(),
+    tenantId: TENANT_ID,
+    user: sessionUser(),
+  }
 }
 
 export function json(body: unknown, status = 200): Response {

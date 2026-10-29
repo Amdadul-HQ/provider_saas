@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { authPayload, headersOf, json, memoryStorage, mockFetch, opName } from "./test-utils"
+import { authPayload, headersOf, json, memoryStorage, mockFetch, opName, TENANT_ID } from "./test-utils"
 
-// fresh module state (in-memory access token, zustand store, single-flight promise) per test
+// fresh module state (access expiry, zustand store, single-flight promise) per test
 async function load() {
   vi.resetModules()
   const session = await import("./session")
@@ -9,7 +9,7 @@ async function load() {
   return { ...session, ...tokens }
 }
 
-describe("cookie-mode session (SEC M6)", () => {
+describe("cookie-mode session (SEC M6, ADR-011)", () => {
   let storage: Storage
   beforeEach(() => {
     storage = memoryStorage()
@@ -33,10 +33,12 @@ describe("cookie-mode session (SEC M6)", () => {
     expect(call!.init.credentials).toBe("include")
     expect(headersOf(call!)).toMatchObject({ "x-auth-mode": "cookie", "x-requested-with": "XMLHttpRequest" })
     expect(s.useSessionStore.getState().status).toBe("authenticated")
-    expect(s.getAccessToken()).toMatch(/\./)
-    // nothing secret persisted: only the hint
+    expect(s.useSessionStore.getState().activeTenantId).toBe(TENANT_ID)
+    expect(s.accessTokenExpiring()).toBe(false)
+    // nothing secret persisted: only the hint (both tokens are httpOnly cookies)
     expect(storage.getItem("psaas.rt")).toBeNull()
     expect(storage.getItem("psaas.session")).toBe("1")
+    expect(JSON.stringify(s.useSessionStore.getState())).not.toMatch(/token/i)
   })
 
   it("does not call the API for a visitor that never logged in", async () => {
@@ -88,14 +90,14 @@ describe("cookie-mode session (SEC M6)", () => {
     expect(storage.getItem("psaas.rt")).toBe("legacy-token")
   })
 
-  it("signs out (clears hint and memory token) when the cookie is invalid", async () => {
+  it("signs out (clears hint and expiry) when the cookie is invalid", async () => {
     storage.setItem("psaas.session", "1")
     mockFetch(() => json({ data: null, errors: [{ message: "x", extensions: { code: "UNAUTHENTICATED" } }] }))
     const s = await load()
     expect(await s.refreshSession()).toBe("invalid")
     expect(s.useSessionStore.getState().status).toBe("anonymous")
     expect(storage.getItem("psaas.session")).toBeNull()
-    expect(s.getAccessToken()).toBeNull()
+    expect(s.accessTokenExpiring()).toBe(true)
   })
 
   it("is single-flight: concurrent callers share one refresh", async () => {

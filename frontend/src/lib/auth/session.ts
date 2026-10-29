@@ -5,13 +5,13 @@ import { create } from "zustand"
 import { RefreshTokenDocument, type RefreshTokenMutation, type Role, type SessionUserFragment } from "@/gql/graphql"
 import { GRAPHQL_URL } from "@/lib/config"
 import { API_CREDENTIALS, API_HEADERS } from "@/lib/graphql/transport"
-import { clearLegacyRefreshToken, clearTokens, getLegacyRefreshToken, hasSessionHint, setAccessToken, tenantIdFromToken } from "./tokens"
+import { clearLegacyRefreshToken, clearTokens, getLegacyRefreshToken, hasSessionHint, setAccessExpiry } from "./tokens"
 
 export type SessionStatus = "loading" | "authenticated" | "anonymous" | "unreachable"
 export type SessionUser = SessionUserFragment
 
-/** What the auth mutations return. In cookie mode there is no refresh token in the body. */
-export type AuthPayloadLike = { accessToken: string; user: SessionUser }
+/** What the auth mutations return. In cookie mode both tokens are httpOnly cookies, never in the body (ADR-011). */
+export type AuthPayloadLike = { accessTokenExpiresAt: string; tenantId?: string | null; user: SessionUser }
 
 type SessionState = {
   status: SessionStatus
@@ -26,11 +26,9 @@ export const useSessionStore = create<SessionState>()((set) => ({
   status: "loading",
   user: null,
   activeTenantId: null,
-  setAuthenticated: ({ accessToken, user }) => {
-    // a refreshToken in the payload (non-cookie server) is deliberately ignored: never persisted
-    setAccessToken(accessToken)
-    const fromToken = tenantIdFromToken()
-    const active = user.memberships.find((m) => m.tenant.id === fromToken) ?? user.memberships[0]
+  setAuthenticated: ({ accessTokenExpiresAt, tenantId, user }) => {
+    setAccessExpiry(accessTokenExpiresAt)
+    const active = user.memberships.find((m) => m.tenant.id === tenantId) ?? user.memberships[0]
     set({ status: "authenticated", user, activeTenantId: active?.tenant.id ?? null })
   },
   setStatus: (status) => set({ status }),
@@ -44,7 +42,7 @@ export type RefreshResult = "ok" | "invalid" | "network"
 
 type GraphQLBody = { data?: RefreshTokenMutation | null; errors?: { extensions?: { code?: string } }[] }
 
-/** One `refreshToken` call. `legacyToken` is passed only to migrate a Sprint 1 localStorage token. */
+/** One `refreshToken` call: the API reads psaas_rt and sets fresh cookies. `legacyToken` is passed only to migrate a Sprint 1 localStorage token. */
 async function exchange(legacyToken: string | null): Promise<RefreshResult> {
   let res: Response
   try {

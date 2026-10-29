@@ -51,22 +51,32 @@ func FromContext(ctx context.Context) (Principal, bool) {
 	return p, ok && p.UserID != uuid.Nil
 }
 
-// Middleware puts the Principal from a valid `Authorization: Bearer` token into the
-// request context. Missing/invalid tokens leave the request anonymous; the GraphQL
-// @auth directive rejects anonymous calls with UNAUTHENTICATED.
+// Middleware puts the Principal from a valid access token into the request context: an
+// `Authorization: Bearer` header (API and mobile clients) wins, else the psaas_at cookie
+// (web app, ADR-011). Missing/invalid tokens leave the request anonymous; the GraphQL @auth
+// directive rejects anonymous calls with UNAUTHENTICATED. Cookie-carrying requests must
+// also pass CSRFGuard.
 func Middleware(issuer *TokenIssuer) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if tok, ok := strings.CutPrefix(h, "Bearer "); ok && tok != "" {
+			if tok := requestToken(r); tok != "" {
 				// Verify = signature/aud/exp + token_version: a revoked token is anonymous.
-				if p, err := issuer.Verify(r.Context(), strings.TrimSpace(tok)); err == nil {
+				if p, err := issuer.Verify(r.Context(), tok); err == nil {
 					r = r.WithContext(WithPrincipal(r.Context(), p))
 				}
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func requestToken(r *http.Request) string {
+	if tok, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		if tok = strings.TrimSpace(tok); tok != "" {
+			return tok
+		}
+	}
+	return AccessFromRequest(r)
 }
 
 // ResellerScope returns the caller's user id when the caller is a RESELLER (ADR-007):

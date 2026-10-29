@@ -127,6 +127,45 @@ func TestRefreshCookieAndMode(t *testing.T) {
 	}
 }
 
+func TestAccessCookie(t *testing.T) {
+	h := HTTPMiddleware(CookieOptions{Secure: true})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("clear") != "" {
+			ClearAuthCookies(r.Context())
+			return
+		}
+		SetAccessCookie(r.Context(), "a.b.c", time.Now().Add(15*time.Minute))
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/graphql", nil))
+	sc := rec.Header().Get("Set-Cookie")
+	for _, want := range []string{"psaas_at=a.b.c", "Path=/", "HttpOnly", "Secure", "SameSite=Lax"} {
+		if !strings.Contains(sc, want) {
+			t.Fatalf("Set-Cookie %q lacks %q", sc, want)
+		}
+	}
+	if c := rec.Result().Cookies()[0]; c.MaxAge < 890 || c.MaxAge > 900 {
+		t.Fatalf("access cookie Max-Age = %d, want the JWT lifetime (~900)", c.MaxAge)
+	}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("POST", "/graphql?clear=1", nil))
+	got := strings.Join(rec.Header().Values("Set-Cookie"), "\n")
+	for _, want := range []string{"psaas_rt=;", "psaas_at=;"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("ClearAuthCookies %q lacks %q", got, want)
+		}
+	}
+
+	req := httptest.NewRequest("POST", "/graphql", nil)
+	req.AddCookie(&http.Cookie{Name: AccessCookie, Value: "from-cookie"})
+	if got := requestToken(req); got != "from-cookie" {
+		t.Fatalf("cookie token = %q", got)
+	}
+	req.Header.Set("Authorization", "Bearer from-header")
+	if got := requestToken(req); got != "from-header" {
+		t.Fatalf("a Bearer header must win over the cookie, got %q", got)
+	}
+}
+
 func TestCSRFGuard(t *testing.T) {
 	h := CSRFGuard([]string{"http://localhost:3100"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
@@ -144,6 +183,13 @@ func TestCSRFGuard(t *testing.T) {
 		{"cookie, no header", true, "", "", 403},
 		{"cookie, foreign origin", true, "", "https://evil.example", 403},
 		{"cookie, null origin", true, "", "null", 403},
+	}
+	accessOnly := httptest.NewRequest("POST", "/graphql", nil)
+	accessOnly.AddCookie(&http.Cookie{Name: AccessCookie, Value: "x"})
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, accessOnly)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("access cookie, no header: status %d want 403", rec.Code)
 	}
 	for _, tt := range tests {
 		req := httptest.NewRequest("POST", "/graphql", nil)

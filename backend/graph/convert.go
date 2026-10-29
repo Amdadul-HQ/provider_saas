@@ -56,7 +56,11 @@ func toMember(ctx context.Context, m tenant.Member) *model.TenantMember {
 }
 
 func toPayload(s auth.Session) *model.AuthPayload {
-	return &model.AuthPayload{AccessToken: s.AccessToken, RefreshToken: &s.RefreshToken, User: *toUser(s.User)}
+	p := &model.AuthPayload{AccessToken: &s.AccessToken, RefreshToken: &s.RefreshToken, AccessTokenExpiresAt: s.ExpiresAt, User: *toUser(s.User)}
+	if s.Membership != nil {
+		p.TenantID = &s.Membership.Tenant.ID
+	}
+	return p
 }
 
 func toCustomer(c customer.Customer) *model.Customer {
@@ -175,10 +179,10 @@ func toPaymentInput(p model.PaymentInput) billing.PaymentInput {
 // authenticated in ctx during register/login, so the field resolver cannot load them).
 func (r *Resolver) payload(ctx context.Context, s auth.Session) (*model.AuthPayload, error) {
 	p := toPayload(s)
-	// cookie mode (SECURITY M6): the refresh token goes into the httpOnly psaas_rt cookie and
-	// never reaches JavaScript; body-mode clients (API, mobile) keep getting it in the payload
-	if pauth.CookieMode(ctx) && pauth.SetRefreshCookie(ctx, s.RefreshToken) {
-		p.RefreshToken = nil
+	// cookie mode (SECURITY M6, ADR-011): both tokens go into httpOnly cookies (psaas_at,
+	// psaas_rt) and never reach JavaScript; body-mode clients (API, mobile) get them in the payload
+	if pauth.CookieMode(ctx) && pauth.SetRefreshCookie(ctx, s.RefreshToken) && pauth.SetAccessCookie(ctx, s.AccessToken, s.ExpiresAt) {
+		p.AccessToken, p.RefreshToken = nil, nil
 	}
 	ms, err := r.AuthSvc.Memberships(ctx, s.User.ID)
 	if err != nil {

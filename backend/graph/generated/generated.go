@@ -85,9 +85,11 @@ type ComplexityRoot struct {
 	}
 
 	AuthPayload struct {
-		AccessToken  func(childComplexity int) int
-		RefreshToken func(childComplexity int) int
-		User         func(childComplexity int) int
+		AccessToken          func(childComplexity int) int
+		AccessTokenExpiresAt func(childComplexity int) int
+		RefreshToken         func(childComplexity int) int
+		TenantID             func(childComplexity int) int
+		User                 func(childComplexity int) int
 	}
 
 	AutoReplyRule struct {
@@ -1374,12 +1376,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.ComplexityRoot.AuthPayload.AccessToken(childComplexity), true
+	case "AuthPayload.accessTokenExpiresAt":
+		if e.ComplexityRoot.AuthPayload.AccessTokenExpiresAt == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuthPayload.AccessTokenExpiresAt(childComplexity), true
 	case "AuthPayload.refreshToken":
 		if e.ComplexityRoot.AuthPayload.RefreshToken == nil {
 			break
 		}
 
 		return e.ComplexityRoot.AuthPayload.RefreshToken(childComplexity), true
+	case "AuthPayload.tenantId":
+		if e.ComplexityRoot.AuthPayload.TenantID == nil {
+			break
+		}
+
+		return e.ComplexityRoot.AuthPayload.TenantID(childComplexity), true
 	case "AuthPayload.user":
 		if e.ComplexityRoot.AuthPayload.User == nil {
 			break
@@ -6499,8 +6513,19 @@ extend type Query {
   createdAt: Time!
 }
 type Membership { id: UUID! tenant: Tenant! role: Role! commissionBps: Int! status: String! }
-"""refreshToken is null when the server set it as an httpOnly cookie (cookie mode)."""
-type AuthPayload { accessToken: String! refreshToken: String user: User! }
+"""
+In cookie mode (X-Auth-Mode: cookie, the web app) both tokens are httpOnly cookies and
+accessToken/refreshToken are null (ADR-011); other clients get them in the body.
+"""
+type AuthPayload {
+  accessToken: String
+  refreshToken: String
+  "When the access token expires: refresh before this."
+  accessTokenExpiresAt: Time!
+  "The business this session is scoped to (null until the user has one)."
+  tenantId: UUID
+  user: User!
+}
 """Public preview of a pending invite, looked up by token."""
 type InvitePreview { tenantName: String! role: Role! inviteeName: String! emailHint: String phoneHint: String expiresAt: Time! userExists: Boolean! }
 
@@ -7250,6 +7275,10 @@ func (ec *executionContext) childFields_AuthPayload(ctx context.Context, field g
 		return ec.fieldContext_AuthPayload_accessToken(ctx, field)
 	case "refreshToken":
 		return ec.fieldContext_AuthPayload_refreshToken(ctx, field)
+	case "accessTokenExpiresAt":
+		return ec.fieldContext_AuthPayload_accessTokenExpiresAt(ctx, field)
+	case "tenantId":
+		return ec.fieldContext_AuthPayload_tenantId(ctx, field)
 	case "user":
 		return ec.fieldContext_AuthPayload_user(ctx, field)
 	}
@@ -11887,11 +11916,11 @@ func (ec *executionContext) _AuthPayload_accessToken(ctx context.Context, field 
 			return obj.AccessToken, nil
 		},
 		nil,
-		func(ctx context.Context, selections ast.SelectionSet, v string) graphql.Marshaler {
-			return ec.marshalNString2string(ctx, selections, v)
+		func(ctx context.Context, selections ast.SelectionSet, v *string) graphql.Marshaler {
+			return ec.marshalOString2ᚖstring(ctx, selections, v)
 		},
 		true,
-		true,
+		false,
 	)
 }
 func (ec *executionContext) fieldContext_AuthPayload_accessToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
@@ -11919,6 +11948,52 @@ func (ec *executionContext) _AuthPayload_refreshToken(ctx context.Context, field
 }
 func (ec *executionContext) fieldContext_AuthPayload_refreshToken(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	return graphql.NewScalarFieldContext("AuthPayload", field, false, false, "String")
+}
+
+func (ec *executionContext) _AuthPayload_accessTokenExpiresAt(ctx context.Context, field graphql.CollectedField, obj *model.AuthPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AuthPayload_accessTokenExpiresAt(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.AccessTokenExpiresAt, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v time.Time) graphql.Marshaler {
+			return ec.marshalNTime2timeᚐTime(ctx, selections, v)
+		},
+		true,
+		true,
+	)
+}
+func (ec *executionContext) fieldContext_AuthPayload_accessTokenExpiresAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AuthPayload", field, false, false, "Time")
+}
+
+func (ec *executionContext) _AuthPayload_tenantId(ctx context.Context, field graphql.CollectedField, obj *model.AuthPayload) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return ec.fieldContext_AuthPayload_tenantId(ctx, field)
+		},
+		func(ctx context.Context) (any, error) {
+			return obj.TenantID, nil
+		},
+		nil,
+		func(ctx context.Context, selections ast.SelectionSet, v *uuid.UUID) graphql.Marshaler {
+			return ec.marshalOUUID2ᚖgithubᚗcomᚋgoogleᚋuuidᚐUUID(ctx, selections, v)
+		},
+		true,
+		false,
+	)
+}
+func (ec *executionContext) fieldContext_AuthPayload_tenantId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	return graphql.NewScalarFieldContext("AuthPayload", field, false, false, "UUID")
 }
 
 func (ec *executionContext) _AuthPayload_user(ctx context.Context, field graphql.CollectedField, obj *model.AuthPayload) (ret graphql.Marshaler) {
@@ -38671,11 +38746,21 @@ func (ec *executionContext) _AuthPayload(ctx context.Context, sel ast.SelectionS
 			out.Values[i] = graphql.MarshalString("AuthPayload")
 		case "accessToken":
 			out.Values[i] = ec._AuthPayload_accessToken(ctx, field, obj)
-			if out.Values[i] == graphql.Null {
+			if out.Values[i] == graphql.RequiredNull {
 				out.Invalids++
 			}
 		case "refreshToken":
 			out.Values[i] = ec._AuthPayload_refreshToken(ctx, field, obj)
+			if out.Values[i] == graphql.RequiredNull {
+				out.Invalids++
+			}
+		case "accessTokenExpiresAt":
+			out.Values[i] = ec._AuthPayload_accessTokenExpiresAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tenantId":
+			out.Values[i] = ec._AuthPayload_tenantId(ctx, field, obj)
 			if out.Values[i] == graphql.RequiredNull {
 				out.Invalids++
 			}

@@ -22,11 +22,16 @@ type AuditLog struct {
 	CreatedAt  time.Time      `json:"createdAt"`
 }
 
-// refreshToken is null when the server set it as an httpOnly cookie (cookie mode).
+// In cookie mode (X-Auth-Mode: cookie, the web app) both tokens are httpOnly cookies and
+// accessToken/refreshToken are null (ADR-011); other clients get them in the body.
 type AuthPayload struct {
-	AccessToken  string  `json:"accessToken"`
+	AccessToken  *string `json:"accessToken,omitempty"`
 	RefreshToken *string `json:"refreshToken,omitempty"`
-	User         User    `json:"user"`
+	// When the access token expires: refresh before this.
+	AccessTokenExpiresAt time.Time `json:"accessTokenExpiresAt"`
+	// The business this session is scoped to (null until the user has one).
+	TenantID *uuid.UUID `json:"tenantId,omitempty"`
+	User     User       `json:"user"`
 }
 
 type AutoReplyRuleInput struct {

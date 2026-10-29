@@ -3,7 +3,7 @@ import { authExchange } from "@urql/exchange-auth"
 import { Kind } from "graphql"
 import { GRAPHQL_URL } from "@/lib/config"
 import { refreshSession, useSessionStore } from "@/lib/auth/session"
-import { accessTokenExpiring, getAccessToken, hasSessionHint } from "@/lib/auth/tokens"
+import { accessTokenExpiring, hasSessionHint } from "@/lib/auth/tokens"
 import { API_CREDENTIALS, API_HEADERS } from "./transport"
 
 /** Operations that must work without a session (public storefront/portal + auth itself). */
@@ -36,7 +36,8 @@ function isPublic(op: Operation) {
 export function makeClient() {
   return new Client({
     url: GRAPHQL_URL,
-    // cookie auth mode (M6): refresh cookie travels with every request; custom header = CSRF guard
+    // cookie auth mode (M6, ADR-011): the access and refresh cookies travel with every request;
+    // the custom header is the CSRF guard. No token is ever added by JavaScript.
     fetchOptions: { credentials: API_CREDENTIALS, headers: { ...API_HEADERS } },
     requestPolicy: "cache-and-network",
     // urql >=4 defaults to GET for queries; always POST so gqlgen needs no GET transport and
@@ -44,15 +45,13 @@ export function makeClient() {
     preferGetMethod: false,
     exchanges: [
       cacheExchange,
-      authExchange(async (utils) => ({
+      authExchange(async () => ({
         addAuthToOperation(operation) {
-          const token = getAccessToken()
-          if (!token || isPublic(operation)) return operation
-          return utils.appendHeaders(operation, { Authorization: `Bearer ${token}` })
+          return operation // the httpOnly psaas_at cookie authenticates
         },
         willAuthError(operation) {
           if (isPublic(operation)) return false
-          // no/expiring access token but a refresh cookie may exist → refresh before sending
+          // access cookie expired/expiring (or unknown after a reload) but a session may exist → refresh first
           return hasSessionHint() && accessTokenExpiring()
         },
         didAuthError(error, operation) {

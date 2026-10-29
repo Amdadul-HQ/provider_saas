@@ -3,7 +3,7 @@ Goal: close deferred security Lows, finish integrations, add the "hook" features
 
 | # | Task | Owner | Source | Status |
 |---|------|-------|--------|--------|
-| 1 | httpOnly refresh-token cookie (backend + frontend) | backend+frontend | SEC M6 | built 2026-10-29 (resolvers + middleware wired, TestRefreshCookieFlow); needs QA + security sign-off |
+| 1 | httpOnly refresh-token cookie (backend + frontend) | backend+frontend | SEC M6 | built 2026-10-29 (resolvers + middleware wired, TestRefreshCookieFlow); extended by ADR-011: access token also an httpOnly cookie (psaas_at), web app holds no token; needs QA + security sign-off |
 | 2 | Register enumeration + separate derived keys (HKDF) + token version revocation | backend | SEC L1, L2, L9 | built (bf678f0); VersionCache wired into container 2026-10-29; needs QA + security sign-off |
 | 3 | Vault AAD per secret + key rotation command | backend | SEC L3 | todo |
 | 4 | Composite (tenant_id,id) FKs; invoice item ownership check | backend | SEC L4 | todo |

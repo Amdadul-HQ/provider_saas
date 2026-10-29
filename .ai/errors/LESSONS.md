@@ -338,3 +338,9 @@ Grep this file for your area before starting a task.
 - Root cause: Three paging styles (opaque cursor, after uuid + limit, limit only) and three resolver helpers (pageOf, afterID, pageFirst) let a resolver pick the wrong contract
 - Fix: ADR-010: pagination.Page accepts both cursor forms, every resolver uses pageOf, every list repository uses platform/sqlb (Page/Search/Eq); added TestListPagingAndSearch that walks pages with both cursors
 - Prevention rule: New list queries must use sqlb + pagination.Page; never hand-count $n or add a per-module cursor format; an integration test must walk to page 2
+
+## L-057 · 2026-10-29 · infra/dev-auth
+- What broke: Reload signed the user out of the dashboard on localhost:3000
+- Root cause: The :3000 frontend proxied to an API on :8081 started at 11:42, before the refresh-cookie fix (2e7dd6c); that API returns refreshToken in the body and sets no psaas_rt cookie, and the web app never persists a body token, so the reload refresh fails
+- Fix: Verified the current API sets psaas_rt (HttpOnly, SameSite=Lax, Path=/graphql) and reload keeps the session on :3200 -> :8083; old servers must be restarted on current code
+- Prevention rule: After any auth/cookie change restart every running API (go run does not reload); check a login response for Set-Cookie: psaas_rt before debugging the frontend
