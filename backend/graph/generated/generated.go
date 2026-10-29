@@ -6518,9 +6518,9 @@ extend type Mutation {
   refreshToken(refreshToken: String): AuthPayload!
   logout(refreshToken: String): Boolean!
   """Revokes every session of the current user (bumps token version)."""
-  logoutAll: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  logoutAll: Boolean! @auth
   """Short-lived token for the SSE endpoint GET /events?token=..."""
-  createEventsToken: String! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  createEventsToken: String! @auth
   switchTenant(tenantId: UUID!): AuthPayload! @auth
   changePassword(currentPassword: String!, newPassword: String!): Boolean! @auth
   """Accept a pending invite. New users set a password; existing users prove ownership with their password."""
@@ -17531,16 +17531,11 @@ func (ec *executionContext) _Mutation_logoutAll(ctx context.Context, field graph
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
-				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER", "VIEWER"})
-				if err != nil {
-					var zeroVal bool
-					return zeroVal, err
-				}
 				if ec.Directives.Auth == nil {
 					var zeroVal bool
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, roles)
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
 			}
 
 			next = directive1
@@ -17572,16 +17567,11 @@ func (ec *executionContext) _Mutation_createEventsToken(ctx context.Context, fie
 			directive0 := next
 
 			directive1 := func(ctx context.Context) (any, error) {
-				roles, err := ec.unmarshalORole2ᚕprovider_saasᚋgraphᚋmodelᚐRoleᚄ(ctx, []any{"OWNER", "ADMIN", "STAFF", "RESELLER", "VIEWER"})
-				if err != nil {
-					var zeroVal string
-					return zeroVal, err
-				}
 				if ec.Directives.Auth == nil {
 					var zeroVal string
 					return zeroVal, errors.New("directive auth is not implemented")
 				}
-				return ec.Directives.Auth(ctx, nil, directive0, roles)
+				return ec.Directives.Auth(ctx, nil, directive0, nil)
 			}
 
 			next = directive1

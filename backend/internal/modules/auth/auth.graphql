@@ -28,9 +28,9 @@ extend type Mutation {
   refreshToken(refreshToken: String): AuthPayload!
   logout(refreshToken: String): Boolean!
   """Revokes every session of the current user (bumps token version)."""
-  logoutAll: Boolean! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  logoutAll: Boolean! @auth
   """Short-lived token for the SSE endpoint GET /events?token=..."""
-  createEventsToken: String! @auth(roles: [OWNER, ADMIN, STAFF, RESELLER, VIEWER])
+  createEventsToken: String! @auth
   switchTenant(tenantId: UUID!): AuthPayload! @auth
   changePassword(currentPassword: String!, newPassword: String!): Boolean! @auth
   """Accept a pending invite. New users set a password; existing users prove ownership with their password."""

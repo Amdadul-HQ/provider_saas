@@ -15,7 +15,7 @@ import (
 // account-level fields that work without a tenant role.
 var (
 	publicMutations = []string{"register", "login", "refreshToken", "logout", "acceptInvite", "placeOrder", "portalRequestRenewal"}
-	accountLevel    = []string{"switchTenant", "changePassword"} // bare @auth: any signed-in user
+	accountLevel    = []string{"switchTenant", "changePassword", "logoutAll", "createEventsToken"} // bare @auth: any signed-in user
 	// VIEWER is read-only: it may only call these personal / no-op mutations.
 	viewerMutations = []string{"ping", "markNotificationRead", "markAllNotificationsRead"}
 	// RESELLER may write only its own customers and subscriptions (plus personal ones).
