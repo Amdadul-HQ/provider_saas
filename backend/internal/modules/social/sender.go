@@ -77,6 +77,9 @@ func (s WhatsAppSender) Send(ctx context.Context, a Account, thread, body string
 	if err != nil {
 		return "", err
 	}
+	if tpl, ok := whatsAppTemplateFrom(ctx); ok {
+		return s.Client.SendWhatsAppTemplate(ctx, a.ExternalID, tok, thread, tpl)
+	}
 	return s.Client.SendWhatsApp(ctx, a.ExternalID, tok, thread, body, att)
 }
 
@@ -120,6 +123,8 @@ type SentMessage struct {
 	Thread  string
 	Body    string
 	Tag     string
+	// Template is set when a WhatsApp template message was requested (outside 24h).
+	Template *WhatsAppTemplate
 }
 
 // FakeSender records messages instead of sending them (tests, dev without credentials).
@@ -135,7 +140,11 @@ func (f *FakeSender) Send(ctx context.Context, a Account, thread, body string, _
 	if f.Fail != nil {
 		return "", f.Fail
 	}
-	f.Sent = append(f.Sent, SentMessage{Account: a, Thread: thread, Body: body, Tag: messageTag(ctx)})
+	sm := SentMessage{Account: a, Thread: thread, Body: body, Tag: messageTag(ctx)}
+	if tpl, ok := whatsAppTemplateFrom(ctx); ok {
+		sm.Template = &tpl
+	}
+	f.Sent = append(f.Sent, sm)
 	return fmt.Sprintf("fake-out-%d", len(f.Sent)), nil
 }
 

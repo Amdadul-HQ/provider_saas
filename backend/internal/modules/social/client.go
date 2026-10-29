@@ -62,6 +62,8 @@ type Client interface {
 	SendMessenger(ctx context.Context, pageToken, psid, text, tag string, att []Attachment) (string, error)
 	SendInstagram(ctx context.Context, igUserID, token, igsid, text, tag string, att []Attachment) (string, error)
 	SendWhatsApp(ctx context.Context, phoneNumberID, token, to, text string, att []Attachment) (string, error)
+	// SendWhatsAppTemplate sends an approved template message (outside the 24h window).
+	SendWhatsAppTemplate(ctx context.Context, phoneNumberID, token, to string, tpl WhatsAppTemplate) (string, error)
 	SendTelegram(ctx context.Context, botToken, chatID, text string, att []Attachment) (string, error)
 	// Publishing
 	PublishFacebook(ctx context.Context, pageID, pageToken, message, imageURL string) (string, error)
@@ -462,6 +464,23 @@ func (c *HTTPClient) SendWhatsApp(ctx context.Context, phoneNumberID, token, to,
 	return first, nil
 }
 
+// SendWhatsAppTemplate posts `type: template` with the body parameters in order.
+func (c *HTTPClient) SendWhatsAppTemplate(ctx context.Context, phoneNumberID, token, to string, tpl WhatsAppTemplate) (string, error) {
+	var out struct {
+		Messages []struct {
+			ID string `json:"id"`
+		} `json:"messages"`
+	}
+	if err := c.do(ctx, req{method: http.MethodPost, url: c.graph("/"+url.PathEscape(phoneNumberID)+"/messages", nil), token: token,
+		json: whatsAppTemplateBody(to, tpl)}, &out); err != nil {
+		return "", err
+	}
+	if len(out.Messages) == 0 {
+		return "", nil
+	}
+	return out.Messages[0].ID, nil
+}
+
 func (c *HTTPClient) telegramSend(ctx context.Context, botToken, method string, body map[string]any) (string, error) {
 	var out struct {
 		Result struct {
@@ -688,6 +707,14 @@ func (f *Fake) SendInstagram(_ context.Context, _, token, igsid, text, _ string,
 
 func (f *Fake) SendWhatsApp(_ context.Context, _, token, to, text string, _ []Attachment) (string, error) {
 	return f.send("SendWhatsApp", token, to, text)
+}
+
+func (f *Fake) SendWhatsAppTemplate(_ context.Context, _, token, to string, tpl WhatsAppTemplate) (string, error) {
+	if f.Fail != nil {
+		return "", f.Fail
+	}
+	id := f.record("SendWhatsAppTemplate", append([]string{to, tpl.Name, tpl.Language}, tpl.Params...)...)
+	return id, badToken(token)
 }
 
 func (f *Fake) SendTelegram(_ context.Context, botToken, chatID, text string, _ []Attachment) (string, error) {
